@@ -132,7 +132,7 @@ import { objetivoManual, fallbackMensagem } from './pos-venda-mensagens.js';
 import { snoozeAte } from './pos-venda-sugestao-memoria.js';
 import { registrarAbordagemManual } from '../monitoring/abordagem/abordagens-repo.js';
 import { numerosMes } from '../monitoring/abordagem/numeros-usina.js';
-import { listarAgenda, prontuarioUsina, listarLeiturasPendentes, criarManutencao, marcarManutencaoFeita, reagendarManutencao, registrarLeituraManual } from './manutencao-queries.js';
+import { listarAgenda, prontuarioUsina, listarLeiturasPendentes, criarManutencao, marcarManutencaoFeita, reagendarManutencao, registrarLeituraManual, listarUsinasAtivas, sistemaDoOperador, manutencaoDoOperador } from './manutencao-queries.js';
 import { renderManutencaoPage, renderProntuarioCc } from './manutencao-views.js';
 import type { ManutencaoTipo } from './manutencao-motor.js';
 import { criarOS, abrirOSDeManutencao, getOS, salvarOS, addFotoOS, listFotosOS, fotoCountsPorItem, concluirOS } from './os-queries.js';
@@ -5886,13 +5886,14 @@ b.onclick=async function(){
   router.get('/manutencao', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
     try {
       // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+      // R13 (segurança): tudo filtrado pela empresa da SESSÃO.
       const db = bancoDoOperador(req, supabase);
-      const [agenda, leiturasPendentes, usinasRes] = await Promise.all([
-        listarAgenda(db),
-        listarLeiturasPendentes(db),
-        db.from('sistemas_clientes').select('id, apelido').eq('ativo', true).order('apelido'),
+      const companyId = req.dashUser!.companyId;
+      const [agenda, leiturasPendentes, usinas] = await Promise.all([
+        listarAgenda(db, companyId),
+        listarLeiturasPendentes(db, companyId),
+        listarUsinasAtivas(db, companyId),
       ]);
-      const usinas = (usinasRes.data ?? []).map((u: any) => ({ id: u.id, apelido: u.apelido }));
       res.type('text/html').send(renderManutencaoPage({ agenda, leiturasPendentes, usinas }, req.dashUser));
     } catch (err) {
       console.error('[manutencao] GET falhou:', (err as Error).message);
@@ -5911,8 +5912,10 @@ b.onclick=async function(){
       }
       // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
       const db = bancoDoOperador(req, supabase);
-      const { data: s } = await db.from('sistemas_clientes').select('lead_id').eq('id', sistemaId).maybeSingle();
-      await criarManutencao(supabase, { sistemaId, leadId: (s as any)?.lead_id ?? null, tipo, origem: 'manual', dataAgendada });
+      // R13 (segurança): a usina tem que ser da empresa da sessão.
+      const sis = await sistemaDoOperador(db, sistemaId, req.dashUser!.companyId);
+      if (!sis) { res.status(404).send('usina não encontrada'); return; }
+      await criarManutencao(supabase, { sistemaId, leadId: sis.leadId, tipo, origem: 'manual', dataAgendada, companyId: sis.companyId });
       res.redirect('/dashboard/manutencao');
     } catch (err) {
       console.error('[manutencao] agendar falhou:', (err as Error).message);
@@ -5924,17 +5927,19 @@ b.onclick=async function(){
     try {
       const id = String(req.params.id);
       if (!UUID_RE.test(id)) { res.status(400).send('id inválido'); return; }
+      // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
+      // R13 (segurança): só marca feita manutenção da empresa da sessão.
+      const db = bancoDoOperador(req, supabase);
+      const m = await manutencaoDoOperador(db, id, req.dashUser!.companyId);
+      if (!m) { res.status(404).send('manutenção não encontrada'); return; }
       const hoje = new Date().toISOString().slice(0, 10);
       await marcarManutencaoFeita(supabase, id, {
         feitaEm: String(req.body.feitaEm ?? hoje), feitoPor: req.dashUser!.id, notas: req.body.notas ? String(req.body.notas) : undefined,
       });
-      // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
-      const db = bancoDoOperador(req, supabase);
-      const { data: m } = await db.from('manutencoes').select('lead_id, tipo').eq('id', id).maybeSingle();
-      if ((m as any)?.lead_id) {
+      if (m.leadId) {
         await registrarAtividade(supabase, {
-          company_id: req.dashUser!.companyId, lead_id: (m as any).lead_id, tipo: 'visita',
-          titulo: `Manutenção feita: ${(m as any).tipo}`, automatica: false, user_id: req.dashUser!.id,
+          company_id: req.dashUser!.companyId, lead_id: m.leadId, tipo: 'visita',
+          titulo: `Manutenção feita: ${m.tipo}`, automatica: false, user_id: req.dashUser!.id,
         });
       }
       res.redirect('/dashboard/manutencao');
@@ -5949,6 +5954,8 @@ b.onclick=async function(){
       const id = String(req.params.id);
       const novaData = String(req.body.dataAgendada ?? '');
       if (!UUID_RE.test(id) || !/^\d{4}-\d{2}-\d{2}$/.test(novaData)) { res.status(400).send('dados inválidos'); return; }
+      // R13 (segurança): só reagenda manutenção da empresa da sessão.
+      if (!(await manutencaoDoOperador(bancoDoOperador(req, supabase), id, req.dashUser!.companyId))) { res.status(404).send('manutenção não encontrada'); return; }
       await reagendarManutencao(supabase, id, novaData);
       res.redirect('/dashboard/manutencao');
     } catch (err) {
@@ -6125,6 +6132,10 @@ b.onclick=async function(){
       if (!UUID_RE.test(sistemaId) || !/^\d{4}-\d{2}$/.test(competencia) || !(kwh >= 0)) {
         res.status(400).json({ error: 'dados inválidos' }); return;
       }
+      // R13 (segurança): leitura só em usina da empresa da sessão.
+      if (!(await sistemaDoOperador(bancoDoOperador(req, supabase), sistemaId, req.dashUser!.companyId))) {
+        res.status(404).json({ error: 'usina não encontrada' }); return;
+      }
       const fb = await registrarLeituraManual(supabase, { sistemaId, competencia, kwh });
       res.json(fb);
     } catch (err) {
@@ -6140,7 +6151,9 @@ b.onclick=async function(){
     try {
       const mid = String(req.params.id);
       if (!UUID_RE.test(mid)) { res.status(400).send('id inválido'); return; }
-      const osId = await abrirOSDeManutencao(supabase, mid);
+      // R13 (segurança): só abre OS de manutenção da empresa da sessão.
+      const osId = await abrirOSDeManutencao(supabase, mid, req.dashUser!.companyId);
+      if (!osId) { res.status(404).send('manutenção não encontrada'); return; }
       res.redirect(`/dashboard/os/${osId}`);
     } catch (err) { console.error('[os] abrir falhou:', (err as Error).message); res.status(500).send('erro ao abrir OS'); }
   });
@@ -6155,8 +6168,10 @@ b.onclick=async function(){
       }
       // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
       const db = bancoDoOperador(req, supabase);
-      const { data: s } = await db.from('sistemas_clientes').select('lead_id').eq('id', sistemaId).maybeSingle();
-      const osId = await criarOS(supabase, { sistemaId, leadId: (s as any)?.lead_id ?? null, tipo });
+      // R13 (segurança): a usina tem que ser da empresa da sessão.
+      const sis = await sistemaDoOperador(db, sistemaId, req.dashUser!.companyId);
+      if (!sis) { res.status(404).send('usina não encontrada'); return; }
+      const osId = await criarOS(supabase, { sistemaId, leadId: sis.leadId, tipo, companyId: sis.companyId });
       res.redirect(`/dashboard/os/${osId}`);
     } catch (err) { console.error('[os] nova falhou:', (err as Error).message); res.status(500).send('erro ao criar OS'); }
   });
@@ -6165,7 +6180,7 @@ b.onclick=async function(){
     try {
       const id = String(req.params.id);
       if (!UUID_RE.test(id)) { res.status(400).send('id inválido'); return; }
-      const os = await getOS(supabase, id);
+      const os = await getOS(supabase, id, req.dashUser!.companyId); // R13: só OS da empresa da sessão
       if (!os) { res.status(404).send('OS não encontrada'); return; }
       const [fotos, counts] = await Promise.all([listFotosOS(supabase, id, true), fotoCountsPorItem(supabase, id)]);
       const itens = hidratarChecklist(os.tipo, os.checklist ?? {}, counts);
@@ -6187,7 +6202,7 @@ b.onclick=async function(){
     try {
       const id = String(req.params.id);
       if (!UUID_RE.test(id)) { res.status(400).send('id inválido'); return; }
-      const os = await getOS(supabase, id);
+      const os = await getOS(supabase, id, req.dashUser!.companyId); // R13: só OS da empresa da sessão
       if (!os) { res.status(404).send('OS não encontrada'); return; }
       await salvarOS(supabase, id, { checklist: checklistDoForm(os.tipo, req.body), observacoes: String(req.body.observacoes ?? '') });
       res.redirect(`/dashboard/os/${id}`);
@@ -6198,12 +6213,12 @@ b.onclick=async function(){
     try {
       const id = String(req.params.id);
       if (!UUID_RE.test(id) || !req.file) { res.status(400).send('faltou a foto'); return; }
-      const os = await getOS(supabase, id);
+      const os = await getOS(supabase, id, req.dashUser!.companyId); // R13: só OS da empresa da sessão
       if (!os) { res.status(404).send('OS não encontrada'); return; }
       const ext = (req.file.originalname.split('.').pop() ?? 'jpg').toLowerCase().slice(0, 5);
       await addFotoOS(supabase, id, {
         leadId: os.lead_id, itemChave: String(req.body.itemChave ?? ''),
-        buffer: req.file.buffer, mimeType: req.file.mimetype, ext,
+        buffer: req.file.buffer, mimeType: req.file.mimetype, ext, companyId: os.company_id ?? req.dashUser!.companyId,
       });
       res.redirect(`/dashboard/os/${id}`);
     } catch (err) { console.error('[os] foto falhou:', (err as Error).message); res.status(500).send('erro no upload'); }
@@ -6213,10 +6228,10 @@ b.onclick=async function(){
     try {
       const id = String(req.params.id);
       if (!UUID_RE.test(id)) { res.status(400).send('id inválido'); return; }
-      const os = await getOS(supabase, id);
+      const os = await getOS(supabase, id, req.dashUser!.companyId); // R13: só OS da empresa da sessão
       if (!os) { res.status(404).send('OS não encontrada'); return; }
       await salvarOS(supabase, id, { checklist: checklistDoForm(os.tipo, req.body), observacoes: String(req.body.observacoes ?? '') });
-      await concluirOS(supabase, id, { executor: req.dashUser!.id, notas: `OS ${os.tipo} concluída` });
+      await concluirOS(supabase, id, { executor: req.dashUser!.id, notas: `OS ${os.tipo} concluída`, companyId: req.dashUser!.companyId });
       if (os.lead_id) {
         await registrarAtividade(supabase, {
           company_id: req.dashUser!.companyId, lead_id: os.lead_id, tipo: 'visita',
@@ -6231,7 +6246,7 @@ b.onclick=async function(){
     try {
       const id = String(req.params.id);
       if (!UUID_RE.test(id)) { res.status(400).send('id inválido'); return; }
-      const os = await getOS(supabase, id);
+      const os = await getOS(supabase, id, req.dashUser!.companyId); // R13: só OS da empresa da sessão
       if (!os) { res.status(404).send('OS não encontrada'); return; }
       const [fotos, counts] = await Promise.all([listFotosOS(supabase, id, true), fotoCountsPorItem(supabase, id)]);
       const itens = hidratarChecklist(os.tipo, os.checklist ?? {}, counts);
