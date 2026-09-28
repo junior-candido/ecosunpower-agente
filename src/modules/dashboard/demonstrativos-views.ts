@@ -115,6 +115,7 @@ const CSS_GD = `
 .cc-gd code{font-size:12px;padding:1px 5px;border-radius:5px;background:var(--cc-surface-3)}
 .cc-gd-conf .cc-gd-nums{font-size:13.5px;color:var(--cc-text-2);margin:0 0 10px}
 .cc-gd-limite{max-width:46rem}
+.cc-gd .cc-ph h3,.cc-gd code,.cc-gd .cc-dupla-t{overflow-wrap:anywhere}
 .cc-gd .cc-tbl .cc-pill{white-space:normal;height:auto;min-height:22px;line-height:1.3;padding-top:3px;padding-bottom:3px}
 @media (max-width:760px){
   .cc-gd-filtro input[name=q],.cc-gd-filtro select{flex:1 1 100%;width:100%}
@@ -140,6 +141,9 @@ export function renderDemonstrativosLista(p: {
   const opcEstado = ['', 'pronto', 'falta_dado', 'inconsistente', 'sem_cliente']
     .map((e) => `<option value="${e}"${(p.filtro.estado ?? '') === e ? ' selected' : ''}>${e ? ESTADO[e as EstadoGd].filtro : 'Todas'}</option>`).join('');
   const conta = (e: EstadoGd) => p.itens.filter((i) => i.estado === e).length;
+  // Com filtro ligado a lista já vem recortada — a faixa diz isso (não é o total do mês).
+  const filtrada = !!(p.filtro.estado || p.filtro.q);
+  const det = filtrada ? 'neste filtro' : undefined;
 
   const acoes = `<div class="cc-gd-acoes">
     ${botao({ rotulo: '+ Enviar PDF', href: '/dashboard/demonstrativos/enviar-pdf', tom: 'ouro' })}
@@ -177,10 +181,10 @@ ${cabecalhoPagina({
   })}
 ${p.msg ? aviso({ tom: 'ok', texto: p.msg }) : ''}
 ${faixaKpis([
-    { rotulo: 'Prontos', valor: conta('pronto') },
-    { rotulo: 'Falta dado', valor: conta('falta_dado') },
-    { rotulo: 'Número não bate', valor: conta('inconsistente') },
-    { rotulo: 'Sem cliente', valor: conta('sem_cliente') },
+    { rotulo: 'Prontos', valor: conta('pronto'), detalhe: det },
+    { rotulo: 'Falta dado', valor: conta('falta_dado'), detalhe: det },
+    { rotulo: 'Número não bate', valor: conta('inconsistente'), detalhe: det },
+    { rotulo: 'Sem cliente', valor: conta('sem_cliente'), detalhe: det },
   ])}
 ${cartaoSecao({ titulo: p.mes ? `Demonstrativos de ${mesCurto(p.mes)}` : 'Demonstrativos', dica: `${p.itens.length} UC(s)`, corpoHtml: `${filtro}${lista}` })}`;
   return layout('Demonstrativos', body, user);
@@ -228,7 +232,7 @@ function formRelatorioPeriodo(d: DetalheCliente, assistente: string): string {
   const base = `/dashboard/demonstrativos/${esc(d.instalacao)}`;
   const envioFeito = d.ultimoEnvioPeriodo
     ? `<p class="cc-gd-ok">${esc(textoUltimoEnvioPeriodo(d.ultimoEnvioPeriodo))}</p>` : '';
-  return cartaoSecao({ titulo: 'Relatório de vários meses', dica: 'até 12 meses', corpoHtml: `
+  return cartaoSecao({ titulo: 'Relatório de vários meses', corpoHtml: `
 <form method="get" action="${base}/periodo.html" class="cc-form cc-gd-per">
   <b>📊 Relatório do período:</b>
   ${envioFeito}
