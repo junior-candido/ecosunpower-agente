@@ -95,6 +95,7 @@ const CSS_ENERGIA = `
 .en-token{font-family:ui-monospace,Consolas,monospace;font-size:13px;padding:12px;border-radius:10px;background:var(--cc-surface-3);border:1px dashed var(--cc-gold-2);word-break:break-all;color:var(--cc-text)}
 .en-passos{margin:8px 0 0 18px;padding:0;line-height:1.7;color:var(--cc-text-2);font-size:13.5px}
 .en-teste{font-size:13px;margin-top:10px;color:var(--cc-text-2)}
+.en-perigo{margin-top:18px;border-color:rgba(228,87,75,.35)}
 @media (max-width:900px){.en-grid{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:760px){.en-form{grid-template-columns:minmax(0,1fr)}.en-nums{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
 `;
@@ -150,6 +151,8 @@ export interface FormMedidorInput {
   chaveMascarada?: string | null;
   serverUriGuardado?: string | null;
   cifraConfigurada: boolean;
+  /** Erro da confirmação de "Apagar medidor e todos os dados". */
+  errosApagar?: string[];
 }
 
 function opcoes(lista: Array<[string, string]>, atual: string): string {
@@ -162,7 +165,7 @@ export function renderFormMedidor(f: FormMedidorInput, user: DashUser | undefine
     apelido: m.apelido, device_id: m.device_id, sistema_id: m.sistema_id ?? '', perfil: m.perfil, canal: String(m.canais?.rede ?? 2),
     ligacao: m.ligacao ?? '', tensao_nominal_v: m.tensao_nominal_v ? String(m.tensao_nominal_v) : '', concessionaria: m.concessionaria ?? '',
     uc_instalacao: m.uc_instalacao ?? '', codigo_cliente: m.codigo_cliente ?? '', grupo_gd: m.grupo_gd ?? '', modo_coleta: m.modo_coleta,
-    server_uri: f.serverUriGuardado ?? '',
+    server_uri: f.serverUriGuardado ?? '', ativo: m.ativo !== false,
   } : { perfil: 'triphase', canal: '2', modo_coleta: 'push', tensao_nominal_v: '220', concessionaria: 'Neoenergia Brasília' });
   const novo = f.modo === 'novo';
   const acao = novo ? '/dashboard/energia/medidores' : `/dashboard/energia/medidores/${encodeURIComponent(m!.id)}`;
@@ -193,7 +196,7 @@ export function renderFormMedidor(f: FormMedidorInput, user: DashUser | undefine
     ${f.cifraConfigurada ? '' : '<small style="color:var(--cc-warn)">O servidor ainda não tem a ENERGIA_CRED_KEY: a chave da nuvem não pode ser guardada até configurar.</small>'}
     <div><button type="button" class="cc-btn cc-btn-sm" id="en-testar">${icone('plug', 'xs')}Testar conexão</button><div class="en-teste" id="en-teste-res" aria-live="polite"></div></div>
   </fieldset>
-  ${novo ? `<label class="en-full en-check"><input type="checkbox" name="consentimento" value="on"${v.consentimento ? ' checked' : ''}> O cliente autorizou a medição do consumo da casa (consumo é dado pessoal — LGPD). Ele pode pedir para apagar tudo.</label>` : ''}
+  ${novo ? `<label class="en-full en-check"><input type="checkbox" name="consentimento" value="on"${v.consentimento ? ' checked' : ''}> O cliente autorizou a medição do consumo da casa (consumo é dado pessoal — LGPD). Ele pode pedir para apagar tudo.</label>` : `<label class="en-full en-check"><input type="checkbox" name="ativo" value="on"${v.ativo ? ' checked' : ''}> <span><b>Medidor ligado</b><br><small>Desmarque para parar de receber e de guardar dado deste aparelho (o que já foi guardado fica). O aparelho recebe a resposta "desligado".</small></span></label>`}
   <div class="en-full cc-row"><button class="cc-btn cc-btn-gold" type="submit">${novo ? 'Cadastrar medidor' : 'Salvar'}</button><a class="cc-btn" href="${novo ? '/dashboard/energia' : `/dashboard/energia/${encodeURIComponent(m!.id)}`}">Cancelar</a></div>
 </form>
 <script>
@@ -220,7 +223,18 @@ export function renderFormMedidor(f: FormMedidorInput, user: DashUser | undefine
     trilha: [{ rotulo: 'Usinas', href: '/dashboard/monitoramento' }, { rotulo: 'Energia', href: '/dashboard/energia' }, { rotulo: novo ? 'Novo medidor' : m!.apelido }],
     subtitulo: 'A chave da nuvem Shelly entra só aqui — nunca pelo WhatsApp nem por conversa.',
   });
-  return pagina(user, novo ? 'Cadastrar medidor' : 'Editar medidor', `${cab}${cartaoSecao({ titulo: 'Dados do medidor', corpoHtml: form })}`);
+  const apagar = novo ? '' : cartaoSecao({ titulo: 'Apagar medidor e todos os dados', classe: 'en-perigo', corpoHtml: formApagar(m!, f.errosApagar) });
+  return pagina(user, novo ? 'Cadastrar medidor' : 'Editar medidor', `${cab}${cartaoSecao({ titulo: 'Dados do medidor', corpoHtml: form })}${apagar}`);
+}
+
+/** LGPD: apagar tudo do medidor, com o nome digitado como confirmação. */
+function formApagar(m: MedidorTela, erros?: string[]): string {
+  const err = erros?.length ? `<div class="en-erros" role="alert">${erros.map((e) => escapeHtml(e)).join('<br>')}</div>` : '';
+  return `${err}<p class="en-nota" style="margin-top:0">Apaga o cadastro, as leituras de 1 minuto, as janelas de 15 minutos e os resumos por dia deste medidor. <b>Não tem volta.</b> Use quando o cliente pedir para apagar os dados dele (LGPD). Fica registrado quem apagou e quando.</p>
+<form method="post" action="/dashboard/energia/medidores/${encodeURIComponent(m.id)}/apagar" class="en-form en-apagar" autocomplete="off">
+  <label class="en-full">Para confirmar, digite o nome do medidor: <b>${escapeHtml(m.apelido)}</b><input name="confirmacao" required maxlength="80" autocomplete="off" placeholder="${escapeHtml(m.apelido)}"></label>
+  <div class="en-full"><button class="cc-btn cc-btn-crit" type="submit">Apagar medidor e todos os dados</button></div>
+</form>`;
 }
 
 // ---------------------------------------------------------------------------

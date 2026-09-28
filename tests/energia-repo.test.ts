@@ -86,4 +86,10 @@ describe('energia-repo: company_id do medidor em toda operação', () => {
     expect(Date.parse(up.medido_em)).toBeLessThanOrEqual(Date.now());
     expect(Date.parse(upd.ultima_leitura_em)).toBeLessThanOrEqual(Date.now());
   });
+
+  it('medidor desligado (ativo=false) fica fora dos crons', async () => {
+    const { client, chamadas } = clienteFalso();
+    await criarEnergiaRepo(client).medidoresAtivos();
+    expect(chamadas[0].filtros).toContainEqual(['ativo', true]);
+  });
 });

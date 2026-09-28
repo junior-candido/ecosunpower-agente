@@ -23,7 +23,7 @@ import { can } from './permissions.js';
 import { bancoDoOperador } from '../tenant-client.js';
 import {
   listarMedidores, carregarMedidor, listarUsinas, nomeDaUsina, carregarDadosCasa, criarMedidor, atualizarMedidor,
-  type MedidorTela,
+  apagarMedidorEDados, type MedidorTela,
 } from './energia-queries.js';
 import { renderListaMedidores, renderFormMedidor, renderTokenGerado, renderEnergiaDaCasa } from './energia-views.js';
 import { validarFormMedidor } from '../energia/form-medidor.js';
@@ -37,6 +37,7 @@ import { getMedidorAdapter } from '../energia/medidor-registry.js';
 import { perfilDetectado } from '../energia/adapters/shelly-cloud.js';
 import type { MedidorAdapter, PerfilMedidor } from '../energia/types.js';
 import { escapeHtml } from './ui/html.js';
+import { audit } from './audit.js';
 
 export interface DepsEnergia {
   agora?: () => Date;
@@ -184,10 +185,52 @@ export function rotaSalvarMedidor(supabase: SupabaseClient, d: DepsEnergia = {})
       dados.nuvem_avisado_em = null;
       dados.ultimo_erro = null;
     }
+    // Religado: volta a ser vigiado do zero (sem "parou" do tempo em que ficou desligado).
+    const mudouAtivo = dados.ativo !== undefined && dados.ativo !== m.ativo;
+    if (mudouAtivo && dados.ativo === true) {
+      dados.status = 'aguardando';
+      dados.status_desde = r.agora().toISOString();
+    }
     const ok = await atualizarMedidor(db, user.companyId, m.id, dados);
     if (!ok.ok) { refazer([ok.motivo === 'duplicado' ? MSG_APARELHO_JA_CADASTRADO : 'Não deu para gravar agora. Tente de novo.']); return; }
-    console.log(`[energia] medidor editado id=${m.id} empresa=${user.companyId}${dados.api_credentials_cifrado ? ' (chave da nuvem trocada)' : ''}`);
+    console.log(`[energia] medidor editado id=${m.id} empresa=${user.companyId} por=${user.id}${dados.api_credentials_cifrado ? ' (chave da nuvem trocada)' : ''}${mudouAtivo ? (dados.ativo ? ' (religado)' : ' (desligado)') : ''}`);
+    if (mudouAtivo) {
+      await audit(supabase, { companyId: user.companyId, userId: user.id, entidade: 'medidor_energia', entidadeId: m.id, acao: dados.ativo ? 'religou' : 'desligou' });
+    }
     res.redirect(`/dashboard/energia/${m.id}`);
+  };
+}
+
+/**
+ * LGPD — "Apagar medidor e todos os dados". Confirmação digitada: o nome do
+ * medidor. Apaga cadastro, bruto, 15 min e dia (cascata das FKs) e as leituras
+ * soltas do aparelho nesta empresa. Registra quem/quando/qual — nunca consumo.
+ */
+export function rotaApagarMedidor(supabase: SupabaseClient, d: DepsEnergia = {}): Handler {
+  const r = resolver(d);
+  return async (req, res) => {
+    const user = usuario(req)!;
+    const db = bancoDoOperador(req as AuthedRequest, supabase);
+    const c = await carregarMedidor(db, user.companyId, String(req.params.id ?? ''));
+    if (!c.ok || !c.medidor) { naoEncontrado(res); return; }
+    const m = c.medidor;
+    const digitado = String(corpo(req).confirmacao ?? '').trim().toLocaleLowerCase('pt-BR');
+    if (!digitado || digitado !== m.apelido.trim().toLocaleLowerCase('pt-BR')) {
+      const usinas = await listarUsinas(db, user.companyId);
+      const keyHex = r.keyHex();
+      const g = mascaraGuardada(m, keyHex, user.companyId);
+      res.status(400).type('text/html').send(renderFormMedidor({
+        modo: 'editar', medidor: m, usinas, chaveMascarada: g.mascara, serverUriGuardado: g.server, cifraConfigurada: chaveEnergiaValida(keyHex),
+        errosApagar: [`Nada foi apagado. Para confirmar, digite o nome do medidor exatamente como está: "${m.apelido}".`],
+      }, user));
+      return;
+    }
+    const ap = await apagarMedidorEDados(db, user.companyId, m);
+    if (!ap.ok) { res.status(500).type('html').send('<h2>Não deu para apagar agora</h2><p>Nada foi apagado. Tente de novo.</p>'); return; }
+    const quando = r.agora().toISOString();
+    console.log(`[energia] medidor apagado com todos os dados id=${m.id} empresa=${user.companyId} por=${user.id} em=${quando}`);
+    await audit(supabase, { companyId: user.companyId, userId: user.id, entidade: 'medidor_energia', entidadeId: m.id, acao: 'apagou_com_dados', valorAntigo: m.apelido });
+    res.redirect('/dashboard/energia');
   };
 }
 
@@ -314,6 +357,7 @@ export function montarRotasEnergia(
   router.post('/energia/medidores/testar', exigir('usinas', 'editar'), seguro(rotaTestarConexao(supabase, d)));
   router.get('/energia/medidores/:id/editar', exigir('usinas', 'editar'), seguro(rotaEditarMedidor(supabase, d)));
   router.post('/energia/medidores/:id/token', exigir('usinas', 'editar'), seguro(rotaNovoToken(supabase, d)));
+  router.post('/energia/medidores/:id/apagar', exigir('usinas', 'editar'), seguro(rotaApagarMedidor(supabase, d)));
   router.post('/energia/medidores/:id', exigir('usinas', 'editar'), seguro(rotaSalvarMedidor(supabase, d)));
   router.get('/energia/:id', exigir('usinas', 'visualizar'), seguro(rotaEnergiaDaCasa(supabase, d)));
 }

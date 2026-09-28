@@ -60,4 +60,12 @@ describe('validarFormMedidor', () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.erros.length).toBe(2);
   });
+  it('edição: "Medidor ligado" vira ativo (desmarcado = false); cadastro novo não mexe', () => {
+    const lig = validarFormMedidor({ ...base, ativo: 'on' }, ctx({ novo: false }));
+    const des = validarFormMedidor({ ...base }, ctx({ novo: false }));
+    const novo = validarFormMedidor({ ...base }, ctx());
+    expect(lig.ok && lig.dados.ativo).toBe(true);
+    expect(des.ok && des.dados.ativo).toBe(false);
+    expect(novo.ok && 'ativo' in novo.dados).toBe(false);
+  });
 });

@@ -218,3 +218,23 @@ export async function atualizarMedidor(db: SupabaseClient, companyId: string, id
   }
   return { ok: true };
 }
+
+/**
+ * LGPD — "Apagar medidor e todos os dados". Escopado pela empresa da sessão.
+ *  1) leituras SOLTAS do aparelho nesta empresa (gravadas antes do cadastro ou
+ *     pelo caminho legado, sem medidor_id), com o id normalizado ou "cru";
+ *  2) o medidor. As FKs com ON DELETE CASCADE (136/137) levam junto o bruto
+ *     ligado (medicoes_shelly.medidor_id), energia_15min e energia_diaria.
+ */
+export async function apagarMedidorEDados(db: SupabaseClient, companyId: string, m: Pick<MedidorTela, 'id' | 'device_id'>): Promise<{ ok: true } | { ok: false; motivo: 'migration' | 'falha' }> {
+  const dev = String(m.device_id ?? '').toLowerCase();
+  if (/^[a-z0-9]{1,64}$/.test(dev)) {
+    const { error } = await db.from('medicoes_shelly').delete()
+      .eq('company_id', companyId).is('medidor_id', null)
+      .or(`device_id.eq.${dev},device_id.ilike.shelly*-${dev}`);
+    if (error) return falha(error, 'apagarMedidor (leituras soltas)');
+  }
+  const { error } = await db.from('medidores_energia').delete().eq('company_id', companyId).eq('id', m.id);
+  if (error) return falha(error, 'apagarMedidor');
+  return { ok: true };
+}

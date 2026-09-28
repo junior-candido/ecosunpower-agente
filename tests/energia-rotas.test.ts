@@ -5,6 +5,7 @@ import type { Request, Response } from 'express';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   rotaListaEnergia, rotaCriarMedidor, rotaSalvarMedidor, rotaNovoToken, rotaTestarConexao, rotaEnergiaDaCasa, rotaEditarMedidor,
+  rotaApagarMedidor,
 } from '../src/modules/dashboard/energia-rotas.js';
 import { cifrarCred, decifrarCred, hashToken } from '../src/modules/energia/credenciais.js';
 import type { DashUser } from '../src/modules/dashboard/permissions.js';
@@ -34,6 +35,7 @@ function dbFalso(respostas: Record<string, unknown[] | { error: { code?: string;
     q.delete = () => { reg.op = 'delete'; return q; };
     for (const op of ['eq', 'gte', 'lte', 'lt', 'in']) q[op] = (c: string, v: unknown) => { reg.filtros.push([op, c, v]); return q; };
     q.or = (v: string) => { reg.filtros.push(['or', '', v]); return q; };
+    q.is = (c: string, v: unknown) => { reg.filtros.push(['is', c, v]); return q; };
     q.order = () => q; q.limit = () => q; q.range = () => q;
     q.then = (ok: (r: unknown) => unknown) => {
       const r = respostas[tabela];
@@ -329,5 +331,76 @@ describe('portão do módulo e a aba Medição antiga', () => {
     await listarAparelhos(db, TENANT);
     await resumoDoAparelho(db, '007007422d90', TENANT, 24);
     for (const c of db.chamadas) expect(c.filtros, c.tabela).toContainEqual(['eq', 'company_id', TENANT]);
+  });
+});
+
+describe('LGPD: desligar e apagar o medidor', () => {
+  const corpoEdit = { apelido: 'Casa', device_id: '007007422d90', perfil: 'triphase', canal: '2', modo_coleta: 'push' };
+
+  it('a edição mostra o "Medidor ligado" e a ação de apagar', async () => {
+    const db = dbFalso({ medidores_energia: [MEDIDOR], sistemas_clientes: [] });
+    const res = resFalso();
+    await rotaEditarMedidor(db, deps())(req(junior, { params: { id: MID } }), res as unknown as Response);
+    const h = html(res);
+    expect(h).toMatch(/name="ativo"[^>]*checked/);
+    expect(h).toContain('Apagar medidor e todos os dados');
+    expect(h).toContain(`/dashboard/energia/medidores/${MID}/apagar`);
+  });
+
+  it('desmarcar "Medidor ligado" grava ativo=false (escopado) e registra quem desligou', async () => {
+    const db = dbFalso({ medidores_energia: [MEDIDOR], sistemas_clientes: [], audit_log: [] });
+    const res = resFalso();
+    await rotaSalvarMedidor(db, deps())(req(junior, { params: { id: MID }, body: corpoEdit }), res as unknown as Response);
+    const up = db.chamadas.find((c) => c.op === 'update' && c.tabela === 'medidores_energia')!;
+    expect(up.payload).toMatchObject({ ativo: false });
+    expect(up.filtros).toContainEqual(['eq', 'company_id', ECOSUN]);
+    const aud = db.chamadas.find((c) => c.tabela === 'audit_log')!;
+    expect(aud.payload).toMatchObject({ company_id: ECOSUN, user_id: junior.id, entidade: 'medidor_energia', entidade_id: MID, acao: 'desligou' });
+  });
+
+  it('religar volta a vigiar do zero (aguardando), sem mandar "parou" do tempo desligado', async () => {
+    const db = dbFalso({ medidores_energia: [{ ...MEDIDOR, ativo: false }], sistemas_clientes: [], audit_log: [] });
+    const res = resFalso();
+    await rotaSalvarMedidor(db, deps())(req(junior, { params: { id: MID }, body: { ...corpoEdit, ativo: 'on' } }), res as unknown as Response);
+    const up = db.chamadas.find((c) => c.op === 'update' && c.tabela === 'medidores_energia')!;
+    expect(up.payload).toMatchObject({ ativo: true, status: 'aguardando' });
+  });
+
+  it('apagar exige digitar o nome do medidor; errado → nada apagado', async () => {
+    const db = dbFalso({ medidores_energia: [MEDIDOR], sistemas_clientes: [] });
+    const res = resFalso();
+    await rotaApagarMedidor(db, deps())(req(junior, { params: { id: MID }, body: { confirmacao: 'outro nome' } }), res as unknown as Response);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(db.chamadas.some((c) => c.op === 'delete')).toBe(false);
+    expect(html(res)).toMatch(/digite o nome do medidor/i);
+  });
+
+  it('apagar com o nome certo: apaga o medidor da empresa (cascata leva bruto, 15 min e dia), as leituras soltas do aparelho, e registra sem consumo', async () => {
+    const db = dbFalso({ medidores_energia: [MEDIDOR], audit_log: [] });
+    const res = resFalso();
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await rotaApagarMedidor(db, deps())(req(junior, { params: { id: MID }, body: { confirmacao: `  ${MEDIDOR.apelido} ` } }), res as unknown as Response);
+    const dels = db.chamadas.filter((c) => c.op === 'delete');
+    const delMed = dels.find((c) => c.tabela === 'medidores_energia')!;
+    expect(delMed.filtros).toContainEqual(['eq', 'company_id', ECOSUN]);
+    expect(delMed.filtros).toContainEqual(['eq', 'id', MID]);
+    const delSoltas = dels.find((c) => c.tabela === 'medicoes_shelly')!;
+    expect(delSoltas.filtros).toContainEqual(['eq', 'company_id', ECOSUN]);
+    expect(delSoltas.filtros).toContainEqual(['is', 'medidor_id', null]);
+    const aud = db.chamadas.find((c) => c.tabela === 'audit_log')!;
+    expect(aud.payload).toMatchObject({ company_id: ECOSUN, user_id: junior.id, entidade: 'medidor_energia', entidade_id: MID, acao: 'apagou_com_dados' });
+    const linhaLog = log.mock.calls.map((c) => c.join(' ')).find((l) => l.includes('apagado'))!;
+    expect(linhaLog).toContain(MID);
+    expect(linhaLog).toContain(junior.id);
+    expect(linhaLog).not.toMatch(/kWh|Wh\b/);
+    expect(res.redirect).toHaveBeenCalledWith('/dashboard/energia');
+  });
+
+  it('apagar medidor de outra empresa → 404, nada apagado', async () => {
+    const db = dbFalso({ medidores_energia: [MEDIDOR] });
+    const res = resFalso();
+    await rotaApagarMedidor(db, deps())(req(tenant, { params: { id: MID }, body: { confirmacao: MEDIDOR.apelido } }), res as unknown as Response);
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(db.chamadas.some((c) => c.op === 'delete')).toBe(false);
   });
 });

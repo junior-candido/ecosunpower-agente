@@ -22,6 +22,8 @@ export interface ValoresForm {
   apelido: string; device_id: string; sistema_id: string; perfil: string; canal: string; ligacao: string;
   tensao_nominal_v: string; concessionaria: string; uc_instalacao: string; codigo_cliente: string; grupo_gd: string;
   modo_coleta: string; server_uri: string; consentimento: boolean;
+  /** Edição: "Medidor ligado". Desligado = o webhook recusa e os crons pulam. */
+  ativo: boolean;
 }
 
 export type ResultadoForm =
@@ -47,6 +49,7 @@ export function validarFormMedidor(corpo: Record<string, unknown>, ctx: Contexto
     modo_coleta: txt(corpo.modo_coleta, 12) || 'push',
     server_uri: txt(corpo.server_uri, 120),
     consentimento: corpo.consentimento === 'on' || corpo.consentimento === '1' || corpo.consentimento === 'true',
+    ativo: corpo.ativo === 'on' || corpo.ativo === '1' || corpo.ativo === 'true',
   };
   // A chave NÃO entra em `valores` (que volta pra tela em caso de erro).
   const authKey = String(corpo.auth_key ?? '').trim().slice(0, 400);
@@ -102,5 +105,6 @@ export function validarFormMedidor(corpo: Record<string, unknown>, ctx: Contexto
   };
   if (credCifrada) dados.api_credentials_cifrado = credCifrada;
   if (ctx.novo) dados.consentimento_em = new Date().toISOString();
+  else dados.ativo = valores.ativo; // checkbox: ausente no POST = desligado
   return { ok: true, dados, valores };
 }

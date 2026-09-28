@@ -21,7 +21,7 @@ export function chaveEnergiaValida(keyHex: string | null | undefined): keyHex is
 }
 
 function exigirChave(keyHex: string): void {
-  // Mensagem própria (a do crypto-cert cita FISCAL_CERT_KEY) e sem ecoar o valor.
+  // Mensagem própria e sem ecoar o valor.
   if (!chaveEnergiaValida(keyHex)) throw new Error('ENERGIA_CRED_KEY inválida: precisa de 64 caracteres hex (32 bytes).');
 }
 
