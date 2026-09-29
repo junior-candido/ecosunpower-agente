@@ -245,6 +245,23 @@ async function chamarComFallback(client: Anthropic, messages: Anthropic.Messages
   return response.content.filter((b): b is Anthropic.Messages.TextBlock => b.type === 'text').map((b) => b.text).join('');
 }
 
+// [29/09/2026] Economia conservadora: tarefa interna SÓ DE TEXTO (tirar o
+// lançamento do que o dono digitou, aplicar a correção dele numa lista) vai pro
+// Haiku — mesmo pedido, mesmo leitor da resposta. Foto e PDF continuam no forte.
+// Haiku fora do ar → cai no forte (nada se perde).
+async function chamarTextoRapido(client: Anthropic, messages: Anthropic.Messages.MessageParam[], maxTokens: number): Promise<string> {
+  let response;
+  try {
+    response = await client.messages.create({ model: MODELO_RAPIDO, max_tokens: maxTokens, messages }, { timeout: PDF_TIMEOUT_MS });
+    medirIa({ modelo: MODELO_RAPIDO, origem: 'admin:financeiro', usage: response.usage });
+  } catch (apiErr) {
+    console.warn('[caixa-entrada] Haiku indisponível, usando o modelo forte:', (apiErr as Error).message);
+    response = await client.messages.create({ model: MODELO_FORTE, max_tokens: maxTokens, messages }, { timeout: PDF_TIMEOUT_MS });
+    medirIa({ modelo: MODELO_FORTE, origem: 'admin:financeiro', usage: response.usage });
+  }
+  return response.content.filter((b): b is Anthropic.Messages.TextBlock => b.type === 'text').map((b) => b.text).join('');
+}
+
 // Gate barato: decide se um texto de admin é assunto financeiro. Haiku direto
 // (sem Opus — roda em TODA mensagem de texto do admin fora de modo).
 export async function gateTextoFinanceiro(client: Anthropic, texto: string): Promise<boolean> {
@@ -264,7 +281,7 @@ export async function gateTextoFinanceiro(client: Anthropic, texto: string): Pro
 
 // hoje = data em America/Sao_Paulo (BRT). NUNCA new Date().toISOString() direto — das 21h às 0h o servidor UTC já virou o dia.
 export async function extrairDeTexto(client: Anthropic, texto: string, hoje: string): Promise<ExtracaoLancamento[]> {
-  const raw = await chamarComFallback(client, [{ role: 'user', content: montarPromptExtracaoTexto(texto, hoje) }], 1024);
+  const raw = await chamarTextoRapido(client, [{ role: 'user', content: montarPromptExtracaoTexto(texto, hoje) }], 1024);
   return parseLancamentos(raw);
 }
 
@@ -307,7 +324,7 @@ export async function corrigirItensComTexto(client: Anthropic, itens: ItemNota[]
     const prompt = `Esses são os itens que li de uma nota fiscal (JSON):\n${JSON.stringify(itens)}\n\n` +
       `O dono da empresa mandou esta correção: "${texto}"\n\n` +
       `Aplique a correção nos itens certos (case pelo nome do material ou pela posição que ele citar) e devolva a LISTA COMPLETA de itens já atualizada, no MESMO formato (array de objetos com material, quantidade, unidade, preco_unitario, problema), dentro de um bloco \`\`\`json\`\`\`. Quando um item for corrigido e ficar ok, ponha "problema": null. NÃO invente itens novos. Data de hoje: ${hoje}.`;
-    const raw = await chamarComFallback(client, [{ role: 'user', content: prompt }], 1024);
+    const raw = await chamarTextoRapido(client, [{ role: 'user', content: prompt }], 1024);
     const corrigidos = parseItensNota(raw);
     return corrigidos.length > 0 ? corrigidos : itens;
   } catch (err) {
