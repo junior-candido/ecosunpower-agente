@@ -37,11 +37,12 @@ describe('Visão geral no padrão cc-', () => {
     expect(h).toContain('id="cc-tema-graficos"');
     expect(h.indexOf('cc-tema-graficos')).toBeGreaterThan(h.indexOf('chart.umd.min.js'));
   });
-  it('sem ticket médio → "—" (nunca R$ 0 inventado)', () => {
+  it('ticket médio com o mesmo número de antes (R$ sem centavos); manutenção pendente em destaque', () => {
+    const card = m.slice(m.indexOf('Ticket médio'), m.indexOf('Ticket médio') + 300);
+    expect(card).toContain('28.451');
     const mp = miolo(CASOS_HOME['home-mes-passado']());
-    const card = mp.slice(mp.indexOf('Ticket médio'), mp.indexOf('Ticket médio') + 300);
-    expect(card).toContain('—');
     expect(mp).toContain('agosto de 2026');
+    expect(m).toMatch(/cc-kpi cc-kpi-hl cc-clk" href="\/dashboard\/manutencao"/);
   });
 });
 

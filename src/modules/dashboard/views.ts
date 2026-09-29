@@ -458,8 +458,10 @@ export function renderHomePage(kpis: DashboardKpi, grafico: GraficoMensal[], gra
   const geral = faixaKpis([
     { rotulo: 'Clientes instalados', valor: kpis.clientesInstalados, detalhe: 'sistemas operando' },
     { rotulo: 'Em qualificação', valor: kpis.leadsQualificando, detalhe: `${empresa().nomeAtendente} ativa neles` },
-    { rotulo: 'Ticket médio', valor: kpis.ticketMedio > 0 ? kpis.ticketMedio : null, prefixo: 'R$', compacto: true, detalhe: 'últimas 50 propostas' },
-    { rotulo: 'Manutenção próx. 30d', valor: kpis.manutencaoPendente, detalhe: 'lembretes pendentes', href: '/dashboard/manutencao' },
+    // Mesmo número de antes (brl sem centavos, 0 aparece como R$ 0).
+    { rotulo: 'Ticket médio', valor: Math.round(kpis.ticketMedio), prefixo: 'R$', detalhe: 'últimas 50 propostas' },
+    // Com lembrete pendente o cartão fica em destaque (antes: vermelho).
+    { rotulo: 'Manutenção próx. 30d', valor: kpis.manutencaoPendente, detalhe: 'lembretes pendentes', href: '/dashboard/manutencao', destaque: kpis.manutencaoPendente > 0 },
   ]);
 
   const body = `<div class="cc-root cc-hm">
