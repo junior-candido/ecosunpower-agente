@@ -23,8 +23,10 @@ import {
   avisoAdminSoDaCasa,
   leadSoDaCasa,
   empresaDoLead,
+  empresaPausadaPorCobranca,
   type DepsCanalAutomatico,
 } from '../src/modules/canal-automatico.js';
+import { configurarTravaDisparos } from '../src/modules/cobranca-recorrente/pausa.js';
 import { runPosInstalacaoNotifCycle } from '../src/modules/relatorios/pos-instalacao/cron.js';
 import { tickEnvioAutoPasta, empresaDaPasta, criarEnvioAutoDb, type PastaCandidata } from '../src/modules/relatorios/pasta/envio-auto.js';
 import { criarAoMarcarMedidor, type LeadComUsina } from '../src/modules/monitoring/detectar-medidor.js';
@@ -326,7 +328,7 @@ describe('criarAoMarcarMedidor — aviso "medidor trocado" por empresa', () => {
 // ---------------------------------------------------------------------------
 // 5. Toques pós-instalação ao CLIENTE (avaliação Google / indicação)
 // ---------------------------------------------------------------------------
-type Touch = { id: string; touch_type: string; leads: Record<string, unknown> | null };
+type Touch = { id: string; touch_type: string; company_id?: string | null; leads: Record<string, unknown> | null };
 
 function fakeSupabaseTouches(touches: Touch[]) {
   const updates: Array<{ id: string; patch: Record<string, unknown> }> = [];
@@ -357,7 +359,7 @@ function fakeAnthropic() {
   };
 }
 
-describe('PostInstallService.processDueTouches — por empresa', () => {
+describe('PostInstallService.processDueTouches — tenant SEM toque automático (decisão 02/09)', () => {
   beforeEach(() => { vi.useFakeTimers({ toFake: ['setTimeout'] }); });
   afterEach(() => { vi.useRealTimers(); });
 
@@ -370,70 +372,60 @@ describe('PostInstallService.processDueTouches — por empresa', () => {
   const leadBA = { id: 'l-ba', phone: CLIENTE_BA, name: 'Mari De Sá', city: 'Vitória da Conquista', energy_data: null, opt_out: false, company_id: CONQUISTA };
   const leadDF = { id: 'l-df', phone: CLIENTE_DF, name: 'Tatiane', city: 'Brasília', energy_data: null, opt_out: false, company_id: CASA };
 
-  it('sem rotas (padrão): cliente de tenant NÃO recebe pelo número da casa — toque cancelado', async () => {
-    const { client, updates } = fakeSupabaseTouches([{ id: 't1', touch_type: 'review_request', leads: leadBA }]);
-    const g = gravador();
-    const ai = fakeAnthropic();
-    const svc = new PostInstallService(client as never, ai.client as never, g.sendText, 'https://g.page/r/ecosun/review');
-    expect(await rodar(svc)).toBe(0);
-    expect(g.envios).toEqual([]);
-    expect(ai.prompts).toEqual([]); // nem gasta IA
-    expect(updates).toEqual([{ id: 't1', patch: { status: 'canceled' } }]);
-  });
+  for (const tipo of ['review_request', 'review_nudge', 'indication_invite']) {
+    it(`${tipo}: cliente de tenant não recebe nada (nem pela casa, nem pelo tenant) — toque cancelado, sem gastar IA`, async () => {
+      const { client, updates } = fakeSupabaseTouches([{ id: 't1', touch_type: tipo, leads: leadBA }]);
+      const g = gravador();
+      const ai = fakeAnthropic();
+      const svc = new PostInstallService(client as never, ai.client as never, g.sendText, 'https://g.page/r/ecosun/review');
+      expect(await rodar(svc)).toBe(0);
+      expect(g.envios).toEqual([]);
+      expect(ai.prompts).toEqual([]);
+      expect(updates).toEqual([{ id: 't1', patch: { status: 'canceled' } }]);
+    });
+  }
 
-  it('com rotas: cliente de tenant recebe pela instância DELE, em nome dele, com o link de avaliação DELE', async () => {
-    const { client, updates } = fakeSupabaseTouches([{ id: 't1', touch_type: 'review_request', leads: leadBA }]);
+  it('toque carimbado com tenant (mesmo com lead da casa) também é cancelado', async () => {
+    const { client, updates } = fakeSupabaseTouches([{ id: 't1', touch_type: 'review_request', company_id: CONQUISTA, leads: leadDF } as never]);
     const g = gravador();
-    const ai = fakeAnthropic();
-    const rotas = criarRotasAutomaticas(depsLiberado(), JUNIOR);
-    const svc = new PostInstallService(client as never, ai.client as never, g.sendText, 'https://g.page/r/ecosun/review', rotas.lead);
-    expect(await rodar(svc)).toBe(1);
-    expect(g.envios).toEqual([{ to: CLIENTE_BA, texto: 'mensagem gerada', empresa: CONQUISTA, instancia: 'inst-99fd' }]);
-    expect(ai.prompts[0]).toContain('Conquista Solar');
-    expect(ai.prompts[0]).toContain('https://g.page/r/conquista/review');
-    expect(ai.prompts[0]).not.toContain('EcoSunPower');
-    expect(ai.prompts[0]).not.toContain('ecosun/review');
-    expect(updates[0].patch).toMatchObject({ status: 'sent' });
-  });
-
-  it('tenant sem link de avaliação: pedido de avaliação cancelado (não usa o link da casa)', async () => {
-    const semLink = { ...leadBA, company_id: SEM_ADMIN };
-    const { client, updates } = fakeSupabaseTouches([{ id: 't1', touch_type: 'review_nudge', leads: semLink }]);
-    const g = gravador();
-    const svc = new PostInstallService(client as never, fakeAnthropic().client as never, g.sendText, 'https://g.page/r/ecosun/review', criarRotasAutomaticas(depsLiberado(), JUNIOR).lead);
+    const svc = new PostInstallService(client as never, fakeAnthropic().client as never, g.sendText, 'https://g.page/r/ecosun/review');
     expect(await rodar(svc)).toBe(0);
     expect(g.envios).toEqual([]);
     expect(updates).toEqual([{ id: 't1', patch: { status: 'canceled' } }]);
-  });
-
-  it('convite de indicação (programa R$ 300 da casa) não vai pra cliente de tenant', async () => {
-    const { client, updates } = fakeSupabaseTouches([{ id: 't1', touch_type: 'indication_invite', leads: leadBA }]);
-    const g = gravador();
-    const svc = new PostInstallService(client as never, fakeAnthropic().client as never, g.sendText, 'https://g.page/r/ecosun/review', criarRotasAutomaticas(depsLiberado(), JUNIOR).lead);
-    expect(await rodar(svc)).toBe(0);
-    expect(g.envios).toEqual([]);
-    expect(updates).toEqual([{ id: 't1', patch: { status: 'canceled' } }]);
-  });
-
-  it('erro ao decidir o canal: toque fica pendente (tenta de novo), nada sai', async () => {
-    const { client, updates } = fakeSupabaseTouches([{ id: 't1', touch_type: 'review_request', leads: leadBA }]);
-    const g = gravador();
-    const deps = depsLiberado({ modulosAtivos: async () => { throw new Error('rede'); } });
-    const svc = new PostInstallService(client as never, fakeAnthropic().client as never, g.sendText, 'https://g.page/r/ecosun/review', criarRotasAutomaticas(deps, JUNIOR).lead);
-    expect(await rodar(svc)).toBe(0);
-    expect(g.envios).toEqual([]);
-    expect(updates).toEqual([]);
   });
 
   it('casa segue igual: Eva manda pelo canal padrão com o link da casa', async () => {
     const { client, updates } = fakeSupabaseTouches([{ id: 't1', touch_type: 'review_request', leads: leadDF }]);
     const g = gravador();
     const ai = fakeAnthropic();
-    const svc = new PostInstallService(client as never, ai.client as never, g.sendText, 'https://g.page/r/ecosun/review', criarRotasAutomaticas(depsLiberado(), JUNIOR).lead);
+    const svc = new PostInstallService(client as never, ai.client as never, g.sendText, 'https://g.page/r/ecosun/review');
     expect(await rodar(svc)).toBe(1);
     expect(g.envios).toEqual([{ to: CLIENTE_DF, texto: 'mensagem gerada', empresa: CASA, instancia: undefined }]);
     expect(ai.prompts[0]).toContain('https://g.page/r/ecosun/review');
     expect(updates[0].patch).toMatchObject({ status: 'sent' });
+  });
+});
+
+describe('empresaPausadaPorCobranca — ligada à 2ª trava real (cobranca-recorrente/pausa.ts)', () => {
+  afterEach(() => configurarTravaDisparos(null));
+
+  it('tenant com disparos pausados por fatura: rotas barram aviso e mensagem', async () => {
+    configurarTravaDisparos(async () => new Set([CONQUISTA]));
+    expect(await empresaPausadaPorCobranca(CONQUISTA)).toBe(true);
+    expect(await empresaPausadaPorCobranca(CASA)).toBe(false);
+    const { envios, sendText } = gravador();
+    const deps = depsLiberado();
+    delete (deps as Partial<DepsCanalAutomatico>).empresaPausada; // usa o padrão = pausa real
+    const rotas = criarRotasAutomaticas(deps, JUNIOR);
+    expect(await rotas.avisoAdmin(CONQUISTA, (to) => sendText(to, 'x'))).toBe('empresa_pausada');
+    expect(await rotas.lead(CONQUISTA, () => sendText(CLIENTE_BA, 'x'))).toBe('empresa_pausada');
+    expect(await rotas.avisoAdmin(CASA, (to) => sendText(to, 'x'))).toBe('enviado');
+    expect(envios.map((e) => e.to)).toEqual([JUNIOR]);
+  });
+
+  it('sem trava configurada: ninguém pausado', async () => {
+    configurarTravaDisparos(null);
+    expect(await empresaPausadaPorCobranca(CONQUISTA)).toBe(false);
   });
 });
 

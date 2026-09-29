@@ -171,8 +171,21 @@ const CONFIRM_EXCLUIR_ANA: MudancaContrato = {
 
 /** R19: trocas por caso de tests/fixtures/casos-configuracoes.ts (a troca comum
  *  TELAS_LEVES — sai o Tailwind do CDN — o teste aplica em todos). */
+/** Custo de IA por empresa (28/09/2026): a navegação de Configurações da CASA
+ *  ganha o link da tela nova. Tenant não vê (os casos de tenant não mudam). */
+const NAV_CUSTO_IA: MudancaContrato = {
+  motivo: 'nova seção "Custo de IA" na navegação de Configurações (só a casa)',
+  entra: { links: ['/dashboard/custo-ia'] },
+};
+
 export const MUDANCAS_R19: Record<string, MudancaContrato[]> = {
-  'usuarios-lista': [CONFIRM_EXCLUIR_ANA],
+  'usuarios-lista': [CONFIRM_EXCLUIR_ANA, NAV_CUSTO_IA],
   'usuarios-lista-tenant': [CONFIRM_EXCLUIR_ANA],
   'usuarios-lista-tenant-comum': [CONFIRM_EXCLUIR_ANA],
+  'usuarios-lista-vazia': [NAV_CUSTO_IA],
+  'usuarios-editar': [NAV_CUSTO_IA],
+  'usuarios-editar-sem-papel': [NAV_CUSTO_IA],
+  empresas: [NAV_CUSTO_IA],
+  'empresas-ok': [NAV_CUSTO_IA],
+  'empresas-erro': [NAV_CUSTO_IA],
 };

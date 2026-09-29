@@ -11,7 +11,7 @@ function depsStub(): MenuDeps {
     pricing: h(), proposal: h(), closing: h(), creative: h(), banner: h(),
     bannerKits: h(), reativarBase: h(), juniorBlog: h(), scheduling: h(),
     caseCreator: h(), testimonialAdmin: h(), relatorio: h(), resgatarForms: h(),
-    googleAds: h(), acaoImposto: a(), acaoApagar: a(), acaoGerarPost: a(), acaoFecheiVenda: a(),
+    googleAds: h(), acaoImposto: a(), acaoApagar: a(), acaoGerarPost: a(), acaoFecheiVenda: a(), acaoMensalidades: a(),
   };
 }
 

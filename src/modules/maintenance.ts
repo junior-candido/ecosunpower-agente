@@ -162,7 +162,7 @@ em branco), nada mais.`;
       max_tokens: 300,
       messages: [{ role: 'user', content: prompt }],
     });
-    medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'maintenance', usage: response.usage });
+    medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'reativacao:manutencao', usage: response.usage, companyId: empresa().companyId }); // roda na empresa do lead (canal-automatico)
 
     const block = response.content[0];
     return block.type === 'text' ? block.text.trim() : `oi, aqui e a ${empresa().nomeAtendente.toLowerCase()} da ${empresa().nomeFantasia.toLowerCase()}. posso te ajudar?`;
@@ -180,7 +180,7 @@ em branco), nada mais.`;
       max_tokens: 300,
       messages: [{ role: 'user', content: prompt }],
     });
-    medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'maintenance', usage: response.usage });
+    medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'reativacao:manutencao', usage: response.usage, companyId: empresa().companyId }); // roda na empresa do lead (canal-automatico)
     const block = response.content[0];
     return block.type === 'text' ? block.text.trim() : fallback;
   }

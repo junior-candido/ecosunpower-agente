@@ -62,7 +62,7 @@ export async function gerarMensagemComercial(
     max_tokens: 300,
     messages: [{ role: 'user', content: prompt }],
   });
-  medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'ia-comercial', usage: resp.usage });
+  medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'admin:ia-comercial', usage: resp.usage });
   return resp.content
     .filter((b): b is Anthropic.TextBlock => b.type === 'text')
     .map(b => b.text)

@@ -32,6 +32,12 @@ export interface DashUser {
   // pela trava de módulos (modulos-contratados.ts) só pro tenant; o menu tranca
   // o que não está aqui. Ausente = não conferido (EcoSun, telas sem o router).
   modulosContratados?: readonly string[];
+  // Cobrança recorrente (28/09/2026): a assistente DESTA empresa (tenant) está
+  // pausada por fatura em aberto → faixa no topo do painel com o link de pagar.
+  // Preenchido por requisição só pro tenant (router). O painel NÃO é bloqueado.
+  // estagio 1 = assistente não responde; 2 = + disparos automáticos pausados.
+  // admin = admin/proprietário do tenant (só ele vê valores e o botão Pagar).
+  assistentePausada?: { linkPagar: string | null; estagio?: 1 | 2; admin?: boolean };
 }
 
 export function can(user: DashUser | null | undefined, area: Area, nivel: Nivel): boolean {

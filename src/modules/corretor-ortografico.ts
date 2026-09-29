@@ -85,7 +85,7 @@ export async function corrigirOrtografia(
       console.warn('[corretor] timeout/erro, mantém original');
       return original;
     }
-    medirIa({ modelo: MODELO, origem: 'corretor', usage: (resp as any).usage });
+    medirIa({ modelo: MODELO, origem: 'escrita:corretor', usage: (resp as any).usage });
     const out = resp.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
       .map((b) => b.text)

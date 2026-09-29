@@ -25,6 +25,7 @@ import { empresaDe } from './empresa-config.js';
 import { destinoAdminDaEmpresa } from './tenant-admin-guard.js';
 import { ECOSUN_COMPANY_ID } from './tenant-resolver.js';
 import { canalZapDaEmpresa, noCanalDaEmpresa } from './dashboard/canal-envio.js';
+import { disparoLiberado } from './cobranca-recorrente/pausa.js';
 
 export type MotivoBloqueio =
   | 'empresa_pausada'
@@ -48,20 +49,23 @@ export interface DepsCanalAutomatico {
 }
 
 /**
- * ⏸ PONTO DE CHECAGEM DA COBRANÇA RECORRENTE.
- *
- * A pausa por inadimplência do tenant ainda não está na main. Quando chegar,
- * é SÓ trocar o corpo desta função (ou passar `empresaPausada` nas deps do
- * index) — todas as rotinas automáticas de pós-venda já perguntam aqui antes
- * de falar com o cliente ou com o admin do tenant. A casa nunca é pausada.
+ * ⏸ Cobrança recorrente: empresa com os DISPAROS AUTOMÁTICOS pausados por
+ * fatura (2ª trava de cobranca-recorrente/pausa.ts — ponto único, sem duplicar
+ * a regra). A casa nunca é pausada.
  */
-export async function empresaPausadaPorCobranca(_companyId: string): Promise<boolean> {
-  return false;
+export async function empresaPausadaPorCobranca(companyId: string): Promise<boolean> {
+  return !(await disparoLiberado(companyId));
 }
 
 /** Lead sem empresa é legado pré-multi-tenant = casa. */
 export function empresaDoLead(companyId: string | null | undefined): string {
   return typeof companyId === 'string' && companyId.trim() ? companyId : ECOSUN_COMPANY_ID;
+}
+
+/** Dona do toque/lembrete: linha OU lead de tenant = tenant (o mais restritivo). */
+export function empresaDaTouch(daLinha: string | null | undefined, doLead: string | null | undefined): string {
+  if (!ehCasa(doLead)) return empresaDoLead(doLead);
+  return empresaDoLead(daLinha);
 }
 
 export function ehCasa(companyId: string | null | undefined): boolean {
