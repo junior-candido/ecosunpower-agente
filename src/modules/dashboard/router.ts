@@ -4420,6 +4420,13 @@ b.onclick=async function(){
     if (!leadId || !TIPOS.includes(tipo)) {
       return res.status(400).json({ ok: false, error: 'leadId/tipo invalido' });
     }
+    // R22 (segurança): o lead tem que ser da empresa da sessão — antes qualquer
+    // usuário com usinas:editar silenciava a sugestão do cliente de OUTRA empresa
+    // só sabendo o id (a memória é gravada pelo serviço, sem RLS).
+    if (!UUID_RE.test(leadId)) return res.status(400).json({ ok: false, error: 'leadId/tipo invalido' });
+    const { data: leadDaSessao } = await bancoDoOperador(req, supabase).from('leads').select('id')
+      .eq('id', leadId).eq('company_id', req.dashUser!.companyId).maybeSingle();
+    if (!leadDaSessao) return res.status(404).json({ ok: false, error: 'Cliente não encontrado.' });
     const agora = new Date();
     await supabaseService.upsertSugestaoMemoria({
       leadId, sistemaId: null, tipo, acao: 'dispensada',

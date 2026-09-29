@@ -6,6 +6,7 @@
 import type { ContratoTela, MudancaContrato } from '../helpers/contrato-tela.js';
 
 import { URL_CSS_COMMAND_CENTER } from '../../src/modules/dashboard/ui/estatico.js';
+import { TELAS_LEVES } from './mudancas-telas-leves.js';
 
 export type { MudancaContrato };
 
@@ -73,9 +74,24 @@ export const MUDANCAS_R21: Record<string, MudancaContrato[]> = Object.fromEntrie
 // R22 — Operação II (pós-venda, medição)
 // ════════════════════════════════════════════════════════════════════════
 
-/** R22: trocas por caso de tests/fixtures/casos-operacao2.ts. Sem entrada → só
- *  a troca comum TELAS_LEVES (o teste aplica). Enquanto a tela antiga está no
- *  ar, cada caso declara []. */
-export const MUDANCAS_R22: Record<string, MudancaContrato[]> = Object.fromEntries(
-  ['pos-venda', 'pos-venda-sem-agenda', 'pos-venda-vazio', 'pos-venda-tenant', 'medicao', 'medicao-um-aparelho', 'medicao-sem-leitura', 'medicao-sem-aparelho', 'medicao-tenant'].map((c) => [c, []]),
-);
+/** R22 (pós-venda, tenant): o confirm do "enviar pelo copiloto" dizia "pela
+ *  Eva" (nome da assistente da casa). Tenant lê "pela assistente". O envio do
+ *  tenant continua barrado no servidor (podeDispararMensagens → 403). */
+const R22_TENANT_SEM_EVA: MudancaContrato = {
+  motivo: 'R22: tenant não vê o nome da assistente da casa no confirm',
+  sai: { confirms: ["'Enviar esta mensagem pro cliente pela Eva?'"] },
+  entra: { confirms: ["'Enviar esta mensagem pro cliente pela assistente?'"] },
+};
+/** R22: trocas por caso de tests/fixtures/casos-operacao2.ts (TELAS_LEVES = sai
+ *  o Tailwind do CDN, a troca comum das telas renovadas). */
+export const MUDANCAS_R22: Record<string, MudancaContrato[]> = {
+  'pos-venda': [TELAS_LEVES],
+  'pos-venda-sem-agenda': [TELAS_LEVES],
+  'pos-venda-vazio': [TELAS_LEVES],
+  'pos-venda-tenant': [TELAS_LEVES, R22_TENANT_SEM_EVA],
+  'medicao': [TELAS_LEVES],
+  'medicao-um-aparelho': [TELAS_LEVES],
+  'medicao-sem-leitura': [TELAS_LEVES],
+  'medicao-sem-aparelho': [TELAS_LEVES],
+  'medicao-tenant': [TELAS_LEVES],
+};

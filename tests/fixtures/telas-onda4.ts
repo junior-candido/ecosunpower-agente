@@ -9,11 +9,19 @@ import { telaRecados } from '../../src/modules/dashboard/recados-views.js';
 import { telaConhecimento } from '../../src/modules/dashboard/conhecimento-views.js';
 import { getContrato, CONTRATOS } from '../../src/modules/closing/contratos-registry.js';
 import { CASOS_COMERCIAL2 } from './casos-comercial2.js';
+import { renderPosVendaPage } from '../../src/modules/dashboard/pos-venda-views.js';
+import { CASOS_OPERACAO2, linhaPv } from './casos-operacao2.js';
 
 const uuid = (i: number) => `${String(i).padStart(8, '0')}-2222-4333-8444-555555555555`;
 
 /** Classes fora do padrão cc- que as telas da Onda 4 usam de propósito. */
-export const CLASSES_ONDA4: string[] = [];
+export const CLASSES_ONDA4: string[] = [
+  // R22 — Pós-venda: ganchos do script (querySelector/closest), sem estilo próprio
+  ...['card', 'urgent', 'sugestao-btn', 'sug-dispensar', 'tpl-btn', 'previa', 'previa-texto', 'previa-enviar', 'previa-cancelar',
+    'previa-status', 'copiloto-btn', 'chat', 'chat-in', 'chat-send', 'chat-out', 'chat-copy', 'chat-send-eva', 'notas-btn',
+    'lembrete-btn', 'lembrete-form', 'lembrete-titulo', 'lembrete-data', 'lembrete-salvar', 'lembrete-status', 'notas', 'nota-in',
+    'nota-salvar', 'nota-status', 'historico', 'tarefa-ok', 'tarefa-adiar', 'agenda'].map((c) => 'pv-' + c),
+];
 
 function telasR21(n: number, user: DashUser): Record<string, string> {
   const fv = getContrato('fv')!;
@@ -29,6 +37,15 @@ function telasR21(n: number, user: DashUser): Record<string, string> {
   };
 }
 
+function telasR22(n: number, user: DashUser): Record<string, string> {
+  const SAUDES = ['verde', 'amarelo', 'vermelho'] as const;
+  return {
+    'r22-pos-venda': renderPosVendaPage(Array.from({ length: n }, (_, i) => linhaPv({ leadId: uuid(i), nome: `Cliente Fictício ${i}`, saude: SAUDES[i % 3] })), user,
+      { atrasados: [{ id: uuid(900), leadId: uuid(0), nomeCliente: 'Cliente Fictício 0', titulo: 'Ligar', dueAt: null }], hoje: [], semana: [] }),
+    'r22-medicao': CASOS_OPERACAO2[user.companyId === '00000000-0000-0000-0000-000000000001' ? 'medicao' : 'medicao-tenant'](),
+  };
+}
+
 export function telasOnda4(n: number, user: DashUser): Record<string, string> {
-  return { ...telasR21(n, user) };
+  return { ...telasR21(n, user), ...telasR22(n, user) };
 }
