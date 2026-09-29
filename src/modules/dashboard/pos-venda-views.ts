@@ -161,6 +161,7 @@ function renderAgenda(agenda: AgendaAgrupada): string {
 }
 
 const CSS_POS_VENDA = `
+.cc-pv .cc-kstrip{margin-bottom:16px}
 .cc-pv-grade{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start}
 .cc-pv-agenda{position:sticky;top:16px}
 .cc-pv-card{border:1px solid var(--cc-line);border-left:4px solid var(--cc-ok);border-radius:14px;padding:14px 16px;margin-bottom:10px;background:linear-gradient(180deg,var(--cc-panel-top) 0%,var(--cc-panel-bot) 100%)}
@@ -223,7 +224,7 @@ export function renderPosVendaPage(linhas: PosVendaLinha[], user?: DashUser, age
 
   const body = `<div class="cc-root cc-pv">
     ${cabecalhoPagina({
-      trilha: [{ rotulo: 'Usinas' }, { rotulo: 'Pós-venda' }],
+      trilha: [{ rotulo: 'Clientes' }, { rotulo: 'Pós-venda' }],
       titulo: 'Pós-venda / Relacionamento',
       subtitulo: 'Os cartões com borda vermelha pulsando precisam de atenção. Embaixo de cada cliente está a próxima ação sugerida.',
     })}
