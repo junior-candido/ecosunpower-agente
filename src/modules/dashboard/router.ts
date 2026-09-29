@@ -2226,7 +2226,8 @@ b.onclick=async function(){
       for (const c of (companies ?? []) as Array<{ id: string }>) {
         const [usinas, users, leads, evento] = await Promise.all([
           client.from('sistemas_clientes').select('id', { count: 'exact', head: true }).eq('company_id', c.id),
-          client.from('dashboard_users').select('last_login').eq('company_id', c.id).order('last_login', { ascending: false }),
+          // last_login_at (migration 056); nulos por último, senão quem nunca entrou vira o "último acesso".
+          client.from('dashboard_users').select('last_login_at').eq('company_id', c.id).order('last_login_at', { ascending: false, nullsFirst: false }),
           client.from('leads').select('id', { count: 'exact', head: true }).eq('company_id', c.id),
           client.from('eventos_elo').select('created_at').eq('company_id', c.id).order('created_at', { ascending: false }).limit(1),
         ]);
@@ -2234,7 +2235,7 @@ b.onclick=async function(){
           usinas: usinas.count ?? 0,
           assentos: (users.data ?? []).length,
           leads: leads.count ?? 0,
-          ultimoLoginISO: ((users.data ?? [])[0] as { last_login?: string } | undefined)?.last_login ?? null,
+          ultimoLoginISO: ((users.data ?? [])[0] as { last_login_at?: string | null } | undefined)?.last_login_at ?? null,
           ultimoEventoISO: ((evento.data ?? [])[0] as { created_at?: string } | undefined)?.created_at ?? null,
         };
       }
@@ -6924,6 +6925,15 @@ b.onclick=async function(){
     }
     if (!fields.name) return res.status(400).send('Nome obrigatório');
     if (!fields.phone) return res.status(400).send('Telefone obrigatório');
+    // A UC geradora do rateio tem de ser um cliente DESTA empresa (senão o rateio e o
+    // demonstrativo puxariam o cliente de outra empresa só por colar o id).
+    if (fields.uc_geradora_lead_id != null) {
+      const geradora = String(fields.uc_geradora_lead_id).trim();
+      if (geradora === id || !(await clienteDaEmpresa(dbClientes(req), geradora, empresaDaSessao(req)))) {
+        return res.status(400).send('UC geradora inválida: escolha um cliente da sua empresa (e diferente deste).');
+      }
+      fields.uc_geradora_lead_id = geradora;
+    }
 
     const r = await supabaseService.updateClienteFields(id, fields);
     if (!r.ok) return res.status(500).send(`<h2>Erro: ${escapeHtmlSimple(r.error ?? '')}</h2>`);

@@ -6,6 +6,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { medirIa } from '../custos/ia-metering.js';
+import { daEmpresa } from './store.js';
 
 const MODELO_FORTE = 'claude-opus-4-7';
 const MODELO_RAPIDO = 'claude-haiku-4-5-20251001';
@@ -90,9 +91,13 @@ export class TriagemService {
   private emProcessamento = new Set<string>();
 
   // notificar: aviso no zap do Junior quando sair nota >= 8 (injetado pelo index).
+  // companyId: SÓ os candidatos desta empresa são triados. [29/09/2026] Sem isso o cron
+  // triava candidato de qualquer empresa (IA na conta da EcoSun) e mandava nome e
+  // telefone do candidato de um tenant no zap do dono da EcoSun (LGPD).
   constructor(
     private supabase: SupabaseClient,
     private anthropic: Anthropic,
+    private companyId: string,
     private notificar?: (texto: string) => Promise<void>,
   ) {}
 
@@ -101,9 +106,9 @@ export class TriagemService {
   // marca alertas_ia e não tenta de novo; falha TRANSITÓRIA (API/rede) fica
   // intacta pra próxima rodada.
   async triarPendentes(limite = 5): Promise<{ triados: number; falhas: number }> {
-    const { data, error } = await this.supabase
+    const { data, error } = await daEmpresa(this.supabase
       .from('rh_candidatos')
-      .select('id,nome,telefone,vaga_id,curriculo_path')
+      .select('id,nome,telefone,vaga_id,curriculo_path'), this.companyId)
       .is('nota_ia', null)
       .is('alertas_ia', null)
       .order('created_at', { ascending: true })
@@ -131,8 +136,7 @@ export class TriagemService {
     // 0) Reconfere no banco JÁ COM a trava na mão: a query de pendentes de uma
     // rodada concorrente pode ter um retrato velho (resolvida antes do update
     // da outra rodada) — sem isso o mesmo candidato seria triado e avisado 2x.
-    const { data: fresco } = await this.supabase
-      .from('rh_candidatos').select('nota_ia,alertas_ia').eq('id', c.id).maybeSingle();
+    const { data: fresco } = await daEmpresa(this.supabase.from('rh_candidatos').select('nota_ia,alertas_ia').eq('id', c.id), this.companyId).maybeSingle();
     if (!fresco || (fresco as { nota_ia: number | null }).nota_ia !== null
       || (fresco as { alertas_ia: string | null }).alertas_ia !== null) return true; // já triado por outra rodada
 
@@ -153,7 +157,7 @@ export class TriagemService {
     // 2) vaga (se tiver)
     let vaga: VagaTriagem | null = null;
     if (c.vaga_id) {
-      const { data: v } = await this.supabase.from('rh_vagas').select('titulo,requisitos,descricao').eq('id', c.vaga_id).maybeSingle();
+      const { data: v } = await daEmpresa(this.supabase.from('rh_vagas').select('titulo,requisitos,descricao').eq('id', c.vaga_id), this.companyId).maybeSingle();
       if (v) vaga = v as VagaTriagem;
     }
 
@@ -185,10 +189,10 @@ export class TriagemService {
     }
 
     // 4) grava
-    const { error } = await this.supabase
+    const { error } = await daEmpresa(this.supabase
       .from('rh_candidatos')
       .update({ nota_ia: r.nota, resumo_ia: r.resumo, alertas_ia: r.alertas || null })
-      .eq('id', c.id);
+      .eq('id', c.id), this.companyId);
     if (error) { console.warn(`[rh-triagem] update ${c.id}: ${error.message}`); return false; }
     console.log(`[rh-triagem] ${c.nome}: nota ${r.nota}`);
 
@@ -206,6 +210,6 @@ export class TriagemService {
   }
 
   private async marcarFalha(id: string, motivo: string): Promise<void> {
-    await this.supabase.from('rh_candidatos').update({ alertas_ia: motivo }).eq('id', id);
+    await daEmpresa(this.supabase.from('rh_candidatos').update({ alertas_ia: motivo }).eq('id', id), this.companyId);
   }
 }
