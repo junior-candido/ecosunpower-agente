@@ -895,7 +895,8 @@ const CSS_TV = `
 .cc-tv .cc-kstrip .cc-dl{font-size:14px}
 .cc-tv-grade{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:18px;align-items:start}
 .cc-tv-grade .cc-panel{margin:0}
-.cc-tv .cc-sevs{font-size:18px;gap:22px}
+.cc-tv .cc-sevs{gap:14px;flex-wrap:wrap}
+.cc-tv .cc-sev{font-size:20px;padding:10px 16px}
 .cc-tv-rodape{display:flex;align-items:center;gap:14px;font-size:13px;color:var(--cc-faint)}
 .cc-tv-rodape kbd{font-family:inherit;border:1px solid var(--cc-line-2);border-radius:6px;padding:1px 7px;color:var(--cc-muted)}
 .cc-tv-rodape a{color:var(--cc-muted);text-decoration:underline}
@@ -952,7 +953,9 @@ export function renderModoTvPage(user?: DashUser, d?: CommandCenterDados): strin
   if (c.usinas) {
     visoes.push({
       id: 'usinas', titulo: 'Usinas',
-      html: dd ? `<div class="cc-tv-grade">${geracao(dados)}${usinasAgora(dados)}</div>` : semDado,
+      // cada quadro num <div> próprio: as classes do Command Center (cc-a-gen/cc-a-map)
+      // posicionam na grade de lá e empilhariam os dois aqui.
+      html: dd ? `<div class="cc-tv-grade"><div>${geracao(dados)}</div><div>${usinasAgora(dados)}</div></div>` : semDado,
     });
   }
   if (c.leads) {
