@@ -142,8 +142,15 @@ export function rotaModoTv(supabase?: SupabaseClient, agoraFn: () => Date = () =
       return;
     }
     const agora = agoraFn();
+    // Usuário da TV: PERMISSOES_TV. Pessoa da casa abrindo a TV: nunca vê mais
+    // do que o papel dela já vê (interseção) — e nunca dinheiro.
+    const meu = permissoesDe(user);
+    const perm: PermissoesCC = ehPapelTv(user) ? PERMISSOES_TV : {
+      usinas: PERMISSOES_TV.usinas && meu.usinas, leads: PERMISSOES_TV.leads && meu.leads,
+      propostas: PERMISSOES_TV.propostas && meu.propostas, financeiro: false, marketing: false,
+    };
     const { dados, contratados } = supabase
-      ? await carregar(req, supabase, user, agora, PERMISSOES_TV)
+      ? await carregar(req, supabase, user, agora, perm)
       : { dados: null, contratados: undefined };
     res.type('text/html').send(renderModoTvPage(user, {
       agora, nomeUsuario: user.nome ?? null, dados, contratados, nomeAssistente: nomeDaAssistente(user.companyId),
@@ -161,8 +168,7 @@ export function travaPapelTv(req: Request, res: Response, next: () => void): voi
   if (!ehPapelTv(user)) { next(); return; }
   const caminho = String(req.path ?? '').toLowerCase().replace(/\/+$/, '') || '/';
   if ((req.method === 'GET' || req.method === 'HEAD') && caminho === '/tv') { next(); return; }
-  if (req.method === 'POST' && caminho === '/logout') { next(); return; }
-  if (caminho.startsWith('/estatico/')) { next(); return; }
+  // (o /logout e o /estatico são registrados ANTES da sessão — nem chegam aqui)
   const querJson = String(req.headers?.accept ?? '').includes('application/json');
   if ((req.method === 'GET' || req.method === 'HEAD') && !querJson) { res.redirect('/dashboard/tv'); return; }
   res.status(403).json({ ok: false, error: 'Este acesso é só do Modo TV.' });

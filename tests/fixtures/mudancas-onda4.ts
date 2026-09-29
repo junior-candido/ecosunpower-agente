@@ -145,16 +145,21 @@ const R26_TV_DE_VERDADE: MudancaContrato = {
   motivo: 'R26: Modo TV de verdade (3 visões girando, relógio, sem casca)',
   entra: {
     dataAttrs: ['data-visao'], ids: ['cc-tv-nome-visao', 'cc-tv-relogio'], links: [URL_CSS_COMMAND_CENTER],
+    // recarga a cada 5 min só se a própria página responder (confere antes de recarregar)
+    fetches: ['location.href'],
     seletores: ['.cc-shell', '.cc-tv-pontos button', '.cc-tv-visao'],
   },
 };
-/** Os quadros de usinas (os mesmos do Command Center) trazem o link "Abrir
- *  frota"/"Monitoramento" — que o menu do usuário da TV não tem. */
-const R26_LINK_DA_FROTA: MudancaContrato = { motivo: 'R26: quadros de usinas com o link da frota', entra: { links: ['/dashboard/monitoramento'] } };
+/** O usuário da TV não tem menu (a casca some na TV): um "sair" discreto no
+ *  rodapé — o MESMO POST /dashboard/logout do cartão do usuário no menu. */
+const R26_SAIR_DA_TV: MudancaContrato = {
+  motivo: 'R26: botão sair no rodapé da TV (usuário da TV não tem menu)',
+  entra: { formularios: [{ method: 'POST', action: '/dashboard/logout', enctype: '', campos: [] }] },
+};
 /** R26: trocas por caso de tests/fixtures/casos-tv.ts. */
 export const MUDANCAS_R26: Record<string, MudancaContrato[]> = {
   'tv-casa': [R26_TV_DE_VERDADE],
   'tv-sem-dado': [R26_TV_DE_VERDADE],
-  'tv-papel-tv': [R26_TV_DE_VERDADE, R26_LINK_DA_FROTA],
-  'tv-papel-tv-tenant': [R26_TV_DE_VERDADE, R26_LINK_DA_FROTA],
+  'tv-papel-tv': [R26_TV_DE_VERDADE, R26_SAIR_DA_TV],
+  'tv-papel-tv-tenant': [R26_TV_DE_VERDADE, R26_SAIR_DA_TV],
 };

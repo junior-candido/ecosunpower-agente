@@ -470,9 +470,10 @@ export function graficoCurva(curva: readonly PontoCurva[]): string {
   </div>`;
 }
 
-function geracao(d: CommandCenterDados): string {
+/** `tv`: a mesma peça na TV (R26) — sem link, sem dica de mouse, sem o "dia a dia". */
+function geracao(d: CommandCenterDados, tv = false): string {
   const f = d.dados?.frota ?? null;
-  const acoes = `<a class="cc-link" href="/dashboard/monitoramento">Monitoramento ${icone('right', 'xs')}</a>`;
+  const acoes = tv ? '' : `<a class="cc-link" href="/dashboard/monitoramento">Monitoramento ${icone('right', 'xs')}</a>`;
   if (!f) {
     return cartaoSecao({
       titulo: 'Geração do portfólio', dica: 'real × esperada · 30 dias', classe: 'cc-a-gen', acoesHtml: acoes,
@@ -498,7 +499,7 @@ function geracao(d: CommandCenterDados): string {
   const desvio = temEsperada ? Math.round(((real - esp) / esp) * 1000) / 10 : null;
   const desvioHtml = `<div><span class="cc-lbl-s">Desvio</span><div class="cc-big${desvio === null ? ' cc-faint' : desvio < -10 ? ' cc-txt-crit' : desvio < 0 ? ' cc-txt-warn' : ' cc-txt-ok'}">${desvio === null ? SEM_DADO : `${desvio > 0 ? '+' : ''}${escapeHtml(fmtNumero(desvio, 1))}%`}</div></div>`;
 
-  const legenda = `<div class="cc-chart-leg"><span><i class="cc-sw-real"></i>Real</span>${temEsperada ? '<span><i class="cc-sw-esp"></i>Esperada (média de sol da região)</span>' : ''}<span class="cc-sp"></span><span class="cc-faint cc-hide-m">Passe o mouse numa barra para ver o dia</span></div>`;
+  const legenda = `<div class="cc-chart-leg"><span><i class="cc-sw-real"></i>Real</span>${temEsperada ? '<span><i class="cc-sw-esp"></i>Esperada (média de sol da região)</span>' : ''}<span class="cc-sp"></span>${tv ? '' : '<span class="cc-faint cc-hide-m">Passe o mouse numa barra para ver o dia</span>'}</div>`;
   const nota = temEsperada
     ? (completos.length < comReal.length ? '<p class="cc-nota">A esperada só aparece nos dias em que todas as usinas que mandaram dado têm a potência cadastrada.</p>' : '')
     : '<p class="cc-nota">Só a geração real: falta a potência (kWp) de alguma usina no cadastro, então a esperada ficaria errada.</p>';
@@ -522,7 +523,7 @@ function geracao(d: CommandCenterDados): string {
       ${graficoCurva(f.curva)}
       ${legenda}
       ${nota}
-      <details class="cc-det"><summary>Ver os números dia a dia</summary>${tabelaDias}</details>`,
+      ${tv ? '' : `<details class="cc-det"><summary>Ver os números dia a dia</summary>${tabelaDias}</details>`}`,
   });
 }
 
@@ -537,9 +538,9 @@ const ROTULO_ESTADO: Record<EstadoUsina, string> = {
   normal: 'Normal', atencao: 'Atenção', critico: 'Crítico', sem_comunicacao: 'Sem comunicação', sem_monitoramento: 'Leitura manual',
 };
 
-function usinasAgora(d: CommandCenterDados): string {
+function usinasAgora(d: CommandCenterDados, tv = false): string {
   const f = d.dados?.frota ?? null;
-  const acoes = `<a class="cc-link" href="/dashboard/monitoramento">Abrir frota ${icone('right', 'xs')}</a>`;
+  const acoes = tv ? '' : `<a class="cc-link" href="/dashboard/monitoramento">Abrir frota ${icone('right', 'xs')}</a>`;
   if (!f) {
     return cartaoSecao({
       titulo: 'Usinas agora', dica: 'por estado e cidade', classe: 'cc-a-map', acoesHtml: acoes,
@@ -567,7 +568,7 @@ function usinasAgora(d: CommandCenterDados): string {
     acoesHtml: acoes,
     corpoHtml: `<div class="cc-mapwrap">
         <div><span class="cc-lbl-s">Por cidade · cor do pior estado</span><ul class="cc-cidades">${cidades}${resto}</ul>
-          <p class="cc-nota"><a class="cc-link" href="#cc-mapa-usinas">Ver no mapa ${icone('right', 'xs')}</a></p></div>
+          ${tv ? '' : `<p class="cc-nota"><a class="cc-link" href="#cc-mapa-usinas">Ver no mapa ${icone('right', 'xs')}</a></p>`}</div>
         <div class="cc-mleg">
           ${leg('normal')}${leg('atencao')}${leg('critico')}${leg('sem_comunicacao')}
           <hr>
@@ -899,7 +900,8 @@ const CSS_TV = `
 .cc-tv .cc-sev{font-size:20px;padding:10px 16px}
 .cc-tv-rodape{display:flex;align-items:center;gap:14px;font-size:13px;color:var(--cc-faint)}
 .cc-tv-rodape kbd{font-family:inherit;border:1px solid var(--cc-line-2);border-radius:6px;padding:1px 7px;color:var(--cc-muted)}
-.cc-tv-rodape a{color:var(--cc-muted);text-decoration:underline}
+.cc-tv-rodape a,.cc-tv-sair button{color:var(--cc-muted);text-decoration:underline;background:none;border:0;font:inherit;cursor:pointer;padding:0}
+.cc-tv-sair{margin:0}
 @media (max-width:900px){.cc-tv{padding:18px 16px}.cc-tv-grade{grid-template-columns:minmax(0,1fr)}.cc-tv .cc-kstrip .cc-val{font-size:30px}.cc-tv-relogio{font-size:26px}}
 `;
 
@@ -955,7 +957,7 @@ export function renderModoTvPage(user?: DashUser, d?: CommandCenterDados): strin
       id: 'usinas', titulo: 'Usinas',
       // cada quadro num <div> próprio: as classes do Command Center (cc-a-gen/cc-a-map)
       // posicionam na grade de lá e empilhariam os dois aqui.
-      html: dd ? `<div class="cc-tv-grade"><div>${geracao(dados)}</div><div>${usinasAgora(dados)}</div></div>` : semDado,
+      html: dd ? `<div class="cc-tv-grade"><div>${geracao(dados, true)}</div><div>${usinasAgora(dados, true)}</div></div>` : semDado,
     });
   }
   if (c.leads) {
@@ -974,7 +976,10 @@ export function renderModoTvPage(user?: DashUser, d?: CommandCenterDados): strin
     <div class="cc-tv-titulo">${escapeHtml(v.titulo)}</div>
     ${v.html}
   </section>`).join('')}
-  <footer class="cc-tv-rodape"><span>${escapeHtml(carimboAoVivo(dados.agora))}</span><span class="cc-sp"></span><span><kbd>T</kbd> tela cheia · <kbd>←</kbd> <kbd>→</kbd> trocar</span>${tvPuro ? '' : '<a href="/dashboard/command-center">sair do Modo TV</a>'}</footer>
+  <footer class="cc-tv-rodape"><span>${escapeHtml(carimboAoVivo(dados.agora))}</span><span class="cc-sp"></span><span><kbd>T</kbd> tela cheia · <kbd>←</kbd> <kbd>→</kbd> trocar</span>${tvPuro
+    // O usuário da TV não tem menu: um "sair" discreto (mesmo POST do menu).
+    ? '<form method="POST" action="/dashboard/logout" class="cc-tv-sair"><button type="submit">sair</button></form>'
+    : '<a href="/dashboard/command-center">sair do Modo TV</a>'}</footer>
 </div>`;
 
   const scripts = `<script>
@@ -993,9 +998,14 @@ export function renderModoTvPage(user?: DashUser, d?: CommandCenterDados): strin
   function girar() { clearInterval(timer); if (visoes.length > 1) timer = setInterval(function () { mostrar(atual + 1); }, GIRO); }
   pontos.forEach(function (p) { p.addEventListener('click', function () { mostrar(Number(p.dataset.visao) || 0); girar(); }); });
   document.addEventListener('keydown', function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
     if (e.key === 't' || e.key === 'T') {
-      if (document.fullscreenElement) { if (document.exitFullscreen) document.exitFullscreen(); }
-      else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(function () {});
+      var el = document.documentElement;
+      var cheio = document.fullscreenElement || document.webkitFullscreenElement;
+      var p = cheio
+        ? (document.exitFullscreen ? document.exitFullscreen() : document.webkitExitFullscreen && document.webkitExitFullscreen())
+        : (el.requestFullscreen ? el.requestFullscreen() : el.webkitRequestFullscreen && el.webkitRequestFullscreen());
+      if (p && p.catch) p.catch(function () {});
     } else if (e.key === 'ArrowRight') { mostrar(atual + 1); girar(); }
     else if (e.key === 'ArrowLeft') { mostrar(atual - 1); girar(); }
   });
@@ -1003,8 +1013,15 @@ export function renderModoTvPage(user?: DashUser, d?: CommandCenterDados): strin
   var fmt = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
   setInterval(function () { if (relogio) relogio.textContent = fmt.format(new Date()); }, 15000);
   girar();
-  // Número novo a cada 5 minutos (a TV fica ligada o dia inteiro).
-  setTimeout(function () { location.reload(); }, 300000);
+  // Número novo a cada 5 minutos (a TV fica ligada o dia inteiro). Só recarrega
+  // se a página responder (no meio de um Implantar a TV não fica presa numa
+  // tela de erro — tenta de novo em 1 minuto).
+  function recarregar() {
+    fetch(location.href, { credentials: 'same-origin', cache: 'no-store' })
+      .then(function (r) { if (r.ok && !r.redirected) location.reload(); else setTimeout(recarregar, 60000); })
+      .catch(function () { setTimeout(recarregar, 60000); });
+  }
+  setTimeout(recarregar, 300000);
 })();
 </script>`;
 

@@ -65,11 +65,13 @@ describe('travaPapelTv — o usuário da TV só abre o Modo TV (segurança)', ()
     travaPapelTv({ dashUser: u, method, path, headers: { accept } } as unknown as Request, res as unknown as Response, next);
     return { res, next };
   };
-  it('deixa: GET /tv, sair e os arquivos estáticos', () => {
+  it('deixa GET /tv; sair e os arquivos estáticos nem passam por ela (são registrados antes da sessão)', () => {
     expect(chamar(USER_TV_CASA, 'GET', '/tv').next).toHaveBeenCalled();
     expect(chamar(USER_TV_CASA, 'GET', '/tv/').next).toHaveBeenCalled();
-    expect(chamar(USER_TV_CASA, 'POST', '/logout').next).toHaveBeenCalled();
-    expect(chamar(USER_TV_CASA, 'GET', '/estatico/painel.abc1234567.css').next).toHaveBeenCalled();
+    expect(chamar(USER_TV_CASA, 'HEAD', '/TV').next).toHaveBeenCalled();
+    const sessao = router.indexOf('router.use(criarSessionAuth(supabase));');
+    expect(router.indexOf("router.post('/logout'")).toBeLessThan(sessao);
+    expect(router.indexOf("router.get('/estatico/:arquivo'")).toBeLessThan(sessao);
   });
   it('qualquer outra página GET volta pra TV; POST ou JSON → 403', () => {
     for (const p of ['/leads', '/command-center', '/home', '/financeiro', '/mapa-usinas.json', '/TV-falsa']) {
@@ -153,6 +155,29 @@ describe('tela do Modo TV', () => {
     expect(t).toContain('Solar Aurora Teste');
     expect(t).not.toMatch(/EcoSun|\bEva\b/);
     expect(t).not.toContain('sair do Modo TV');
+    expect(t).toContain('<form method="POST" action="/dashboard/logout" class="cc-tv-sair">');
     expect(miolo(h)).toContain('sair do Modo TV');
+  });
+  it('na TV os quadros vêm sem link, sem dica de mouse e sem o "dia a dia"', () => {
+    const m = semScripts(miolo(h));
+    expect(m).not.toContain('href="/dashboard/monitoramento"');
+    expect(m).not.toContain('Passe o mouse');
+    expect(m).not.toContain('Ver os números dia a dia');
+  });
+  it('recarrega só se a página responder; T ignora Ctrl/Cmd', () => {
+    expect(h).toContain('if (r.ok && !r.redirected) location.reload(); else setTimeout(recarregar, 60000);');
+    expect(h).toContain('if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;');
+  });
+});
+
+describe('/tv aberto por alguém da casa: nunca mais do que o papel dele vê', () => {
+  it('papel da casa sem leads nem usinas → nada de leads/usinas é lido', async () => {
+    const db = dbFalso();
+    const res = resFalso();
+    const tecnico = { ...USER_CASA, isAdmin: false, roleNome: 'Campo', permissoes: { servicos: ['visualizar' as const] } };
+    await rotaModoTv(db, () => AGORA_TV)({ dashUser: tecnico } as unknown as Request, res as unknown as Response);
+    expect(res.redirect).not.toHaveBeenCalled();
+    const tabelas = db.chamadas.map((c) => c.tabela);
+    for (const t of ['leads', 'propostas_publicas', 'sistemas_clientes', 'financeiro_recebimentos']) expect(tabelas, t).not.toContain(t);
   });
 });
