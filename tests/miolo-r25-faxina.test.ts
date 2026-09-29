@@ -1,12 +1,12 @@
 // Renovação do miolo — R25: faxina.
-//  - /cockpit redireciona pro Command Center (o antigo só com ?antigo=1, só casa);
+//  - /cockpit redireciona pro Command Center (faxina pós-renovação: o Cockpit
+//    antigo foi aposentado de vez — nem ?antigo=1 abre mais a tela velha);
 //  - nenhuma tela renovada manda <style> no corpo (sobe pro <head>: sem piscada);
 //  - teto das telas que AINDA carregam o Tailwind do CDN (a lista só pode diminuir);
-//  - o CSS legado da casca (.ecosun-header, .accent-*) NÃO saiu: um teste antigo
-//    exige (telas-leves) e o plano só permite trocar asserção no R5/R23 — fica
-//    anotado pro Junior decidir.
+//  - o CSS legado da casca (.ecosun-header, .accent-*) saiu na faxina pós-renovação
+//    (nenhuma tela usa mais).
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'fs';
+import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join } from 'path';
 import { renderLayout } from '../src/modules/dashboard/views.js';
 import { CSS_PAINEL } from '../src/modules/dashboard/ui/estatico.js';
@@ -17,16 +17,13 @@ import { USER_CASA, USER_TENANT } from './fixtures/miolo-leads.js';
 const DIR = join(process.cwd(), 'src', 'modules', 'dashboard');
 const router = readFileSync(join(DIR, 'router.ts'), 'utf-8');
 
-describe('/cockpit redireciona (o antigo só com ?antigo=1)', () => {
-  it('GET /cockpit sem ?antigo=1 → entrada (Command Center); a trava da casa continua antes', () => {
-    const i = router.indexOf("router.get('/cockpit', async");
-    const trecho = router.slice(i, i + 600);
-    expect(trecho).toContain("if (req.query.antigo !== '1') { res.redirect(302, paginaInicialDe((req as AuthedRequest).dashUser)); return; }");
-    expect(router.indexOf("router.use('/cockpit', travaCockpitDaCasa)")).toBeLessThan(i);
-  });
-  it('/cockpit/data e o refresh dos insights ficam (a síntese da Eva ainda mora lá)', () => {
-    expect(router).toContain("router.get('/cockpit/data'");
-    expect(router).toContain("router.post('/cockpit/insights/refresh'");
+describe('/cockpit redireciona (Cockpit antigo aposentado)', () => {
+  it('GET /cockpit (com ou sem ?antigo=1) → entrada; a tela velha e os arquivos dela saíram', () => {
+    expect(router).toContain("router.get('/cockpit', rotaCockpitAposentado);");
+    expect(router).not.toContain('req.query.antigo');
+    for (const arq of ['cockpit-views.ts', 'cockpit-queries.ts']) {
+      expect(existsSync(join(DIR, arq)), arq).toBe(false);
+    }
   });
 });
 
@@ -59,9 +56,9 @@ describe('sem <style> no corpo das telas renovadas (sobe pro <head>)', () => {
 
 /** Telas que AINDA carregam o Tailwind do CDN (miolo antigo). Esta lista só
  *  pode DIMINUIR: tela nova nasce no padrão cc- (tailwind:false, TELAS_RENOVADAS).
- *  - Cockpit antigo (aposentado — só abre com ?antigo=1);
- *  - Propostas (lista e formulário: views.ts#renderPropostasPage e proposta-form-view.ts). */
-const AINDA_COM_TAILWIND = ['cockpit-views.ts', 'proposta-form-view.ts']; // R20: fiscal-views saiu
+ *  - Propostas (lista e formulário: views.ts#renderPropostasPage e proposta-form-view.ts).
+ *  (R20: fiscal-views saiu; faxina pós-renovação: cockpit-views saiu com o Cockpit antigo.) */
+const AINDA_COM_TAILWIND = ['proposta-form-view.ts'];
 
 describe('teto das telas com Tailwind do CDN', () => {
   it('só as da lista (e nenhuma renovada) ainda carregam o Tailwind', () => {
@@ -82,7 +79,9 @@ describe('casca', () => {
   it('o <body> continua com ecosun-body/ecosun-body-dark (cc-casca e monitoramento-render exigem)', () => {
     expect(renderLayout({ active: 'home', title: 'X', user: USER_CASA, body: '', dark: true })).toMatch(/<body class="[^"]*ecosun-body/);
   });
-  it('CSS legado da casca continua (decisão pendente do Junior — teste antigo exige)', () => {
-    expect(CSS_PAINEL).toContain('.ecosun-header');
+  it('CSS legado da casca saiu (nenhuma tela usa .ecosun-header/.ecosun-ativo/.ecosun-marca-texto/.accent-*)', () => {
+    for (const c of ['.ecosun-header', '.ecosun-ativo', '.ecosun-marca-texto', '.accent-']) expect(CSS_PAINEL).not.toContain(c);
+    // a regra de base do <details> continua (várias telas renovadas usam <summary>)
+    expect(CSS_PAINEL).toContain('details>summary{list-style:none}');
   });
 });

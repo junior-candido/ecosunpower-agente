@@ -3,6 +3,8 @@
 // Checagem central via can(). is_admin libera tudo; "administrar" numa área
 // concede todos os níveis daquela área.
 
+import type { Request, Response, NextFunction } from 'express';
+
 export const AREAS = [
   'leads', 'propostas', 'usinas', 'financeiro',
   'marketing', 'relatorios', 'usuarios', 'configuracoes', 'rh',
@@ -59,6 +61,18 @@ export function can(user: DashUser | null | undefined, area: Area, nivel: Nivel)
   const perms = user.permissoes?.[area] ?? [];
   if (perms.includes('administrar')) return true;
   return perms.includes(nivel);
+}
+
+/**
+ * Middleware-fábrica da fechadura por área/nível (o `exigir(...)` do router):
+ * aplicado ANTES do handler da rota. Sem permissão → 403. Lê o req.dashUser
+ * carregado pelo middleware de sessão.
+ */
+export function exigirPermissao(area: Area, nivel: Nivel) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (can((req as Request & { dashUser?: DashUser }).dashUser, area, nivel)) { next(); return; }
+    res.status(403).send('<h2>Sem permissão</h2><p>Fale com o administrador.</p>');
+  };
 }
 
 // [Gate B5 provisório — degustação Sabion 27/07] Disparo de MENSAGEM (Eva /

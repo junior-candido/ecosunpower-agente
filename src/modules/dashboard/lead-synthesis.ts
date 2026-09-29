@@ -2,6 +2,11 @@
 // Gera sintese executiva de 1 frase por lead pra Junior bater o olho e
 // decidir em 30s. Usa Claude Haiku (modelo barato e rapido), cacheia em
 // memoria 6h pra nao re-disparar Claude a cada refresh do cockpit.
+//
+// SEM TELA desde a faxina pós-renovação (29/09/2026): o Cockpit antigo, único
+// que chamava isto, foi aposentado. Fica guardado pro Hero da Eva no Command
+// Center (fase H, design D3). ATENÇÃO ao religar: as consultas daqui NÃO
+// filtram company_id (eram da casa) — prender à empresa da sessão antes.
 
 import Anthropic from '@anthropic-ai/sdk';
 import type { SupabaseClient } from '@supabase/supabase-js';

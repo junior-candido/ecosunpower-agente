@@ -113,7 +113,7 @@ import { renderContratosPage, type ContratoCliente } from './contratos-views.js'
 import { renderContratoFormPage, renderDocBloqueadoPage } from './contrato-form-views.js';
 import type { SugestaoIa } from '../closing/revisar-contrato.js';
 import { CLIENTE_STATUSES } from './clientes-queries.js';
-import { can, podeDispararMensagens, usinaPertenceAoOperador, escopoSyncTodos, ehPapelTv } from './permissions.js';
+import { can, exigirPermissao, podeDispararMensagens, usinaPertenceAoOperador, escopoSyncTodos, ehPapelTv } from './permissions.js';
 import type { AuthedRequest } from './auth.js';
 import { pastaDaEmpresa, listarPastasDaEmpresa } from './pasta-da-empresa.js';
 import { EMPRESA_CASA as EMPRESA_PADRAO_PASTA } from './canal-envio.js';
@@ -139,7 +139,7 @@ import type { ManutencaoTipo } from './manutencao-motor.js';
 import { criarOS, abrirOSDeManutencao, getOS, salvarOS, addFotoOS, listFotosOS, fotoCountsPorItem, concluirOS } from './os-queries.js';
 import { renderOSPage, renderOSLaudoHtml } from './os-views.js';
 import { hidratarChecklist, resumoOS, type OSTipo } from './os-checklist.js';
-import { rotaCommandCenter, rotaCentralAtencao, rotaModoTv, travaCockpitDaCasa, travaVisaoGeralDaCasa, travaPapelTv, nomeDaAssistente } from './command-center-rotas.js';
+import { rotaCommandCenter, rotaCentralAtencao, rotaModoTv, rotaCockpitAposentado, travaVisaoGeralDaCasa, travaPapelTv, nomeDaAssistente } from './command-center-rotas.js';
 import { paginaInicialDe, destinoDepoisDoLogin } from './entrada.js';
 import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
 import { rotaMapaJson, rotaLocalizarPagina, rotaLocalizarUma, rotaSalvarPosicao } from './mapa-usinas-rotas.js';
@@ -303,13 +303,9 @@ export function createDashboardRouter(
   }));
 
   // Middleware-fábrica de gating de permissão por área/nível. Aplicado ANTES
-  // dos handlers das rotas por área. Sem permissão → 403. Compatível com o
-  // req.dashUser carregado pelo middleware de sessão (Task 7/12).
+  // dos handlers das rotas por área. Sem permissão → 403 (permissions.ts).
   function exigir(area: import('./permissions.js').Area, nivel: import('./permissions.js').Nivel) {
-    return (req: AuthedRequest, res: Response, next: import('express').NextFunction) => {
-      if (can(req.dashUser, area, nivel)) { next(); return; }
-      res.status(403).send('<h2>Sem permissão</h2><p>Fale com o administrador.</p>');
-    };
+    return exigirPermissao(area, nivel);
   }
 
   // R17 (segurança): o que é SÓ da casa (blog do site da EcoSun, jornada de
@@ -2290,128 +2286,10 @@ export function createDashboardRouter(
   router.post('/monitoramento/localizar/:id', rotaLocalizarUma(supabase));
   router.post('/monitoramento/:id/posicao', rotaSalvarPosicao(supabase));
 
-  // Cockpit ANTIGO (saiu do menu no R5): só da casa. A consulta dele não filtra
-  // empresa e o SYNC AGORA sincroniza as usinas de todas — tenant no GET vai
-  // pro Command Center dele; POST/JSON → 403 (command-center-rotas.ts).
-  router.use('/cockpit', travaCockpitDaCasa);
-
-  // Cockpit: 1 tela dark neon com KPIs + gauges + funil + atividade + top leads.
-  // Auto-refresh 30s (gauges) + 5min (page completa). ECharts via CDN.
-  router.get('/cockpit', async (req: Request, res: Response) => {
-    // R25 (faxina): /cockpit redireciona pra entrada (Command Center). O Cockpit
-    // antigo continua abrindo SÓ com ?antigo=1 (link discreto no rodapé do
-    // Command Center, só casa) até o Junior decidir aposentar de vez.
-    if (req.query.antigo !== '1') { res.redirect(302, paginaInicialDe((req as AuthedRequest).dashUser)); return; }
-    try {
-      const { getCockpitData } = await import('./cockpit-queries.js');
-      const { renderCockpitPage } = await import('./cockpit-views.js');
-      // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
-      const db = bancoDoOperador(req as AuthedRequest, supabase);
-      const data = await getCockpitData(db);
-      // IA: sintese leads aguardando + insights gerais da plataforma.
-      let leadsAguardando: Awaited<ReturnType<typeof import('./lead-synthesis.js').getLeadsAguardandoAcao>> = [];
-      let platformInsights: Awaited<ReturnType<typeof import('./lead-synthesis.js').getPlatformInsights>> = [];
-      if (options.anthropicApiKey) {
-        try {
-          const { default: Anthropic } = await import('@anthropic-ai/sdk');
-          const { getLeadsAguardandoAcao, getPlatformInsights } = await import('./lead-synthesis.js');
-          const anthropic = new Anthropic({ apiKey: options.anthropicApiKey });
-          [leadsAguardando, platformInsights] = await Promise.all([
-            getLeadsAguardandoAcao(db, anthropic, 6),
-            getPlatformInsights(db, anthropic),
-          ]);
-        } catch (err) {
-          console.warn('[cockpit] sintese IA falhou (segue sem):', (err as Error).message);
-        }
-      }
-      res.type('text/html').send(renderCockpitPage(data, leadsAguardando, platformInsights, (req as AuthedRequest).dashUser));
-    } catch (err) {
-      console.error('[dashboard/cockpit]', err);
-      res.status(500).type('text/html').send(
-        `<h2 style="color:#f43f5e;background:#020617;font-family:monospace;padding:20px;">Erro Cockpit</h2>` +
-        `<pre style="color:#cbd5e1;background:#020617;font-family:monospace;padding:20px;">${escapeHtmlSimple((err as Error).message)}</pre>`
-      );
-    }
-  });
-
-  // Forca recalculo dos insights IA do card "Eva olhando" (invalida cache).
-  // Caller faz POST /cockpit/insights/refresh, depois GET /cockpit pra ver
-  // os novos insights. Throttle natural pelo proprio TTL de 15min.
-  router.post('/cockpit/insights/refresh', async (_req: Request, res: Response) => {
-    try {
-      const { invalidateInsightsCache } = await import('./lead-synthesis.js');
-      invalidateInsightsCache();
-      res.json({ ok: true, message: 'Cache de insights invalidado. Recarregue a página.' });
-    } catch (err) {
-      console.error('[dashboard/cockpit/insights/refresh]', err);
-      res.status(500).json({ ok: false, error: (err as Error).message });
-    }
-  });
-
-  // Endpoint JSON pro auto-refresh do cockpit (so dados, sem HTML).
-  router.get('/cockpit/data', async (req: Request, res: Response) => {
-    try {
-      const { getCockpitData } = await import('./cockpit-queries.js');
-      // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
-      const db = bancoDoOperador(req as AuthedRequest, supabase);
-      const data = await getCockpitData(db);
-      res.json(data);
-    } catch (err) {
-      console.error('[dashboard/cockpit/data]', err);
-      res.status(500).json({ error: (err as Error).message });
-    }
-  });
-
-  // SYNC AGORA: forca refresh de tudo que poderia estar defasado (Meta Ads
-  // insights, monitoring SolarEdge, descoberta de plantas novas). Botao no
-  // cockpit chama isso. Throttle 1x por minuto via app_flags lock.
-  router.post('/cockpit/sync', async (_req: Request, res: Response) => {
-    try {
-      const lockKey = 'cockpit_sync_lock';
-      const lockUntil = new Date(Date.now() + 60_000).toISOString();
-      const { data: existing } = await supabase
-        .from('app_flags').select('value').eq('key', lockKey).maybeSingle();
-      if (existing?.value && existing.value > new Date().toISOString()) {
-        return res.status(429).json({ ok: false, error: 'aguarde, sync recente em andamento' });
-      }
-      await supabase.from('app_flags').upsert({ key: lockKey, value: lockUntil }, { onConflict: 'key' });
-
-      const tasks: Array<Promise<unknown>> = [];
-      const summary: Record<string, string> = {};
-
-      // Meta Ads insights (so se temos token)
-      if (options.metaWabaAccessToken) {
-        tasks.push((async () => {
-          try {
-            const { syncCampaignStatuses, collectInsights } = await import('../marketing/insights-collector.js');
-            const sync = await syncCampaignStatuses(supabase, options.metaWabaAccessToken!);
-            const ins = await collectInsights(supabase, options.metaWabaAccessToken!);
-            summary.marketing = `${sync.synced} sync (${sync.changed} mudaram), ${ins.ok} insights ok / ${ins.failed} falha`;
-          } catch (err) {
-            summary.marketing = `erro: ${(err as Error).message.slice(0, 80)}`;
-          }
-        })());
-      } else {
-        summary.marketing = 'sem token Meta';
-      }
-
-      // Monitoring SolarEdge sync
-      tasks.push((async () => {
-        try {
-          const r = await monitoringService.syncAll();
-          summary.monitoring = `${r.sucessos}/${r.totalSistemas} ok, ${r.falhas} falhas`;
-        } catch (err) {
-          summary.monitoring = `erro: ${(err as Error).message.slice(0, 80)}`;
-        }
-      })());
-
-      await Promise.all(tasks);
-      res.json({ ok: true, summary, syncedAt: new Date().toISOString() });
-    } catch (err) {
-      console.error('[dashboard/cockpit/sync]', err);
-      res.status(500).json({ ok: false, error: (err as Error).message });
-    }
-  });
+  // Cockpit ANTIGO — aposentado (faxina pós-renovação): /cockpit só redireciona
+  // pra entrada (favorito velho continua abrindo). Ver rotaCockpitAposentado.
+  // O sync de usinas mora no Monitoramento (sync-todos).
+  router.get('/cockpit', rotaCockpitAposentado);
 
   // Home: KPIs + grafico mensal. ?mes=YYYY-MM filtra os cards por um mês passado.
   // R24 (segurança): só da casa — a consulta não filtra empresa; tenant → Command Center.
@@ -2493,7 +2371,9 @@ export function createDashboardRouter(
   // Comparador de Lojas: lê a catalogo_loja (tabela viva) da company do operador,
   // compara o mesmo produto entre Belenus/Sol Fácil/Fortlev e mostra melhor preço +
   // oportunidades de desconto. Multi-tenant (usa companyId do operador).
-  router.get('/lojas', async (req: AuthedRequest, res: Response) => {
+  // Faxina pós-renovação: exige Propostas › visualizar (igual Fechou! e Contratos,
+  // os vizinhos sem área no menu) — antes qualquer papel logado abria os custos.
+  router.get('/lojas', exigir('propostas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
     try {
       const { CatalogoLojaService } = await import('../vendas/lojas/catalogo-loja.js');
       const { montarKitPorLoja, melhorKitCompleto, kwpDoKit } = await import('../vendas/lojas/kit.js');

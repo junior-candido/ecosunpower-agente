@@ -138,7 +138,7 @@ svg.cc-i{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;s
 svg.cc-i.cc-i-sm{width:15px;height:15px}
 svg.cc-i.cc-i-xs{width:13px;height:13px}
 .cc-muted{color:var(--cc-muted)} .cc-faint{color:var(--cc-faint)}
-.cc-gold{color:var(--cc-gold)} .cc-okc{color:var(--cc-ok)} .cc-critc{color:var(--cc-crit)} .cc-warnc{color:var(--cc-warn)} .cc-infoc{color:var(--cc-info)}
+.cc-gold{color:var(--cc-gold)} .cc-okc{color:var(--cc-ok)} .cc-critc{color:var(--cc-crit)} .cc-warnc{color:var(--cc-warn)}
 .cc-row{display:flex;align-items:center;gap:10px}
 .cc-row-wrap{flex-wrap:wrap;gap:14px}
 .cc-sp{flex:1}
@@ -158,7 +158,6 @@ svg.cc-i.cc-i-xs{width:13px;height:13px}
 .cc-sel{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 12px;border-radius:10px;background:var(--cc-surface);border:1px solid var(--cc-line-2);font-size:13px;color:var(--cc-text-2);white-space:nowrap}
 .cc-sel em{font-style:normal;color:var(--cc-faint);font-size:12px}
 .cc-sel svg{color:var(--cc-faint)}
-.cc-selo-fase{white-space:nowrap;display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--cc-gold-2);border:1px dashed rgba(251,191,36,.55);padding:3px 9px;border-radius:99px;background:rgba(251,191,36,.06)}
 
 /* botões */
 .cc-btn{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:10px;font-weight:600;font-size:13px;border:1px solid var(--cc-line-2);background:var(--cc-surface-2);color:var(--cc-text);white-space:nowrap;cursor:pointer}

@@ -51,11 +51,18 @@ const R25_LINK_ANTIGO: MudancaContrato = {
   sai: { links: ['/dashboard/cockpit'] },
   entra: { links: ['/dashboard/cockpit?antigo=1'] },
 };
+/** Faxina pós-renovação (29/09/2026): o Cockpit antigo foi aposentado de vez
+ *  — o link "Cockpit antigo" sai do rodapé (/cockpit, com ou sem ?antigo=1,
+ *  só redireciona pra entrada). */
+const FAXINA_SAI_COCKPIT_ANTIGO: MudancaContrato = {
+  motivo: 'Faxina: Cockpit antigo aposentado; o link do rodapé sai',
+  sai: { links: ['/dashboard/cockpit?antigo=1'] },
+};
 /** R5: trocas por caso de tests/fixtures/casos-command-center.ts. */
 export const MUDANCAS_R5: Record<string, MudancaContrato[]> = {
-  // (+ R25: o link do rodapé ganha ?antigo=1 — R25_COCKPIT_ANTIGO, no fim do arquivo)
-  'cc-casa': [R5_CSS_CC_NO_HEAD, R5_COCKPIT_FORA_DO_MENU, R5_COCKPIT_ANTIGO_NO_RODAPE, R25_LINK_ANTIGO],
-  'cc-casa-sem-dado': [R5_CSS_CC_NO_HEAD, R5_COCKPIT_FORA_DO_MENU, R5_COCKPIT_ANTIGO_NO_RODAPE, R25_LINK_ANTIGO],
+  // (+ R25: o link do rodapé ganha ?antigo=1; + faxina: o link sai de vez)
+  'cc-casa': [R5_CSS_CC_NO_HEAD, R5_COCKPIT_FORA_DO_MENU, R5_COCKPIT_ANTIGO_NO_RODAPE, R25_LINK_ANTIGO, FAXINA_SAI_COCKPIT_ANTIGO],
+  'cc-casa-sem-dado': [R5_CSS_CC_NO_HEAD, R5_COCKPIT_FORA_DO_MENU, R5_COCKPIT_ANTIGO_NO_RODAPE, R25_LINK_ANTIGO, FAXINA_SAI_COCKPIT_ANTIGO],
   'cc-tenant': [R5_CSS_CC_NO_HEAD],
   'atencao-casa': [R5_CSS_CC_NO_HEAD, R5_COCKPIT_FORA_DO_MENU],
   'atencao-tenant': [R5_CSS_CC_NO_HEAD],

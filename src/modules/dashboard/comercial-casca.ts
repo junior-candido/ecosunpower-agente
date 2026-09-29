@@ -88,7 +88,6 @@ const CSS_COMERCIAL = `
 .cc-cf-calc{border:1px dashed var(--cc-line-2);border-radius:12px;padding:14px}
 .cc-cf-salvar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:16px 0}
 .cc-cf-salvar span{font-size:12.5px;color:var(--cc-muted);flex:1 1 280px}
-.cc-cf-achado{margin-bottom:8px}
 .cc-cf-orfa{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-top:1px solid var(--cc-line)}
 .cc-cf-orfa:first-child{border-top:0}
 .cc-cf-bloco{margin-bottom:14px}
