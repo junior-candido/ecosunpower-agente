@@ -47,13 +47,21 @@ describe('empresa na medição de IA', () => {
     expect(rows[0].company_id).toBe(OUTRA);
   });
 
-  it('contexto do custo (painel) vence o canal; explícito vence tudo', async () => {
+  it('canal (mais específico) vence o login do painel; explícito vence tudo', async () => {
+    // Admin da casa logado disparando algo DENTRO do canal de um tenant: o
+    // custo é do tenant. O login é o contexto mais externo — só vale sozinho.
     const { client, rows } = fake();
-    await comCanal({ companyId: OUTRA }, () => comEmpresaDoCusto(CONQUISTA, async () => {
+    await comEmpresaDoCusto(CASA, () => comCanal({ companyId: CONQUISTA }, async () => {
       await registrarUsoIa(client, { modelo: 'x', origem: 'admin:elo', usage: U });
-      await registrarUsoIa(client, { modelo: 'x', origem: 'admin:elo', usage: U, companyId: CASA });
+      await registrarUsoIa(client, { modelo: 'x', origem: 'admin:elo', usage: U, companyId: OUTRA });
     }));
-    expect(rows.map((r) => r.company_id)).toEqual([CONQUISTA, CASA]);
+    await comEmpresaDoCusto(CONQUISTA, () => registrarUsoIa(client, { modelo: 'x', origem: 'admin:elo', usage: U }));
+    expect(rows.map((r) => r.company_id)).toEqual([CONQUISTA, OUTRA, CONQUISTA]);
+  });
+
+  it('medirIa nunca lança (nem com usage/modelo estranhos)', async () => {
+    const { medirIa } = await import('../src/modules/custos/ia-metering.js');
+    expect(() => medirIa({ modelo: undefined as never, origem: 'conversa:lead', usage: null })).not.toThrow();
   });
 
   it('o contexto sobrevive ao await (fire-and-forget dentro do job)', async () => {

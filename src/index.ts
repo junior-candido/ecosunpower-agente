@@ -9081,7 +9081,8 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
       });
-      medirIa({ modelo: aiRes.model ?? 'claude-haiku-4-5-20251001', origem: 'reativacao:reengajamento', usage: aiRes.usage });
+      // Rota por token (fora de contexto), reengajamento manual da casa.
+      medirIa({ modelo: aiRes.model ?? 'claude-haiku-4-5-20251001', origem: 'reativacao:reengajamento', usage: aiRes.usage, companyId: ECOSUN_COMPANY_ID });
       const raw = aiRes.content
         .filter((b): b is Anthropic.TextBlock => b.type === 'text')
         .map((b) => b.text)

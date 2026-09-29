@@ -22,7 +22,7 @@ describe('janelaMeses (horário de Brasília)', () => {
     const j = janelaMeses(AGORA);
     expect(j.inicioAtual).toBe('2026-09-01T03:00:00.000Z');
     expect(j.inicioAnterior).toBe('2026-08-01T03:00:00.000Z');
-    expect(j.diasDecorridos).toBe(28);
+    expect(j.diasDecorridos).toBeCloseTo(27.625, 3); // 27 dias + 15h
     expect(j.diasNoMes).toBe(30);
   });
   it('virada de ano', () => {
@@ -69,8 +69,8 @@ describe('montarPainelCustoIa', () => {
     expect(c.mensalidadeCents).toBe(29700);
     expect(c.margemCents).toBe(17700);
     expect(c.pctDaMensalidade).toBeCloseTo(40.4, 1);
-    // projeção: 12000 / 28 dias × 30 = 12857 → 43,3% → passa dos 40%
-    expect(c.projecaoCents).toBe(12857);
+    // projeção: 12000 / 27,625 dias × 30 = 13032 → 43,9% → passa dos 40%
+    expect(c.projecaoCents).toBe(13032);
     expect(c.alerta).toBe(true);
     expect(c.leadsAtendidos).toBe(2);
     expect(c.custoPorLeadCents).toBe(6000);
@@ -125,5 +125,13 @@ describe('montarPainelCustoIa', () => {
       empresas: EMPRESAS, agora: AGORA, mensalidades: new Map(), atendidos: [],
     });
     expect(q.porEmpresa.find((e) => e.companyId.startsWith('9c9c'))!.nome).toContain('9c9c9c9c');
+  });
+});
+
+describe('projeção no começo do mês', () => {
+  it('dia 1 às 01h BRT: não multiplica 1 hora por 30 (piso de 1 dia)', () => {
+    const agora = new Date('2026-10-01T04:00:00.000Z');
+    const j = janelaMeses(agora);
+    expect(j.diasDecorridos).toBe(1);
   });
 });

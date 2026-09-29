@@ -14,8 +14,9 @@ async function paginar<T>(montar: (de: number, ate: number) => PromiseLike<{ dat
     if (error) throw new Error(String((error as { message?: string }).message ?? error));
     const lote = (data ?? []) as T[];
     out.push(...lote);
-    if (lote.length < PAGINA) break;
+    if (lote.length < PAGINA) return out;
   }
+  console.warn(`[custo-ia] teto de ${MAX_PAGINAS * PAGINA} linhas atingido — a tela pode mostrar menos que o real`);
   return out;
 }
 
@@ -38,7 +39,7 @@ export async function carregarDadosCustoIa(client: any, agora: Date): Promise<Da
   const [linhas, empresas, assinaturas, atendidos] = await Promise.all([
     seguro('custos_ia_uso', () => paginar<LinhaUsoIa>((de, ate) => client.from('custos_ia_uso')
       .select('created_at, company_id, origem, modelo, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, custo_cents')
-      .gte('created_at', inicioAnterior).order('created_at', { ascending: true }).range(de, ate)), [] as LinhaUsoIa[]),
+      .gte('created_at', inicioAnterior).order('created_at', { ascending: true }).order('id', { ascending: true }).range(de, ate)), [] as LinhaUsoIa[]),
     seguro('companies', async () => {
       const { data, error } = await client.from('companies').select('id, nome');
       if (error) throw new Error(error.message);
@@ -53,7 +54,7 @@ export async function carregarDadosCustoIa(client: any, agora: Date): Promise<Da
     seguro('eventos_elo', () => paginar<{ company_id: string | null; lead_id: string | null; created_at: string }>((de, ate) => client.from('eventos_elo')
       .select('company_id, lead_id, created_at')
       .eq('tipo', 'atendimento:eva_respondeu').gte('created_at', inicioAnterior)
-      .order('created_at', { ascending: true }).range(de, ate)), []),
+      .order('created_at', { ascending: true }).order('id', { ascending: true }).range(de, ate)), []),
   ]);
 
   // Mensalidade do tenant = soma das assinaturas ATIVAS dele.

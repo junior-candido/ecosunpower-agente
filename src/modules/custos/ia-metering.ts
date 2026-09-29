@@ -111,9 +111,10 @@ export function custoCentavosExato(modelo: string, usage: IaUsage): number {
 // da coluna (migration 077) jogava TUDO na casa — o gasto da Clara (Conquista
 // Solar) aparecia como da Eva. Ordem de quem responde:
 //   1. companyId explícito na chamada;
-//   2. contexto do custo (o painel liga por requisição, com a empresa do login);
-//   3. canal da mensagem (a fila roda cada job dentro de comCanal({companyId}));
-//   4. empresa em contexto (comEmpresaDe).
+//   2. canal da mensagem (a fila roda cada job dentro de comCanal({companyId}));
+//   3. empresa em contexto (comEmpresaDe);
+//   4. login do painel (o contexto mais EXTERNO: só vale quando nada mais
+//      específico diz — admin da casa agindo no canal de um tenant = tenant).
 // Nada disso → grava na casa (default) mas MARCA a origem com '#sem-empresa'
 // e avisa no log: é assim que a gente acha os buracos que faltam.
 // ---------------------------------------------------------------------------
@@ -131,14 +132,14 @@ export function comEmpresaDoCusto<T>(companyId: string | null | undefined, fn: (
 
 /** Empresa do custo pelo contexto (sem o explícito). null = ninguém disse. */
 export function empresaDoCustoNoContexto(): string | null {
-  const doPainel = alsCusto.getStore();
-  if (valido(doPainel)) return doPainel;
   const doCanal = canalAtual()?.companyId;
   if (valido(doCanal)) return doCanal.toLowerCase();
   if (temContextoDeEmpresa()) {
     const id = empresa().companyId;
     if (valido(id)) return id.toLowerCase();
   }
+  const doPainel = alsCusto.getStore();
+  if (valido(doPainel)) return doPainel;
   return null;
 }
 
@@ -289,7 +290,12 @@ export function getCustosClient(): SupabaseClient | null {
  * registrarUsoIa sem esperar (fire-and-forget). Nunca lança, nunca bloqueia.
  */
 export function medirIa(args: { modelo: string; origem: OrigemIa | `leitor-ia:${string}`; usage: any; companyId?: string | null }): void {
-  // Empresa resolvida AQUI (síncrono, no contexto de quem chamou).
-  const companyId = valido(args.companyId) ? args.companyId : empresaDoCustoNoContexto();
-  void registrarUsoIa(getCustosClient(), { ...args, companyId });
+  // Roda no caminho da resposta da Eva: medir NUNCA pode lançar.
+  try {
+    // Empresa resolvida AQUI (síncrono, no contexto de quem chamou).
+    const companyId = valido(args.companyId) ? args.companyId : empresaDoCustoNoContexto();
+    void registrarUsoIa(getCustosClient(), { ...args, companyId });
+  } catch (err) {
+    console.warn('[custos] medirIa falhou (best-effort):', (err as Error)?.message);
+  }
 }

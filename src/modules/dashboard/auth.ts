@@ -103,3 +103,25 @@ export function setSessionCookie(res: Response, userId: string, manter = true): 
 export function clearSessionCookie(res: Response): void {
   res.setHeader('Set-Cookie', `${COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`);
 }
+
+/**
+ * [28/09/2026] O multer chama next() de dentro dos eventos do stream do upload,
+ * FORA do contexto assíncrono — o handler depois do upload perdia a empresa do
+ * custo de IA (ex.: ler documentos do contrato de um tenant caía na casa).
+ * Embrulha o multer: depois do upload, religa comEmpresaDoCusto(dashUser).
+ */
+type MwUpload = (req: Request, res: Response, next: NextFunction) => void;
+function religar(mw: MwUpload): MwUpload {
+  return (req, res, next) => mw(req, res, (err?: unknown) =>
+    comEmpresaDoCusto((req as AuthedRequest).dashUser?.companyId, () => next(err as never)));
+}
+export function comCustoAposUpload<M extends { single: (...a: any[]) => any; array: (...a: any[]) => any; fields: (...a: any[]) => any; any: (...a: any[]) => any; none: (...a: any[]) => any }>(m: M): M {
+  return {
+    ...m,
+    single: (...a: any[]) => religar(m.single(...a)),
+    array: (...a: any[]) => religar(m.array(...a)),
+    fields: (...a: any[]) => religar(m.fields(...a)),
+    any: (...a: any[]) => religar(m.any(...a)),
+    none: (...a: any[]) => religar(m.none(...a)),
+  } as M;
+}

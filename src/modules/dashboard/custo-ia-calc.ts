@@ -82,7 +82,9 @@ export function janelaMeses(agora: Date): {
   return {
     inicioAtual: inicioAtual.toISOString(),
     inicioAnterior: inicioAnterior.toISOString(),
-    diasDecorridos: brt.getUTCDate(),
+    // Dias corridos COM fração (dia 28 às 15h = 27,625), piso de 1 dia: no
+    // comecinho do mês 1 hora de gasto não vira ×30 na projeção.
+    diasDecorridos: Math.max(1, (agora.getTime() - inicioAtual.getTime()) / 86_400_000),
     diasNoMes,
     ano, mes,
   };
