@@ -13,6 +13,8 @@ import {
   aviso as avisoCc, type Tom,
 } from './ui/componentes.js';
 import { temaDaTela } from './ui/tema.js';
+import { servicoDoCatalogo, ibsCbsDoServico } from '../financeiro/fiscal/catalogo-servicos.js';
+import type { RespostaDadosCadastrais } from '../financeiro/fiscal/notacontrol-client.js';
 
 function escapeHtml(s: string | null | undefined): string {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
@@ -333,6 +335,25 @@ export function renderNotaDetalhe(n: NotaLinha, config: ConfigInfo | null, user?
   </form>
 </div>` : '';
 
+  // PDF (2 modelos iguais aos do portal) + e-mail — só com o XML autorizado do fisco.
+  // Teste de homologação também gera (com tarja), mas o e-mail NÃO vem com o do
+  // tomador: nota de teste só vai pra um e-mail digitado (o servidor confere de novo).
+  const ehTesteHomolog = n.ambienteEmissao === 'homologacao' && Boolean(n.chaveAcesso);
+  const temXmlAutorizado = Boolean(n.xmlNfse) && ((n.status === 'autorizada' && n.ambienteEmissao !== 'homologacao') || ehTesteHomolog);
+  const pdfEmail = temXmlAutorizado ? cartaoSecao({
+    titulo: 'PDF e e-mail da nota',
+    dica: ehTesteHomolog ? 'teste de homologação — o PDF sai com tarja SEM VALOR FISCAL' : 'gerados do XML autorizado pelo fisco',
+    corpoHtml: `<div class="cc-nf-rodape">
+      ${botao({ rotulo: 'PDF — modelo GDF (ISS.net)', href: `/dashboard/fiscal/${n.id}/danfse/gdf`, tamanho: 'sm', icone: 'download', attrs: { target: '_blank', rel: 'noopener' } })}
+      ${botao({ rotulo: 'PDF — DANFSe nacional', href: `/dashboard/fiscal/${n.id}/danfse/nacional`, tamanho: 'sm', icone: 'download', attrs: { target: '_blank', rel: 'noopener' } })}
+    </div>
+    <form method="post" action="/dashboard/fiscal/${id}/enviar-email" class="cc-form cc-nf-anexar" style="margin-top:12px" onsubmit="return confirm('Enviar a nota (2 PDFs + XML) para este e-mail?')">
+      <label class="cc-campo"><span>${ehTesteHomolog ? 'Seu e-mail (teste)' : 'E-mail do tomador'}</span><input type="email" name="email" value="${ehTesteHomolog ? '' : escapeHtml(n.tomador.email ?? '')}"${ehTesteHomolog ? ' placeholder="seu@email.com" required' : ''}></label>
+      ${botao({ rotulo: 'Enviar por e-mail', tipo: 'submit', icone: 'file' })}
+    </form>
+    ${ehTesteHomolog ? '<p class="cc-nf-dica" style="margin-top:8px">Nota de teste não vai pro cliente — digite o seu e-mail pra conferir como chega.</p>' : ''}`,
+  }) : '';
+
   const kpis = faixaKpis([
     { rotulo: 'Valor bruto', valor: n.valorBruto, casas: 2, prefixo: 'R$' },
     { rotulo: n.issRetido ? 'ISS retido pelo tomador' : 'ISS (você recolhe no DAS)', valor: n.valorIss, casas: 2, prefixo: 'R$' },
@@ -358,6 +379,7 @@ ${testeHomolog}
 ${enviadaTravada}
 ${emitir}
 ${autorizada}
+${pdfEmail}
 ${preparar}
 ${rodape ? `<div class="cc-nf-rodape" style="margin-top:16px">${rodape}</div>` : ''}
 <div class="cc-nf-rodape" style="margin-top:16px">${botao({ rotulo: '← todas as notas', href: '/dashboard/fiscal', tom: 'fantasma', tamanho: 'sm' })}</div>`;
@@ -368,7 +390,48 @@ ${rodape ? `<div class="cc-nf-rodape" style="margin-top:16px">${rodape}</div>` :
 // Configuração (certificado A1 + ambiente)
 // ---------------------------------------------------------------------------
 
-export function renderConfigFiscalPage(config: ConfigInfo | null, aviso?: { tipo: 'ok' | 'erro'; texto: string }, user?: DashUser): string {
+export interface ServicoConfig { id: string; nome: string; cod_trib_nacional: string; cod_trib_municipal: string | null; nbs: string | null }
+export interface ExtrasConfigFiscal {
+  servicos: ServicoConfig[];
+  emailAuto: boolean;
+  /** Resultado do "Consultar atividades no fisco" (só quando o botão foi clicado). */
+  atividades?: RespostaDadosCadastrais;
+}
+
+function blocoServicos(servicos: ServicoConfig[], atividades?: RespostaDadosCadastrais): string {
+  const linhas = servicos.map((s) => {
+    const cat = servicoDoCatalogo(s.cod_trib_nacional, s.nbs);
+    const ib = ibsCbsDoServico(s.cod_trib_nacional, s.nbs);
+    const dica = cat
+      ? `Atividade municipal no PDF: <b>${escapeHtml(cat.atividadeMunicipal)}</b> · NBS da ${escapeHtml(cat.fonte)}: <code>${escapeHtml(cat.nbs)}</code>`
+      : 'Fora do catálogo das notas reais — confira os códigos com a contadora.';
+    return `<div class="cc-panel" style="padding:12px 14px">
+      <p class="cc-nf-passo" style="margin-bottom:6px"><b>${escapeHtml(s.nome)}</b> · código nacional <code>${escapeHtml(s.cod_trib_nacional)}</code></p>
+      <div class="cc-nf-form">
+        <label class="cc-campo"><span>Cód. tributação municipal (número)</span><input name="ctribmun_${escapeHtml(s.id)}" value="${escapeHtml(s.cod_trib_municipal ?? '')}" inputmode="numeric" pattern="[0-9]{1,10}"></label>
+        <label class="cc-campo"><span>NBS</span><input name="nbs_${escapeHtml(s.id)}" value="${escapeHtml(s.nbs ?? '')}" placeholder="${escapeHtml(cat?.nbs ?? '0.0000.00.00')}"></label>
+        <p class="cc-nf-dica cc-nf-2">${dica}<br>IBS/CBS na nota: cIndOp <code>${escapeHtml(ib.cIndOp)}</code> · CST <code>${escapeHtml(ib.cst)}</code> · cClassTrib <code>${escapeHtml(ib.cClassTrib)}</code></p>
+      </div>
+    </div>`;
+  }).join('');
+  const listaAtividades = !atividades ? '' : atividades.ok
+    ? `<dl class="cc-nf-lista" style="margin-top:12px">${atividades.atividades.map((a) =>
+      `<dt><code>${escapeHtml(a.cTribMun)}</code></dt><dd>${escapeHtml(a.xTribMun)}${a.pAliq !== null ? ` · ${escapeHtml(String(a.pAliq).replace('.', ','))}%` : ''}</dd>`).join('')}</dl>`
+    : avisoCc({ tom: 'erro', texto: 'O fisco não devolveu as atividades: ' + atividades.erros.map((e) => `${e.codigo} ${e.mensagem}`).join(' · ') });
+  return cartaoSecao({
+    titulo: 'Códigos dos serviços na nota',
+    dica: 'o código municipal é o NÚMERO da atividade no cadastro do ISS (não o "14.01" do PDF)',
+    corpoHtml: `<form method="post" action="/dashboard/fiscal/config/atividades" class="cc-nf-linha" style="margin-bottom:12px">
+      <span>Não sabe o número? O fisco informa as atividades cadastradas da empresa (só consulta, não emite nada):</span>
+      ${botao({ rotulo: 'Consultar atividades no fisco', tipo: 'submit', tamanho: 'sm', icone: 'search' })}
+    </form>${listaAtividades}
+    ${servicos.length ? `<form method="post" action="/dashboard/fiscal/config/servicos" class="cc-form cc-nf-cfg" style="margin-top:12px">${linhas}
+      <div class="cc-nf-rodape">${botao({ rotulo: 'Salvar códigos', tipo: 'submit', tom: 'ouro', icone: 'check' })}</div></form>`
+    : '<p class="cc-nf-dica">Nenhum serviço fiscal cadastrado.</p>'}`,
+  });
+}
+
+export function renderConfigFiscalPage(config: ConfigInfo | null, aviso?: { tipo: 'ok' | 'erro'; texto: string }, user?: DashUser, extras?: ExtrasConfigFiscal): string {
   const temCert = Boolean(config?.cert_storage_path);
   const cert = temCert
     ? `${pilulaStatus('normal', 'Certificado cadastrado')}${config!.cert_validade ? ` <span class="cc-muted">vale até <b>${escapeHtml(dataBr(config!.cert_validade))}</b></span>` : ''}`
@@ -413,7 +476,14 @@ ${dados}
     <p class="cc-nf-dica cc-nf-cheia">A senha é guardada cifrada e usada só na hora de assinar. Deixe em branco pra manter o certificado atual.</p>
   </div>`,
   })}
+  ${extras ? cartaoSecao({
+    titulo: 'E-mail da nota pro tomador',
+    corpoHtml: `<input type="hidden" name="email_auto_presente" value="1">
+    <label class="cc-nf-check"><input type="checkbox" name="email_auto"${extras.emailAuto ? ' checked' : ''}><span>Enviar sozinho: assim que a NFS-e for autorizada em <b>produção</b>, manda os 2 PDFs + o XML pro e-mail do tomador (se a nota tiver e-mail).</span></label>
+    <p class="cc-nf-dica" style="margin-top:8px">Desligado, o envio é pelo botão "Enviar por e-mail" na nota.</p>`,
+  }) : ''}
   <div class="cc-nf-rodape">${botao({ rotulo: 'Salvar', tipo: 'submit', tom: 'ouro', icone: 'check' })}${botao({ rotulo: '← todas as notas', href: '/dashboard/fiscal', tom: 'fantasma' })}</div>
-</form>`;
+</form>
+${extras ? `<div style="margin-top:16px">${blocoServicos(extras.servicos, extras.atividades)}</div>` : ''}`;
   return pagina('Configuração fiscal', user, body);
 }

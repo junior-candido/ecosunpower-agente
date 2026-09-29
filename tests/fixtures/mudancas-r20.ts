@@ -28,11 +28,27 @@ const FISCAL = [
   'fiscal-config', 'fiscal-config-teste', 'fiscal-config-vazia',
 ];
 
+/** NFS-e em produção (29/09/2026): nota com XML autorizado (produção ou teste de
+ *  homologação) ganha os 2 PDFs iguais aos do portal (GDF/ISS.net e DANFSe
+ *  nacional) e o "Enviar por e-mail" (2 PDFs + XML). Nada sai da tela. */
+function nfsePdfEmail(notaId: string): MudancaContrato {
+  return {
+    motivo: 'NFS-e produção: PDF nos 2 modelos do portal + enviar por e-mail',
+    entra: {
+      links: [`/dashboard/fiscal/${notaId}/danfse/gdf`, `/dashboard/fiscal/${notaId}/danfse/nacional`],
+      formularios: [{ method: 'POST', action: `/dashboard/fiscal/${notaId}/enviar-email`, enctype: '', campos: [{ name: 'email', type: 'email' }] }],
+      confirms: ["'Enviar a nota (2 PDFs + XML) para este e-mail?'"],
+    },
+  };
+}
+
 /** R20: trocas por caso de tests/fixtures/casos-financeiro2.ts. Notas fiscais:
  *  a troca comum das telas renovadas (sai o Tailwind do CDN). Assinaturas: nada
  *  (já nasceram no padrão cc-, #339). */
 export const MUDANCAS_R20: Record<string, MudancaContrato[]> = {
   ...Object.fromEntries(FISCAL.map((c) => [c, [TELAS_LEVES]])),
+  'nota-autorizada': [TELAS_LEVES, nfsePdfEmail('55555555-5555-4666-8777-888888888888')],
+  'nota-teste-homologacao': [TELAS_LEVES, nfsePdfEmail('44444444-5555-4666-8777-888888888888')],
   'cobrar': [r20CobrarNaCasca(USER_CASA)],
   'cobrar-sem-infinitepay': [r20CobrarNaCasca(USER_CASA)],
   'cobrar-tenant': [r20CobrarNaCasca(USER_TENANT)],

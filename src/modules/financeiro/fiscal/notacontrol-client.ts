@@ -12,12 +12,20 @@ export const ENDPOINTS = {
   producao: 'https://nfse.fazenda.df.gov.br/wsnfsenacional/nfse.asmx',
 } as const;
 const NS = 'http://www.sped.fazenda.gov.br/nfse';       // padrão nacional (manual v1.01)
-const VERSAO = '1.00';                                  // 1.00 = SEM grupo IBS/CBS (fisco rejeita 1.01 sem ele: E183/E160).
-// ⚠️ A PARTIR DE 01/10/2026 o grupo IBS/CBS é OBRIGATÓRIO -> migrar p/ 1.01 + gerar o grupo (F3).
+// Versão do cabeçalho = versão da DPS que vai dentro (atributo versao do <DPS>):
+// 1.00 = SEM grupo IBS/CBS; 1.01 = COM o grupo (o fisco rejeita 1.01 sem ele — E183/E160).
+// A partir de 01/10/2026 o grupo IBS/CBS é obrigatório (manual v1.01, histórico 03/08/2026)
+// e a DPS sai sempre 1.01 (dps-xml.ts). Métodos de consulta (sem DPS) seguem com 1.00.
+const VERSAO_PADRAO = '1.00';
+function versaoDaDps(xml: string): string {
+  const m = /<DPS\b[^>]*\bversao="(\d+\.\d+)"/.exec(xml);
+  return m ? m[1] : VERSAO_PADRAO;
+}
 
 export function montarEnvelope(metodo: string, xmlAssinado: string): string {
   // A DPS assinada vem com a própria declaração <?xml ...?> (xml-crypto preserva) — tira.
   const semDeclaracao = xmlAssinado.replace(/^<\?xml[^?]*\?>\s*/, '');
+  const VERSAO = versaoDaDps(semDeclaracao);
   // Estrutura CONFIRMADA contra o ValidarXml da homologação em 31/08 (S000):
   //   <soapenv:Envelope xmlns:nfse="http://www.sped.fazenda.gov.br/nfse">
   //     <soapenv:Body><nfse:GerarNfse>
@@ -80,20 +88,19 @@ export function interpretarResposta(soapXml: string): RespostaGerar {
   return { ok: false, erros };
 }
 
-export async function chamarGerarNfse(
-  ambiente: keyof typeof ENDPOINTS, dpsAssinada: string, keyPem: string, certPem: string,
-): Promise<RespostaGerar> {
-  const corpo = montarEnvelope('GerarNfse', dpsAssinada);
+/** POST SOAP com mTLS (o A1 autentica o túnel). Devolve o corpo SOAP cru. */
+async function postarSoap(
+  ambiente: keyof typeof ENDPOINTS, metodo: string, corpo: string, keyPem: string, certPem: string,
+): Promise<string> {
   const url = new URL(ENDPOINTS[ambiente]);
   // key/cert em PEM (extraídos do .pfx pelo node-forge no carregarCertificado): o OpenSSL 3
   // do Node recusa PFX RC2/3DES da Safeweb ("Unsupported PKCS12 PFX data") — PEM não tem esse limite.
   const agent = new Agent({ key: keyPem, cert: certPem });
-  const soapXml = await new Promise<string>((resolve, reject) => {
+  return new Promise<string>((resolve, reject) => {
     const req = request({
       hostname: url.hostname, path: url.pathname, method: 'POST', agent, timeout: 60000,
-      // ⚠️ CONFIRMAR no 1º teste real contra o webservice: o valor exato do SOAPAction
-      //    vem do WSDL (403 sem mTLS). Assumido NS + "/GerarNfse", padrão .asmx.
-      headers: { 'Content-Type': 'text/xml; charset=utf-8', SOAPAction: `${NS}/GerarNfse` },
+      // SOAPAction = NS + "/<método>" (padrão .asmx) — funcionou no GerarNfse autorizado em 01/09.
+      headers: { 'Content-Type': 'text/xml; charset=utf-8', SOAPAction: `${NS}/${metodo}` },
     }, (res) => {
       const status = res.statusCode ?? 0;
       const chunks: Buffer[] = [];
@@ -111,5 +118,71 @@ export async function chamarGerarNfse(
     req.on('error', (e) => reject(new Error(`Falha de conexão com o fisco (${ambiente}): ${e.message}`)));
     req.write(corpo); req.end();
   });
+}
+
+export async function chamarGerarNfse(
+  ambiente: keyof typeof ENDPOINTS, dpsAssinada: string, keyPem: string, certPem: string,
+): Promise<RespostaGerar> {
+  const soapXml = await postarSoap(ambiente, 'GerarNfse', montarEnvelope('GerarNfse', dpsAssinada), keyPem, certPem);
   return interpretarResposta(soapXml);
+}
+
+// ── ConsultarDadosCadastrais: as atividades do cadastro (cTribMun) ─────────────
+// O cTribMun da DPS é um NÚMERO do cadastro do ISS.net de cada empresa (na
+// homologação: 1/4/6/7). Esta consulta (manual v1.01 §9.2.10, só leitura — não
+// emite nada) devolve as atividades cadastradas: tcAtividade{cTribMun, xTribMun,
+// pAliq}. É assim que se descobre o código REAL de produção sem chute.
+
+export interface AtividadeFisco { cTribMun: string; xTribMun: string; pAliq: number | null }
+export type RespostaDadosCadastrais =
+  | { ok: true; atividades: AtividadeFisco[] }
+  | { ok: false; erros: ErroFiscal[] };
+
+/** Corpo do ConsultarDadosCadastraisEnvio: Prestador = tcIdentificacaoPessoaEmpresaComIM. */
+export function montarConsultaDadosCadastrais(cnpj: string, im: string): string {
+  const d = (s: string) => s.replace(/\D/g, '');
+  return `<Prestador><CNPJ>${d(cnpj)}</CNPJ><IM>${d(im)}</IM></Prestador>`;
+}
+
+function desescaparSeResultado(soapXml: string, marcas: string[]): string {
+  const re = new RegExp(`<(${marcas.join('|')})[\\s>]`);
+  const reEsc = new RegExp(`&lt;(${marcas.join('|')})`);
+  if (!re.test(soapXml) && reEsc.test(soapXml)) {
+    return soapXml.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+  }
+  return soapXml;
+}
+
+export function interpretarDadosCadastrais(soapXml: string): RespostaDadosCadastrais {
+  const corpo = desescaparSeResultado(soapXml, ['Atividade', 'MensagemRetorno', 'ConsultarDadosCadastraisResposta']);
+  const $ = cheerio.load(corpo, { xmlMode: true });
+  const atividades: AtividadeFisco[] = [];
+  $('Atividade').each((_, el) => {
+    const cTribMun = $(el).find('cTribMun').first().text().trim();
+    if (!cTribMun) return;
+    const aliq = $(el).find('pAliq').first().text().trim();
+    atividades.push({
+      cTribMun,
+      xTribMun: $(el).find('xTribMun').first().text().trim(),
+      pAliq: aliq && Number.isFinite(Number(aliq)) ? Number(aliq) : null,
+    });
+  });
+  if (atividades.length > 0) return { ok: true, atividades };
+  const erros: ErroFiscal[] = [];
+  $('MensagemRetorno').each((_, el) => {
+    erros.push({
+      codigo: $(el).find('Codigo').first().text().trim(),
+      mensagem: $(el).find('Mensagem').first().text().trim(),
+      correcao: $(el).find('Correcao').first().text().trim() || null,
+    });
+  });
+  if (erros.length === 0) erros.push({ codigo: 'SEM_ATIVIDADES', mensagem: 'O fisco respondeu sem nenhuma atividade cadastrada.', correcao: null });
+  return { ok: false, erros };
+}
+
+export async function consultarDadosCadastrais(
+  ambiente: keyof typeof ENDPOINTS, cnpj: string, im: string, keyPem: string, certPem: string,
+): Promise<RespostaDadosCadastrais> {
+  const env = montarEnvelope('ConsultarDadosCadastrais', montarConsultaDadosCadastrais(cnpj, im));
+  return interpretarDadosCadastrais(await postarSoap(ambiente, 'ConsultarDadosCadastrais', env, keyPem, certPem));
 }

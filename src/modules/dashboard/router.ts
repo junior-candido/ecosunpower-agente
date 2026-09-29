@@ -1086,13 +1086,16 @@ export function createDashboardRouter(
   // F2: config do certificado A1 + ambiente (registrada ANTES de /fiscal/:id)
   router.get('/fiscal/config', exigir('financeiro', 'editar'), async (req: AuthedRequest, res) => {
     try {
-      const { getConfig } = await import('../financeiro/fiscal/notas-repo.js');
+      const { getConfig, listarServicos, lerEmailAuto } = await import('../financeiro/fiscal/notas-repo.js');
       const { renderConfigFiscalPage } = await import('./fiscal-views.js');
-      const config = await getConfig(supabase, req.dashUser!.companyId);
+      const companyId = req.dashUser!.companyId;
+      const [config, servicos, emailAuto] = await Promise.all([
+        getConfig(supabase, companyId), listarServicos(supabase, companyId).catch(() => []), lerEmailAuto(supabase, companyId),
+      ]);
       const q = req.query as Record<string, string | undefined>;
       const aviso = q.ok ? { tipo: 'ok' as const, texto: '✅ Configuração salva.' }
         : q.erro ? { tipo: 'erro' as const, texto: q.erro } : undefined;
-      res.type('html').send(renderConfigFiscalPage(config, aviso, req.dashUser));
+      res.type('html').send(renderConfigFiscalPage(config, aviso, req.dashUser, { servicos, emailAuto }));
     } catch (err) {
       console.error('[fiscal/config GET]', err);
       res.status(500).send(`Erro: ${escapeHtmlSimple((err as Error).message)}`);
@@ -1119,9 +1122,72 @@ export function createDashboardRouter(
       const { error } = await bancoDoOperador(req, supabase).from('fiscal_config')
         .update({ ambiente, updated_at: new Date().toISOString() }).eq('company_id', companyId);
       if (error) throw new Error(`salvar ambiente: ${error.message}`);
+      // E-mail automático da nota (migration 147). Só mexe quando o formulário
+      // novo mandou o campo — e não derruba o salvar do ambiente se a coluna
+      // ainda não existe.
+      if (req.body?.email_auto_presente === '1') {
+        const { salvarEmailAuto } = await import('../financeiro/fiscal/notas-repo.js');
+        const querAuto = req.body?.email_auto === 'on';
+        const gravou = await salvarEmailAuto(bancoDoOperador(req, supabase), companyId, querAuto);
+        if (!gravou && querAuto) {
+          res.redirect('/dashboard/fiscal/config?erro=' + encodeURIComponent('Ambiente salvo, mas o envio automático por e-mail ainda não pode ser ligado: falta aplicar a migration 147 no banco.')); return;
+        }
+      }
       res.redirect('/dashboard/fiscal/config?ok=1');
     } catch (err) {
       console.error('[fiscal/config POST]', err);
+      res.redirect('/dashboard/fiscal/config?erro=' + encodeURIComponent((err as Error).message));
+    }
+  });
+
+  // Produção: códigos por serviço (cTribMun = número da atividade no cadastro do ISS + NBS).
+  router.post('/fiscal/config/servicos', exigir('financeiro', 'editar'), async (req: AuthedRequest, res) => {
+    try {
+      const companyId = req.dashUser!.companyId;
+      const { listarServicos, salvarCodigosServico } = await import('../financeiro/fiscal/notas-repo.js');
+      const servicos = await listarServicos(supabase, companyId); // só os DESTA empresa
+      const erros: string[] = [];
+      for (const s of servicos) {
+        const cTribMun = String(req.body?.[`ctribmun_${s.id}`] ?? '').trim();
+        const nbs = String(req.body?.[`nbs_${s.id}`] ?? '').trim();
+        if (!cTribMun) continue;
+        if (cTribMun === (s.cod_trib_municipal ?? '') && nbs === (s.nbs ?? '')) continue;
+        try {
+          await salvarCodigosServico(bancoDoOperador(req, supabase), companyId, s.id, { codTribMunicipal: cTribMun, nbs: nbs || null });
+        } catch (e) { erros.push(`${s.nome}: ${(e as Error).message}`); }
+      }
+      res.redirect('/dashboard/fiscal/config?' + (erros.length ? 'erro=' + encodeURIComponent(erros.join(' · ')) : 'ok=1'));
+    } catch (err) {
+      console.error('[fiscal/config/servicos]', err);
+      res.redirect('/dashboard/fiscal/config?erro=' + encodeURIComponent((err as Error).message));
+    }
+  });
+
+  // Produção: pergunta ao fisco as atividades cadastradas (ConsultarDadosCadastrais —
+  // só leitura, não emite nada). Mostra os números de cTribMun certos da empresa.
+  router.post('/fiscal/config/atividades', exigir('financeiro', 'editar'), async (req: AuthedRequest, res) => {
+    const companyId = req.dashUser!.companyId;
+    try {
+      const { getConfig, listarServicos, lerEmailAuto } = await import('../financeiro/fiscal/notas-repo.js');
+      const { renderConfigFiscalPage } = await import('./fiscal-views.js');
+      const { carregarCertificado } = await import('../financeiro/fiscal/certificado.js');
+      const { consultarDadosCadastrais } = await import('../financeiro/fiscal/notacontrol-client.js');
+      const [config, servicos, emailAuto] = await Promise.all([
+        getConfig(supabase, companyId), listarServicos(supabase, companyId).catch(() => []), lerEmailAuto(supabase, companyId),
+      ]);
+      if (!config?.cert_storage_path) {
+        res.redirect('/dashboard/fiscal/config?erro=' + encodeURIComponent('Cadastre o certificado A1 antes de consultar o fisco.')); return;
+      }
+      let atividades;
+      try {
+        const { aberto } = await carregarCertificado(supabase, companyId, process.env.FISCAL_CERT_KEY ?? '');
+        atividades = await consultarDadosCadastrais(config.ambiente, config.cnpj, config.inscricao_municipal, aberto.keyPem, aberto.certPem);
+      } catch (e) {
+        atividades = { ok: false as const, erros: [{ codigo: 'CONEXAO', mensagem: (e as Error).message, correcao: null }] };
+      }
+      res.type('html').send(renderConfigFiscalPage(config, undefined, req.dashUser, { servicos, emailAuto, atividades }));
+    } catch (err) {
+      console.error('[fiscal/config/atividades]', err);
       res.redirect('/dashboard/fiscal/config?erro=' + encodeURIComponent((err as Error).message));
     }
   });
@@ -1271,10 +1337,13 @@ export function createDashboardRouter(
       const { renderNotaDetalhe } = await import('./fiscal-views.js');
       const config = await getConfig(supabase, req.dashUser!.companyId);
       const q = req.query as Record<string, string | undefined>;
+      const textoEmail = q.email === 'ok' ? ` E-mail enviado para ${q.para ?? 'o tomador'}.`
+        : q.email === 'falhou' ? ` ⚠️ O e-mail automático não saiu: ${q.motivo ?? ''} — use "Enviar por e-mail".` : '';
       const aviso = q.emitida !== undefined
-        ? { tipo: 'ok' as const, texto: q.amb === 'homologacao'
+        ? { tipo: 'ok' as const, texto: (q.amb === 'homologacao'
             ? '🧪 Teste de homologação passou — a nota continua preparada pra emissão real.'
-            : `✅ NFS-e emitida${q.emitida ? ` — nº ${q.emitida}` : ''}.` }
+            : `✅ NFS-e emitida${q.emitida ? ` — nº ${q.emitida}` : ''}.`) + textoEmail }
+        : q.email === 'ok' ? { tipo: 'ok' as const, texto: `✅ Nota enviada por e-mail para ${q.para ?? ''} (2 PDFs + XML).` }
         : q.erro ? { tipo: 'erro' as const, texto: q.erro } : undefined;
       res.type('html').send(renderNotaDetalhe(nota, config, req.dashUser, aviso));
     } catch (err) {
@@ -1290,9 +1359,27 @@ export function createDashboardRouter(
     try {
       const keyHex = process.env.FISCAL_CERT_KEY ?? '';
       const { emitirNota, depsProducao } = await import('../financeiro/fiscal/motor.js');
-      const r = await emitirNota(depsProducao(supabase, keyHex), req.dashUser!.companyId, notaId);
+      const companyId = req.dashUser!.companyId;
+      const r = await emitirNota(depsProducao(supabase, keyHex), companyId, notaId);
       if (r.ok) {
-        res.redirect(`/dashboard/fiscal/${notaId}?emitida=${encodeURIComponent(r.numero ?? '')}&amb=${encodeURIComponent(r.ambiente)}`);
+        // E-mail automático (flag por empresa, migration 147, default desligado):
+        // só em PRODUÇÃO e com e-mail do tomador. Falha aqui NUNCA desfaz a emissão.
+        let sufixoEmail = '';
+        if (r.ambiente === 'producao' && process.env.RESEND_API_KEY) {
+          try {
+            const { lerEmailAuto, getNota } = await import('../financeiro/fiscal/notas-repo.js');
+            const { deveEnviarAutomatico, enviarNotaPorEmail, depsEnvioEmailProducao } = await import('../financeiro/fiscal/envio-email.js');
+            const [flag, nota] = await Promise.all([lerEmailAuto(supabase, companyId), getNota(supabase, companyId, notaId)]);
+            if (nota && deveEnviarAutomatico(flag, r.ambiente, nota.tomador.email)) {
+              const env = await enviarNotaPorEmail(depsEnvioEmailProducao(supabase, process.env.RESEND_API_KEY, process.env.EMAIL_FROM ?? ''), companyId, notaId, { automatico: true });
+              sufixoEmail = env.ok ? `&email=ok&para=${encodeURIComponent(env.para)}` : `&email=falhou&motivo=${encodeURIComponent(env.motivo)}`;
+            }
+          } catch (e) {
+            console.error('[fiscal/:id/emitir] e-mail automático', e);
+            sufixoEmail = `&email=falhou&motivo=${encodeURIComponent((e as Error).message)}`;
+          }
+        }
+        res.redirect(`/dashboard/fiscal/${notaId}?emitida=${encodeURIComponent(r.numero ?? '')}&amb=${encodeURIComponent(r.ambiente)}${sufixoEmail}`);
       } else {
         const msg = r.erros.map((e) => `${e.codigo}: ${e.mensagem}${e.correcao ? ` → ${e.correcao}` : ''}`).join(' · ');
         res.redirect(`/dashboard/fiscal/${notaId}?erro=` + encodeURIComponent(msg));
@@ -1331,6 +1418,50 @@ export function createDashboardRouter(
     } catch (err) {
       console.error('[fiscal/:id/xml]', err);
       res.status(500).send(`Erro: ${escapeHtmlSimple((err as Error).message)}`);
+    }
+  });
+
+  // PDF da NFS-e nos 2 modelos do portal (GDF/ISS.net e DANFSe nacional), gerado
+  // do XML autorizado. Escopo company_id (getNota) — nota de outra empresa = 404.
+  router.get('/fiscal/:id/danfse/:modelo', exigir('financeiro', 'visualizar'), async (req: AuthedRequest, res) => {
+    const notaId = String(req.params.id);
+    const modelo = String(req.params.modelo);
+    if (!UUID_RE.test(notaId)) { res.status(404).send('Nota não achada'); return; }
+    try {
+      const { ehModeloPdf, gerarPdfNota } = await import('../financeiro/fiscal/nfse-pdf.js');
+      if (!ehModeloPdf(modelo)) { res.status(404).send('Modelo de PDF desconhecido'); return; }
+      const { carregarDadosPdf } = await import('../financeiro/fiscal/envio-email.js');
+      const c = await carregarDadosPdf(supabase, req.dashUser!.companyId, notaId);
+      if (!c) { res.status(404).send('Nota não achada'); return; }
+      if (!c.nota.xmlNfse) { res.status(404).send('Essa nota ainda não tem o XML autorizado pelo fisco.'); return; }
+      const { pdf, nomeArquivo } = await gerarPdfNota(c.dados, modelo);
+      res.setHeader('Content-Disposition', `inline; filename="${nomeArquivo}"`);
+      res.type('application/pdf').send(pdf);
+    } catch (err) {
+      console.error('[fiscal/:id/danfse]', err);
+      res.status(500).send(`Erro: ${escapeHtmlSimple((err as Error).message)}`);
+    }
+  });
+
+  // Enviar a nota por e-mail (2 PDFs + XML). Regras em envio-email.ts.
+  router.post('/fiscal/:id/enviar-email', exigir('financeiro', 'editar'), async (req: AuthedRequest, res) => {
+    const notaId = String(req.params.id);
+    if (!UUID_RE.test(notaId)) { res.status(404).send('Nota não achada'); return; }
+    try {
+      if (!process.env.RESEND_API_KEY) {
+        res.redirect(`/dashboard/fiscal/${notaId}?erro=` + encodeURIComponent('O envio de e-mail não está configurado no servidor (RESEND_API_KEY).')); return;
+      }
+      const { enviarNotaPorEmail, depsEnvioEmailProducao } = await import('../financeiro/fiscal/envio-email.js');
+      const r = await enviarNotaPorEmail(
+        depsEnvioEmailProducao(supabase, process.env.RESEND_API_KEY, process.env.EMAIL_FROM ?? ''),
+        req.dashUser!.companyId, notaId, { para: typeof req.body?.email === 'string' ? req.body.email : null },
+      );
+      res.redirect(r.ok
+        ? `/dashboard/fiscal/${notaId}?email=ok&para=${encodeURIComponent(r.para)}`
+        : `/dashboard/fiscal/${notaId}?erro=` + encodeURIComponent(r.motivo));
+    } catch (err) {
+      console.error('[fiscal/:id/enviar-email]', err);
+      res.redirect(`/dashboard/fiscal/${notaId}?erro=` + encodeURIComponent((err as Error).message));
     }
   });
 

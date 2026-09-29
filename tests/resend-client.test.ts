@@ -97,3 +97,22 @@ describe('EmailSender — endereco de resposta', () => {
     expect(enviadoAoSdk[0].replyTo).toBe('junior@empresa.com.br');
   });
 });
+
+describe('EmailSender — anexos (NFS-e: PDF + XML)', () => {
+  beforeEach(() => { enviadoAoSdk.length = 0; });
+  it('manda os anexos como a Resend espera (filename + content Buffer + contentType)', async () => {
+    const sender = new EmailSender('key', 'Empresa <contato@news.empresa.com.br>');
+    await sender.enviar({ ...ENVIO, attachments: [
+      { filename: 'NFSe-82-GDF.pdf', content: Buffer.from('%PDF'), contentType: 'application/pdf' },
+      { filename: 'NFSe-82.xml', content: Buffer.from('<x/>'), contentType: 'application/xml' },
+    ] });
+    expect(enviadoAoSdk[0].attachments).toHaveLength(2);
+    expect(enviadoAoSdk[0].attachments[0]).toMatchObject({ filename: 'NFSe-82-GDF.pdf', contentType: 'application/pdf' });
+    expect(Buffer.isBuffer(enviadoAoSdk[0].attachments[0].content)).toBe(true);
+  });
+  it('sem anexo não manda a chave attachments (payload dos outros e-mails continua igual)', async () => {
+    const sender = new EmailSender('key', 'Empresa <contato@news.empresa.com.br>');
+    await sender.enviar(ENVIO);
+    expect('attachments' in enviadoAoSdk[0]).toBe(false);
+  });
+});

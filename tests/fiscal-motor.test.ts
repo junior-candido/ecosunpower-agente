@@ -141,3 +141,33 @@ describe('motor de emissão', () => {
     expect(toma).not.toContain('<IM>');
   });
 });
+
+describe('motor — produção 2026 (IBS/CBS + NBS + cTribMun)', () => {
+  it('a DPS sai 1.01 com o grupo IBS/CBS do catálogo (31.01.02 = nota 83) e o NBS do serviço', async () => {
+    const deps = depsFake({ carregarServico: vi.fn(async () => ({ codTribNacional: '31.01.02', codTribMunicipal: '3101', nbs: '1.1415.00.00' })) });
+    await emitirNota(deps, 'c1', 'n1');
+    const xml = (deps.assinar as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(xml).toContain('versao="1.01"');
+    expect(xml).toContain('<cIndOp>100301</cIndOp>');
+    expect(xml).toContain('<CST>200</CST><cClassTrib>200052</cClassTrib>');
+    expect(xml).toContain('<cNBS>114150000</cNBS>');
+  });
+  it('serviço fora do catálogo usa o padrão da nota 82 e, sem NBS no banco, fica sem cNBS', async () => {
+    const deps = depsFake({ carregarServico: vi.fn(async () => ({ codTribNacional: '07.02.02', codTribMunicipal: '702', nbs: null })) });
+    await emitirNota(deps, 'c1', 'n1');
+    const xml = (deps.assinar as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(xml).toContain('<cIndOp>050102</cIndOp><indDest>0</indDest>');
+    expect(xml).not.toContain('<cNBS>');
+  });
+  it('sem NBS no banco, usa o NBS do catálogo (14.01.01 → 1.2001.60.00 da nota 82)', async () => {
+    const deps = depsFake({ carregarServico: vi.fn(async () => ({ codTribNacional: '14.01.01', codTribMunicipal: '1401', nbs: null })) });
+    await emitirNota(deps, 'c1', 'n1');
+    const xml = (deps.assinar as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(xml).toContain('<cNBS>120016000</cNBS>');
+  });
+  it('cTribMun precisa ser número (o schema virou inteiro): "14.01" trava ANTES de travar a nota', async () => {
+    const deps = depsFake({ carregarServico: vi.fn(async () => ({ codTribNacional: '14.01.01', codTribMunicipal: '14.01', nbs: null })) });
+    await expect(emitirNota(deps, 'c1', 'n1')).rejects.toThrow(/código de tributação municipal.*número/i);
+    expect(deps.travarParaEnvio).not.toHaveBeenCalled();
+  });
+});

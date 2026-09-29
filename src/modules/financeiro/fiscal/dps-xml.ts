@@ -22,11 +22,31 @@ export interface EntradaDps {
   /** im: inscricao municipal do TOMADOR (no DF, o CF/DF). Obrigatoria quando ele
    *  retem o ISS — sem ela o fisco devolve EM057. Teste real 01/09/2026. */
   tomador: { tipo: 'PJ' | 'PF'; doc: string; nome: string; im?: string | null; endereco: EnderecoNac | null; email: string | null };
-  servico: { codTribNacional: string; codTribMunicipal: string; descricao: string };
+  /** nbs: código NBS do serviço (ex.: '1.1415.00.00') — vai só com dígitos (TSCodNBS, N 9). */
+  servico: { codTribNacional: string; codTribMunicipal: string; descricao: string; nbs?: string | null };
   /** Obrigatório quando o cTribNac é de obra (07.02.01, 07.02.02, 07.04.01, 07.05.01,
    *  07.05.02, 07.06.01, 07.06.02, 07.07.01, 07.08.01, 07.17.01, 07.19.01) — E0370. */
   obra: EnderecoNac | null;
   valores: { vServ: number; issRetido: boolean };
+  /** Reforma tributária (DPS 1.01): o que o EMITENTE declara do IBS/CBS. As
+   *  alíquotas NÃO vão — o fisco calcula e devolve na NFS-e. Sem isto a DPS sai
+   *  na versão 1.00 (sem o grupo), que o fisco só aceita até set/2026. */
+  ibscbs?: IbsCbsDps | null;
+}
+
+export interface IbsCbsDps { cIndOp: string; cst: string; cClassTrib: string }
+
+/** Grupo IBSCBS (TCRTCInfoIBSCBS, manual v1.01 + GerarNfseEnvio-exemplo.xml oficial).
+ *  finNFSe=0 (NFS-e regular) · indDest=0 (destinatário = o próprio tomador, como
+ *  nas notas reais 82/83/85). tpOper/tpEnteGov só pra ente público ou itens
+ *  25.05/15.09/17.12/10.05 (regra 5.1 do manual) — nunca é o nosso caso. indFinal
+ *  é opcional e fica de fora. */
+function ibsCbsXml(g: IbsCbsDps): string {
+  if (!/^\d{3}$/.test(g.cst)) throw new Error(`CST do IBS/CBS inválido ("${g.cst}"): precisa de 3 dígitos.`);
+  if (!/^\d{6}$/.test(g.cClassTrib)) throw new Error(`cClassTrib do IBS/CBS inválido ("${g.cClassTrib}"): precisa de 6 dígitos.`);
+  if (!/^\d{6}$/.test(g.cIndOp)) throw new Error(`cIndOp do IBS/CBS inválido ("${g.cIndOp}"): precisa de 6 dígitos.`);
+  return `<IBSCBS><finNFSe>0</finNFSe><cIndOp>${g.cIndOp}</cIndOp><indDest>0</indDest>` +
+    `<valores><trib><gIBSCBS><CST>${g.cst}</CST><cClassTrib>${g.cClassTrib}</cClassTrib></gIBSCBS></trib></valores></IBSCBS>`;
 }
 
 /** cTribNac (só dígitos) que exigem o grupo de obra na DPS (manual + E0370). */
@@ -61,9 +81,15 @@ export function montarDpsXml(e: EntradaDps): { xml: string; idDps: string } {
     ? '<regTrib><opSimpNac>3</opSimpNac><regApTribSN>1</regApTribSN><regEspTrib>0</regEspTrib></regTrib>'
     : '<regTrib><opSimpNac>1</opSimpNac><regEspTrib>0</regEspTrib></regTrib>';
   const obra = e.obra ? `<obra>${endNacXml(e.obra)}</obra>` : '';
+  const nbs = soDigitos(e.servico.nbs ?? '');
+  const cNbs = nbs.length === 9 ? `<cNBS>${nbs}</cNBS>` : '';
+  // "SOMENTE É PERMITIDO DECLARAR IBS/CBS A PARTIR DA VERSÃO 1.01" e "É OBRIGATÓRIO
+  // NA 1.01" (exemplo oficial): a versão anda junto com o grupo.
+  const versao = e.ibscbs ? '1.01' : '1.00';
+  const ibscbs = e.ibscbs ? ibsCbsXml(e.ibscbs) : '';
   const xml =
 `<?xml version="1.0" encoding="UTF-8"?>
-<DPS xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.00">
+<DPS xmlns="http://www.sped.fazenda.gov.br/nfse" versao="${versao}">
 <infDPS Id="${idDps}">
 <tpAmb>${tpAmb}</tpAmb>
 <dhEmi>${dhEmi}</dhEmi>
@@ -92,6 +118,7 @@ ${email}
 <cTribNac>${soDigitos(e.servico.codTribNacional)}</cTribNac>
 <cTribMun>${esc(e.servico.codTribMunicipal)}</cTribMun>
 <xDescServ>${esc(norm(e.servico.descricao))}</xDescServ>
+${cNbs}
 </cServ>
 ${obra}
 </serv>
@@ -109,6 +136,7 @@ ${obra}
 </totTrib>
 </trib>
 </valores>
+${ibscbs}
 </infDPS>
 </DPS>`;
   // COMPACTO, SEM quebra de linha entre tags: o parser do fisco (.NET) descarta

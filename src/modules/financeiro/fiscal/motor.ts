@@ -3,6 +3,7 @@
 // Deps injetadas (banco/rede/cert) pra testar sem tocar nada de verdade; a fábrica
 // `depsProducao` liga as deps reais (repo, certificado, client, ponte).
 import { montarDpsXml, COD_TRIB_COM_OBRA, type EnderecoNac } from './dps-xml.js';
+import { servicoDoCatalogo, ibsCbsDoServico } from './catalogo-servicos.js';
 
 export interface DepsEmissao {
   carregarNota: (companyId: string, notaId: string) => Promise<{
@@ -15,7 +16,7 @@ export interface DepsEmissao {
     ambiente: 'homologacao' | 'producao'; serie: string; codMunicipio: string;
     cnpj: string; im: string; certOk: boolean; certValidade: string | null;
   }>;
-  carregarServico: (companyId: string, servicoId: string) => Promise<{ codTribNacional: string; codTribMunicipal: string | null }>;
+  carregarServico: (companyId: string, servicoId: string) => Promise<{ codTribNacional: string; codTribMunicipal: string | null; nbs?: string | null }>;
   /** CAS preparada→enviada. false = outra emissão já travou (clique duplo). */
   travarParaEnvio: (companyId: string, notaId: string) => Promise<boolean>;
   proximoNdps: (companyId: string) => Promise<number>;
@@ -48,6 +49,12 @@ export async function emitirNota(deps: DepsEmissao, companyId: string, notaId: s
   const servico = await deps.carregarServico(companyId, nota.servicoId);
   if (!servico.codTribMunicipal) {
     throw new Error('O serviço do catálogo está sem o código de tributação municipal (cTribMun) — preencha na configuração fiscal. Esse código vem da tabela de correlação do ISS do seu município.');
+  }
+  // cTribMun virou INTEIRO no schema (manual v1.01, histórico): "14.01" (atividade
+  // como aparece no PDF) NÃO serve — é o número do cadastro do ISS.net. Na tela de
+  // configuração o botão "Consultar atividades no fisco" mostra os números certos.
+  if (!/^\d{1,10}$/.test(servico.codTribMunicipal.trim())) {
+    throw new Error(`O código de tributação municipal do serviço ("${servico.codTribMunicipal}") precisa ser só número (é o código do cadastro do ISS, não o "14.01" do PDF). Use "Consultar atividades no fisco" na configuração fiscal.`);
   }
   // Endereço nacional do tomador: OBRIGATÓRIO quando o tomador é PJ (E0235) ou
   // quando o ISS é retido (E0237). Sem os 4 campos, melhor travar aqui com
@@ -84,7 +91,17 @@ export async function emitirNota(deps: DepsEmissao, companyId: string, notaId: s
     optanteSimples: cfg.ambiente === 'producao',
     prestador: { cnpj: cfg.cnpj, im: cfg.im },
     tomador: { tipo: t.tipo, doc: t.doc, nome: t.nome, im: imDoTomador, endereco: enderecoTomador, email: t.email },
-    servico: { codTribNacional: servico.codTribNacional, codTribMunicipal: servico.codTribMunicipal, descricao: nota.descricao },
+    servico: {
+      codTribNacional: servico.codTribNacional, codTribMunicipal: servico.codTribMunicipal.trim(), descricao: nota.descricao,
+      // NBS do banco; sem ele, o do catálogo (notas reais 82/83/85).
+      nbs: servico.nbs || servicoDoCatalogo(servico.codTribNacional, null)?.nbs || null,
+    },
+    // Reforma tributária: grupo IBS/CBS (DPS 1.01) — obrigatório pra competência a
+    // partir de 01/10/2026; as notas reais do portal já saem com ele desde ago/2026.
+    ibscbs: (() => {
+      const ib = ibsCbsDoServico(servico.codTribNacional, servico.nbs);
+      return { cIndOp: ib.cIndOp, cst: ib.cst, cClassTrib: ib.cClassTrib };
+    })(),
     obra: precisaObra ? enderecoTomador : null,
     valores: { vServ: nota.valorBruto, issRetido: nota.issRetido },
   });
@@ -146,7 +163,7 @@ export function depsProducao(client: SupabaseClient, keyHex: string): DepsEmissa
       const servicos = await listarServicos(client, companyId);
       const s = servicos.find((x) => x.id === servicoId);
       if (!s) throw new Error('Serviço do catálogo não encontrado.');
-      return { codTribNacional: s.cod_trib_nacional, codTribMunicipal: s.cod_trib_municipal };
+      return { codTribNacional: s.cod_trib_nacional, codTribMunicipal: s.cod_trib_municipal, nbs: s.nbs };
     },
     travarParaEnvio: async (companyId, notaId) => {
       const { data, error } = await client.from('fiscal_notas')

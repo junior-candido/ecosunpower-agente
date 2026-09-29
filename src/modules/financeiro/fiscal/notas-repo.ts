@@ -126,19 +126,61 @@ export async function registrarEvento(client: SupabaseClient, notaId: string, ti
 
 export async function listarServicos(client: SupabaseClient, companyId: string) {
   const { data, error } = await client.from('fiscal_servicos')
-    .select('id, nome, cod_trib_nacional, cod_trib_municipal, descricao_padrao, aliquota_iss')
+    .select('id, nome, cod_trib_nacional, cod_trib_municipal, nbs, descricao_padrao, aliquota_iss')
     .eq('company_id', companyId).eq('ativo', true).order('nome');
   if (error) throw new Error(`listarServicos: ${error.message}`);
-  return (data ?? []) as Array<{ id: string; nome: string; cod_trib_nacional: string; cod_trib_municipal: string | null; descricao_padrao: string; aliquota_iss: number }>;
+  return (data ?? []) as Array<{ id: string; nome: string; cod_trib_nacional: string; cod_trib_municipal: string | null; nbs: string | null; descricao_padrao: string; aliquota_iss: number }>;
 }
 
 export async function getConfig(client: SupabaseClient, companyId: string) {
   const { data, error } = await client.from('fiscal_config')
-    .select('cnpj, inscricao_municipal, razao_social, cert_validade, ambiente, serie_dps, proximo_ndps, cert_storage_path')
+    .select('cnpj, inscricao_municipal, razao_social, municipio, uf, cert_validade, ambiente, serie_dps, proximo_ndps, cert_storage_path')
     .eq('company_id', companyId).single();
   if (error) return null;
   return data as {
-    cnpj: string; inscricao_municipal: string; razao_social: string; cert_validade: string | null;
+    cnpj: string; inscricao_municipal: string; razao_social: string; municipio: string | null; uf: string | null; cert_validade: string | null;
     ambiente: 'homologacao' | 'producao'; serie_dps: string; proximo_ndps: number; cert_storage_path: string | null;
   };
+}
+
+// ── Produção (29/09/2026): flag de e-mail automático + códigos por serviço ─────
+
+/** Coluna ainda não criada (migration 147 não aplicada): Postgres 42703 / PostgREST PGRST204. */
+const colunaFaltando = (e: { code?: string; message?: string } | null) =>
+  Boolean(e && (e.code === '42703' || e.code === 'PGRST204' || /does not exist|could not find/i.test(e.message ?? '')));
+
+/** Envio automático do e-mail da NFS-e ao tomador (default desligado). Sem a
+ *  migration 147 aplicada, responde "desligado" em vez de quebrar a tela. */
+export async function lerEmailAuto(client: SupabaseClient, companyId: string): Promise<boolean> {
+  const { data, error } = await client.from('fiscal_config').select('email_auto_tomador').eq('company_id', companyId).maybeSingle();
+  if (error || !data) return false;
+  return Boolean((data as { email_auto_tomador?: boolean }).email_auto_tomador);
+}
+
+/** false = coluna ainda não existe (aplicar a migration 147). */
+export async function salvarEmailAuto(client: SupabaseClient, companyId: string, valor: boolean): Promise<boolean> {
+  const { error } = await client.from('fiscal_config')
+    .update({ email_auto_tomador: valor, updated_at: new Date().toISOString() }).eq('company_id', companyId);
+  if (colunaFaltando(error)) return false;
+  if (error) throw new Error(`salvarEmailAuto: ${error.message}`);
+  return true;
+}
+
+const fmtNbs = (d: string) => `${d[0]}.${d.slice(1, 5)}.${d.slice(5, 7)}.${d.slice(7)}`;
+
+/** cTribMun (número do cadastro do ISS — o schema virou inteiro) e NBS (9 dígitos)
+ *  de UM serviço da empresa. Escopo company_id: serviço de outra empresa não muda. */
+export async function salvarCodigosServico(
+  client: SupabaseClient, companyId: string, servicoId: string,
+  v: { codTribMunicipal: string; nbs: string | null },
+): Promise<boolean> {
+  const cTribMun = String(v.codTribMunicipal ?? '').trim();
+  if (!/^\d{1,10}$/.test(cTribMun)) throw new Error(`Código de tributação municipal "${cTribMun}" inválido: precisa ser só número (o código do cadastro do ISS).`);
+  const nbsDig = String(v.nbs ?? '').replace(/\D/g, '');
+  if (nbsDig && nbsDig.length !== 9) throw new Error(`NBS "${v.nbs}" inválido: precisa de 9 dígitos (ex.: 1.2001.60.00).`);
+  const { data, error } = await client.from('fiscal_servicos')
+    .update({ cod_trib_municipal: cTribMun, nbs: nbsDig ? fmtNbs(nbsDig) : null })
+    .eq('id', servicoId).eq('company_id', companyId).select('id');
+  if (error) throw new Error(`salvarCodigosServico: ${error.message}`);
+  return (data ?? []).length === 1;
 }
