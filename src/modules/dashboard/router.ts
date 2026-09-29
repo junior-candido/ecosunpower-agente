@@ -2796,15 +2796,19 @@ b.onclick=async function(){
     try {
       const viewer = (req as AuthedRequest).dashUser!;
       const { listarConversas, lerFiltros } = await import('./conversas-queries.js');
-      const { renderAtendimentoPage } = await import('./atendimento-views.js');
+      const { renderAtendimentoPage, pedeSoMiolo, CABECALHO_MIOLO, LISTA_VAZIA } = await import('./atendimento-views.js');
       const filtros = lerFiltros(req.query as Record<string, unknown>);
+      // Troca suave (28/09): o script pede só o miolo (chat + resumo) — a lista não é redesenhada.
+      const soMiolo = pedeSoMiolo((n) => req.get(n));
       // P2b: ?contato= abre a conversa do número PESSOAL com quem ainda não é lead (só o dono vê).
       const ct = req.query.contato ? await rotasAtendimento.contatoDaTela(req as AuthedRequest) : null;
       if (ct && 'leadId' in ct) return res.redirect(`/dashboard/leads/${ct.leadId}?canal=whatsapp_business`);
       // company_id sai SÓ da sessão (dentro de listarConversas, .eq explícito).
-      const lista = await listarConversas(bancoDoOperador(req as AuthedRequest, supabase), viewer, filtros, supabase);
+      const lista = soMiolo ? LISTA_VAZIA : await listarConversas(bancoDoOperador(req as AuthedRequest, supabase), viewer, filtros, supabase);
       const donoPessoal = ct?.donoPessoal ?? await rotasAtendimento.nomeDoDonoPessoal(req as AuthedRequest);
-      res.type('text/html').send(renderAtendimentoPage({ user: viewer, lista, filtros, lead: null, contato: ct?.contato ?? null, donoPessoal }));
+      // Conversa na tela: nunca em cache (página inteira ou só o miolo — a URL é a mesma).
+      res.set('Cache-Control', 'private, no-store').vary(CABECALHO_MIOLO);
+      res.type('text/html').send(renderAtendimentoPage({ user: viewer, lista, filtros, lead: null, contato: ct?.contato ?? null, donoPessoal, soMiolo }));
     } catch (err) {
       console.error('[dashboard/leads/conversas]', err);
       res.status(500).send(`<h2>Erro ao carregar conversas</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
@@ -2826,11 +2830,15 @@ b.onclick=async function(){
       const { listarConversas, historicoDoLead, lerFiltros } = await import('./conversas-queries.js');
       const db = bancoDoOperador(req as AuthedRequest, supabase);
       const filtros = lerFiltros(req.query as Record<string, unknown>);
+      // Troca suave (28/09): o script pede só o miolo (chat + resumo) — a lista
+      // não é redesenhada, então nem é buscada. As travas abaixo são as MESMAS.
+      const { pedeSoMiolo, CABECALHO_MIOLO, LISTA_VAZIA } = await import('./atendimento-views.js');
+      const soMiolo = pedeSoMiolo((n) => req.get(n));
       // Parte 2: o chat junta a memória da Eva com o histórico do painel
       // (envios com autor/canal + "assumiu"/"devolveu") e traz o campo de resposta.
       const extrasP = Promise.all([
         servicosDoLead(supabase, id).catch(() => []),
-        listarConversas(db, viewer, filtros, supabase),
+        soMiolo ? Promise.resolve(LISTA_VAZIA) : listarConversas(db, viewer, filtros, supabase),
         historicoDoLead(db, id, viewer.companyId, viewer.id, supabase).catch(() => undefined),
         rotasAtendimento.nomeDoDonoPessoal(req as AuthedRequest),
       ]);
@@ -2877,7 +2885,9 @@ b.onclick=async function(){
       const envio = can(viewer, 'leads', 'editar') ? await rotasAtendimento.envioDaTela(req as AuthedRequest, lead, mensagens ?? []) : undefined;
       // W3: abriu a conversa → marca como lida no WhatsApp pessoal (só o dono, com a opção ligada).
       rotasAtendimento.aoAbrirConversa(req as AuthedRequest, { leadId: id });
-      res.send(renderLeadDetailPage(lead, [], String(req.query.docs ?? ''), String(req.query.envio ?? ''), servicosDoCliente, viewer, { lista, filtros, mensagens, envio, donoPessoal }));
+      // Conversa na tela: nunca em cache (página inteira ou só o miolo — a URL é a mesma).
+      res.set('Cache-Control', 'private, no-store').vary(CABECALHO_MIOLO);
+      res.send(renderLeadDetailPage(lead, [], String(req.query.docs ?? ''), String(req.query.envio ?? ''), servicosDoCliente, viewer, { lista, filtros, mensagens, envio, donoPessoal, soMiolo }));
     } catch (err) {
       console.error('[dashboard/leads/:id]', err);
       res.status(500).send(`<h2>Erro ao carregar lead</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
@@ -3019,6 +3029,9 @@ b.onclick=async function(){
   // Responder o WhatsApp pelo painel (texto na janela de 24 h / modelo aprovado fora dela).
   // Sem recarregar (28/09): balões, faixa "assumiu" e janela de 24 h da conversa aberta (JSON).
   router.get('/leads/:id/conversa.json', exigir('leads', 'visualizar'), rotasAtendimento.conversaJson);
+  // ⬇ Baixar (28/09): arquivo do cofre do lead e "Baixar tudo" (.zip) — atrás do portão de empresa + vendedor.
+  router.get('/leads/:id/anexo/:anexoId', exigir('leads', 'visualizar'), rotasAtendimento.anexo);
+  router.get('/leads/:id/arquivos.zip', exigir('leads', 'visualizar'), rotasAtendimento.arquivosZip);
   router.post('/leads/:id/responder', exigir('leads', 'editar'), rotasAtendimento.responder);
   router.post('/leads/:id/responder-modelo', exigir('leads', 'editar'), rotasAtendimento.responderModelo);
   // W1 — foto, PDF/documento, áudio e vídeo (multipart; a permissão e a trava de empresa vêm ANTES do upload).

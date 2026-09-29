@@ -11,6 +11,7 @@ import { criarRotasAtendimento, querJson } from '../src/modules/dashboard/atendi
 import { LimiteDeEnvio } from '../src/modules/dashboard/atendimento-envio.js';
 import { SCRIPT_RESPONDER, assinaturaDaConversa } from '../src/modules/dashboard/atendimento-views.js';
 import { bancoMemoria } from './helpers/supabase-memoria.js';
+import { parseDocument } from 'htmlparser2';
 
 const CASA = '00000000-0000-0000-0000-000000000001';
 const TENANT = 'aaaa1111-2222-3333-4444-555566667777';
@@ -210,7 +211,7 @@ describe('GET /leads/conversas/contato.json — conversa pessoal com quem não �
 type Ouvinte = (e: any) => void;
 class El {
   tagName: string; id = ''; attrs: Record<string, string> = {}; children: El[] = []; parentNode: El | null = null;
-  classes = new Set<string>(); private _texto = ''; value = ''; disabled = false; name = ''; type = '';
+  classes = new Set<string>(); _texto = ''; value = ''; disabled = false; name = ''; type = '';
   scrollTop = 0; scrollHeight = 1000; clientHeight = 300; form: El | null = null; doc: FakeDoc;
   private _html = '';
   constructor(doc: FakeDoc, tag: string) { this.doc = doc; this.tagName = tag.toUpperCase(); }
@@ -220,7 +221,17 @@ class El {
   get textContent(): string { return this._texto + this.children.map((c) => c.textContent).join(''); }
   set textContent(v: string) { this._texto = v; this.children = []; }
   get innerHTML() { return this._html; }
-  set innerHTML(v: string) { this._html = v; this.children = []; this._texto = ''; }
+  set innerHTML(v: string) {
+    this._html = v; this.children = []; this._texto = '';
+    // <template>: monta os nós de verdade em .content (o script compara e move balões).
+    if (this.tagName === 'TEMPLATE') { const c = (this as any).content as El; c.children = []; c._texto = ''; for (const n of parseDocument(v).children) doHtml(this.doc, c, n); }
+  }
+  isEqualNode(o: El): boolean {
+    return !!o && o.tagName === this.tagName && o.id === this.id && o.className === this.className && o._texto === this._texto
+      && JSON.stringify(o.attrs) === JSON.stringify(this.attrs) && o.children.length === this.children.length
+      && this.children.every((c, i) => c.isEqualNode(o.children[i]));
+  }
+  removeChild(c: El) { c.remove(); return c; }
   getAttribute(n: string) { return n === 'id' ? this.id || null : n in this.attrs ? this.attrs[n] : null; }
   setAttribute(n: string, v: string) { if (n === 'id') this.id = v; else this.attrs[n] = String(v); }
   hasAttribute(n: string) { return n in this.attrs; }
@@ -260,6 +271,15 @@ class FakeDoc {
   querySelector(sel: string) { return this.body.querySelector(sel); }
   addEventListener(t: string, f: Ouvinte) { (this.ouvintes[t] ??= []).push(f); }
   disparar(t: string, e: Record<string, unknown>) { let parou = false; const ev = { preventDefault: () => { parou = true; }, ...e }; for (const f of this.ouvintes[t] ?? []) f(ev); return parou; }
+}
+/** htmlparser2 → El (texto vai para o pai; só o que os testes usam). */
+function doHtml(doc: FakeDoc, pai: El, n: any): void {
+  if (n.type === 'text') { (pai as any)._texto += n.data; return; }
+  if (n.type !== 'tag' && n.type !== 'script' && n.type !== 'style') return;
+  const e = doc.createElement(n.name);
+  for (const [k, v] of Object.entries(n.attribs ?? {})) { if (k === 'class') e.className = String(v); else e.setAttribute(k, String(v)); }
+  pai.appendChild(e);
+  for (const f of n.children ?? []) doHtml(doc, e, f);
 }
 (El.prototype as any).contains = function (this: El, x: El) { return this === x || this.todos().includes(x); };
 
@@ -302,7 +322,7 @@ function rodarScript(t: ReturnType<typeof montarTela>, fetchImpl: (...a: any[]) 
   const location = { href: '' };
   new Function('document', 'window', 'fetch', 'FormData', 'URLSearchParams', 'location', 'setInterval', 'setTimeout',
     SCRIPT_RESPONDER)(t.doc, win, fetchImpl, FakeFormData, URLSearchParams, location, (f: () => void) => { timers.push(f); return 1; }, (f: () => void) => { f(); return 1; });
-  return { tique: () => timers.forEach((f) => f()), location };
+  return { tique: () => timers.forEach((f) => f()), location, win, timers };
 }
 const esperar = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
 const respostaJson = (corpo: unknown, ok = true) => Promise.resolve({ ok, json: () => Promise.resolve(corpo) });
@@ -332,7 +352,8 @@ describe('script do responder — sem recarregar', () => {
     expect(post.init.body).toContain('texto=++Oi+Ana%21++');
     const bal = t.msgs.querySelector('.cc-at-msg-otimista')!;
     expect(bal.textContent).toContain('Oi Ana!');
-    expect(bal.querySelector('.cc-at-msg-h')!.textContent).toBe('enviando…');
+    // nasce igual ao balão de verdade: hora + "enviando…" (e o nome de quem envia, quando a tela tem data-eu)
+    expect(bal.querySelector('.cc-at-msg-h')!.textContent).toMatch(/^\d\d:\d\d · enviando…$/);
     expect(t.msgs.querySelector('.cc-at-vazio')).toBeNull();
     expect(t.ta.value).toBe('');
     expect(t.doc.activeElement).toBe(t.ta);
@@ -345,7 +366,7 @@ describe('script do responder — sem recarregar', () => {
 
     liberar({ ok: true, json: () => Promise.resolve({ ok: true, resultado: 'enviada', texto: 'Mensagem enviada.', chave: 'nova-chave' }) });
     await esperar();
-    expect(bal.querySelector('.cc-at-msg-h')!.textContent).toBe('✓ enviado');
+    expect(bal.querySelector('.cc-at-msg-h')!.textContent).toMatch(/^\d\d:\d\d ✓$/);
     expect(t.chave.value).toBe('nova-chave');
     expect(t.btn.disabled).toBe(false);
     expect(t.btn.textContent).toBe('Enviar');
@@ -395,7 +416,7 @@ describe('script do responder — sem recarregar', () => {
     t.doc.disparar('submit', { target: t.form });
     await esperar();
     expect(t.ta.value).toBe('');
-    expect(t.msgs.querySelector('.cc-at-msg-h')!.textContent).toBe('✓ enviado');
+    expect(t.msgs.querySelector('.cc-at-msg-h')!.textContent).toMatch(/^\d\d:\d\d ✓$/);
     expect(fetchImpl.mock.calls.some((c) => !(c[1] as any)?.method)).toBe(true);
   });
 
@@ -445,7 +466,9 @@ describe('script do responder — sem recarregar', () => {
     expect(t.msgs.innerHTML).toBe('');
     s.tique();
     await esperar();
-    expect(t.msgs.innerHTML).toBe('<div>nova</div>');
+    // o balão novo ENTRA (sem innerHTML do chat inteiro); o "vazio" sai
+    expect(t.msgs.children.map((c) => c.textContent)).toEqual(['nova']);
+    expect(t.msgs.innerHTML).toBe('');
     t.doc.hidden = true;
     s.tique();
     expect(fetchImpl).toHaveBeenCalledTimes(2);
@@ -470,5 +493,114 @@ describe('script do responder — sem recarregar', () => {
     const s = rodarScript(t, fetchImpl);
     s.tique();
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Troca suave (28/09): enviar e atualizar SEM trocar o chat inteiro; trocar de
+// contato desmonta/monta o script sem ouvinte nem relógio duplicado.
+// ---------------------------------------------------------------------------
+function comBaloes(t: ReturnType<typeof montarTela>, html: string) {
+  const tpl = t.doc.createElement('template');
+  tpl.innerHTML = html;
+  t.msgs.children = [];
+  for (const c of [...(tpl as any).content.children]) t.msgs.appendChild(c);
+}
+const B = (k: string, txt: string) => `<div class="cc-at-msg" data-k="${k}"><div class="cc-at-msg-t">${txt}</div></div>`;
+
+describe('troca suave — balões por diferença e troca de contato', () => {
+  it('atualização: balões que não mudaram ficam (MESMO nó — foto/áudio não recarregam); o novo só entra no fim', async () => {
+    const t = montarTela();
+    comBaloes(t, B('1', 'oi') + B('2', 'tudo bem?'));
+    const [a, b] = t.msgs.children;
+    const fetchImpl = vi.fn(() => respostaJson({ assinatura: 'A2', msgs: B('1', 'oi') + B('2', 'tudo bem?') + B('3', 'novo'), estado: 'eva_oficial|livre|livre|0', compor: '' }));
+    const s = rodarScript(t, fetchImpl);
+    s.tique();
+    await esperar();
+    expect(t.msgs.children).toHaveLength(3);
+    expect(t.msgs.children[0]).toBe(a);
+    expect(t.msgs.children[1]).toBe(b);
+    expect(t.msgs.children[2].textContent).toBe('novo');
+  });
+
+  it('atualização: só o balão que mudou (✓ → ✓✓) é trocado; balão removido sai; inserido no meio entra no lugar', async () => {
+    const t = montarTela();
+    comBaloes(t, B('1', 'a') + B('2', 'b ✓') + B('3', 'c') + B('4', 'd'));
+    const [a, , c, d] = t.msgs.children;
+    const fetchImpl = vi.fn(() => respostaJson({ assinatura: 'A2', msgs: B('1', 'a') + B('2', 'b ✓✓') + B('3', 'c') + B('9', 'meio') + B('4', 'd'), estado: 'x', compor: '' }));
+    const s = rodarScript(t, fetchImpl);
+    s.tique();
+    await esperar();
+    expect(t.msgs.children.map((x) => x.textContent)).toEqual(['a', 'b ✓✓', 'c', 'meio', 'd']);
+    expect(t.msgs.children[0]).toBe(a);
+    expect(t.msgs.children[2]).toBe(c);
+    expect(t.msgs.children[4]).toBe(d);
+  });
+
+  it('envio: o balão "enviando…" é trocado pelo de verdade SEM refazer os anteriores', async () => {
+    const t = montarTela();
+    comBaloes(t, B('1', 'oi'));
+    const [a] = t.msgs.children;
+    const fetchImpl = vi.fn((_u: string, init?: any) => init?.method === 'POST'
+      ? respostaJson({ ok: true, resultado: 'enviada', chave: 'k2' })
+      : respostaJson({ assinatura: 'A2', msgs: B('1', 'oi') + B('2', 'Oi Ana!'), estado: 'eva_oficial|livre|livre|0', compor: '' }));
+    rodarScript(t, fetchImpl);
+    t.ta.value = 'Oi Ana!';
+    t.doc.disparar('submit', { target: t.form });
+    await esperar();
+    expect(t.msgs.children).toHaveLength(2);
+    expect(t.msgs.children[0]).toBe(a);
+    expect(t.msgs.querySelector('.cc-at-msg-otimista')).toBeNull();
+    expect(t.msgs.children[1].textContent).toBe('Oi Ana!');
+  });
+
+  it('trocar de contato: UM relógio só, busca a conversa NOVA; rascunho guardado por conversa', async () => {
+    const t = montarTela();
+    const urls: string[] = [];
+    const fetchImpl = vi.fn((u: string) => { urls.push(u); return respostaJson({ igual: true }); });
+    const s = rodarScript(t, fetchImpl);
+    expect(s.timers).toHaveLength(1);
+    t.ta.value = 'rascunho da Ana';
+    // a troca suave: desmonta, põe a coluna nova no lugar e monta
+    s.win.ccAtChat.desmontar();
+    const t2 = montarTela({ conversa: '/dashboard/leads/22222222-2222-2222-2222-222222222222/conversa.json?canal=eva_oficial' });
+    t.chat.remove();
+    t.doc.body.appendChild(t2.chat);
+    s.win.ccAtChat.montar();
+    expect(s.timers).toHaveLength(1);
+    expect((t.doc.getElementById('cc-at-texto') as any).value).toBe('');
+    s.tique();
+    await esperar();
+    expect(urls.at(-1)).toContain('/dashboard/leads/22222222-2222-2222-2222-222222222222/conversa.json');
+    expect(urls.every((u) => !u.includes(LEAD))).toBe(true);
+    // volta para a Ana: o rascunho reaparece
+    s.win.ccAtChat.desmontar();
+    t2.chat.remove();
+    t.doc.body.appendChild(t.chat);
+    t.ta.value = '';
+    s.win.ccAtChat.montar();
+    expect(t.ta.value).toBe('rascunho da Ana');
+  });
+
+  it('envio no ar e o usuário troca de contato: a resposta NÃO mexe na conversa nova (chave, aviso, balão)', async () => {
+    const t = montarTela();
+    let liberar!: (v: unknown) => void;
+    const fetchImpl = vi.fn((_u: string, init?: any) => init?.method === 'POST' ? new Promise((ok) => { liberar = ok; }) : respostaJson({ igual: true }));
+    const s = rodarScript(t, fetchImpl);
+    t.ta.value = 'Oi';
+    t.doc.disparar('submit', { target: t.form });
+    s.win.ccAtChat.desmontar();
+    const t2 = montarTela({ conversa: '/dashboard/leads/22222222-2222-2222-2222-222222222222/conversa.json?canal=eva_oficial' });
+    t.chat.remove();
+    t.doc.body.appendChild(t2.chat);
+    s.win.ccAtChat.montar();
+    liberar({ ok: true, json: () => Promise.resolve({ ok: false, resultado: 'janela_fechada', avisoHtml: '<div>fechou</div>', chave: 'k-velha' }) });
+    await esperar();
+    expect((t.doc.querySelector('input[name=chave]') as any).value).toBe(CHAVE);
+    expect(t.doc.querySelector('.cc-at-aviso-envio')).toBeNull();
+    // e dá para enviar na conversa nova na hora (não ficou "enviando")
+    (t.doc.getElementById('cc-at-texto') as any).value = 'Olá';
+    t.doc.disparar('submit', { target: t.doc.querySelector('form[data-envio]') });
+    expect(fetchImpl.mock.calls.filter((c) => (c[1] as any)?.method === 'POST')).toHaveLength(2);
   });
 });

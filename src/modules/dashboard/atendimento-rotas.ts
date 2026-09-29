@@ -47,9 +47,14 @@ import { linhaVisivelPara } from '../mensagens-whatsapp.js';
 import { gravarReacao, emojiDeReacaoValido } from '../reacoes-citacoes.js';
 import { estaDigitando, marcarLidasAoAbrir } from '../status-whatsapp.js';
 import {
-  validarArquivo, guardarMidia, apagarMidia, urlDaMidia, textoDaMidia, caminhoDaEmpresa, LIMITE_LEGENDA, LIMITE_MIDIA_BYTES,
+  validarArquivo, guardarMidia, apagarMidia, urlDaMidia, textoDaMidia, caminhoDaEmpresa, baixarMidiaGuardada, LIMITE_LEGENDA, LIMITE_MIDIA_BYTES, TTL_URL_MIDIA_S,
   type TipoMidia, type ArquivoValidado,
 } from '../midia-whatsapp.js';
+import { nomeAmigavel, tipoDoArquivo, extensaoDoArquivo, planoDoZip, ZipEmFluxo, pedacoDeNome, dataDoArquivo, type ItemDoZip } from './atendimento-arquivos.js';
+import { baixarAnexo } from '../anexos/storage.js';
+
+/** Bucket do cofre antigo de anexos do lead (lead_anexos). */
+const BUCKET_ANEXOS = 'client-attachments';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CACHE_MODELOS_MS = 10 * 60 * 1000;
@@ -587,30 +592,145 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
     const companyId = viewer.companyId;
     try {
       const { data, error } = await deps.supabase.from('mensagens_whatsapp')
-        .select('id, company_id, lead_id, visivel_so_para, tipo, midia_caminho, midia_nome')
+        .select('id, company_id, lead_id, visivel_so_para, tipo, midia_caminho, midia_nome, midia_mime, criado_em, contato_nome, contato_telefone')
         .eq('id', id).eq('company_id', companyId).maybeSingle();
-      const l = data as { lead_id: string | null; visivel_so_para: string | null; tipo: string; midia_caminho: string | null; midia_nome: string | null } | null;
+      const l = data as { lead_id: string | null; visivel_so_para: string | null; tipo: string; midia_caminho: string | null; midia_nome: string | null; midia_mime?: string | null; criado_em?: string | null; contato_nome?: string | null; contato_telefone?: string | null } | null;
       if (error || !l || !l.midia_caminho || !linhaVisivelPara(l, viewer.id) || !caminhoDaEmpresa(l.midia_caminho, companyId)) {
         res.status(404).send('arquivo não encontrado'); return;
       }
+      let cliente: string | null = l.contato_nome || l.contato_telefone || null;
       if (l.lead_id) {
-        const base = deps.supabase.from('leads').select('id, claimed_by, company_id').eq('id', l.lead_id);
+        const base = deps.supabase.from('leads').select('id, name, claimed_by, company_id').eq('id', l.lead_id);
         const { data: lead } = await (companyId === EMPRESA_CASA ? base.or(`company_id.eq.${EMPRESA_CASA},company_id.is.null`) : base.eq('company_id', companyId)).maybeSingle();
         // Conversa pessoal: o dono do número vê o que é dele (a trava de vendedor vale para as da empresa).
         const doDono = !!l.visivel_so_para && l.visivel_so_para === viewer.id;
         if (!lead || (!doDono && !podeVerLead(viewer, lead as { claimed_by: string | null }))) { res.status(404).send('arquivo não encontrado'); return; }
+        cliente = (lead as { name?: string | null }).name || cliente;
       } else if (!l.visivel_so_para) {
         res.status(404).send('arquivo não encontrado'); return;
       }
       const baixar = String(r.query?.baixar ?? '') === '1';
-      const ext = l.midia_caminho.split('.').pop() ?? 'bin';
-      const url = await urlDaMidia(deps.supabase, l.midia_caminho, baixar ? { baixarComo: l.midia_nome || `arquivo.${ext}` } : {});
+      // ⬇ Baixar (um clique): "<cliente>_<data>_<tipo>.<ext>" — o arquivo vem como anexo (Content-Disposition).
+      const nome = nomeAmigavel({ cliente, quando: l.criado_em ?? null, tipo: tipoDoArquivo(l.midia_mime, l.midia_nome ?? l.midia_caminho), ext: extensaoDoArquivo(l.midia_nome || l.midia_caminho, l.midia_mime) });
+      const url = await urlDaMidia(deps.supabase, l.midia_caminho, baixar ? { baixarComo: nome } : {});
       if (!url) { res.status(404).send('arquivo não encontrado'); return; }
       if (typeof res.setHeader === 'function') res.setHeader('Referrer-Policy', 'no-referrer');
       res.redirect(302, url);
     } catch (e) {
       console.warn(`[atendimento] mídia ${id.slice(0, 8)} falhou: ${(e as Error).message}`);
       res.status(500).send('erro ao abrir o arquivo');
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Baixar os arquivos do lead (Junior 28/09): anexo antigo da Eva (cofre
+  // lead_anexos) e "⬇ Baixar tudo" (.zip). Mesmas travas da tela do lead:
+  // empresa da sessão (+ portão do router) e vendedor dono do lead; mídia do
+  // número pessoal só entra para o dono.
+  // -------------------------------------------------------------------------
+
+  /** O lead, se quem pede pode vê-lo (empresa + vendedor). null = 404 (não revela se existe). */
+  async function leadVisivel(r: AuthedRequest, leadId: string): Promise<{ id: string; name: string | null } | null> {
+    const viewer = r.dashUser;
+    if (!viewer?.companyId || !UUID_RE.test(leadId)) return null;
+    const companyId = viewer.companyId;
+    const base = deps.supabase.from('leads').select('id, name, claimed_by, company_id').eq('id', leadId);
+    const { data, error } = await (companyId === EMPRESA_CASA ? base.or(`company_id.eq.${EMPRESA_CASA},company_id.is.null`) : base.eq('company_id', companyId)).maybeSingle();
+    const lead = data as { id: string; name: string | null; claimed_by: string | null } | null;
+    if (error || !lead || !podeVerLead(viewer, lead)) return null;
+    return lead;
+  }
+
+  /** O caminho do cofre é DESTE lead (`<leadId>/<tipo>/<arquivo>`)? */
+  const caminhoDoLead = (caminho: string | null | undefined, leadId: string) => !!caminho && caminho.startsWith(`${leadId}/`) && !caminho.includes('..');
+
+  /** GET /leads/:id/anexo/:anexoId — ver (ou ?baixar=1) um arquivo do cofre do lead: URL assinada de 2 min. */
+  async function anexo(req: Request, res: Response): Promise<void> {
+    const r = req as AuthedRequest;
+    semCache(res);
+    const leadId = String(r.params?.id ?? ''), anexoId = String(r.params?.anexoId ?? '');
+    if (!UUID_RE.test(leadId) || !UUID_RE.test(anexoId)) { res.status(400).send('id inválido'); return; }
+    try {
+      const lead = await leadVisivel(r, leadId);
+      if (!lead) { res.status(404).send('arquivo não encontrado'); return; }
+      const { data, error } = await deps.supabase.from('lead_anexos')
+        .select('id, lead_id, storage_path, mime_type, created_at').eq('id', anexoId).eq('lead_id', leadId).maybeSingle();
+      const a = data as { storage_path: string | null; mime_type: string | null; created_at: string | null } | null;
+      if (error || !a || !caminhoDoLead(a.storage_path, leadId)) { res.status(404).send('arquivo não encontrado'); return; }
+      const baixar = String(r.query?.baixar ?? '') === '1';
+      const nome = nomeAmigavel({ cliente: lead.name, quando: a.created_at, tipo: tipoDoArquivo(a.mime_type, a.storage_path), ext: extensaoDoArquivo(a.storage_path, a.mime_type) });
+      const { data: u } = await deps.supabase.storage.from(BUCKET_ANEXOS).createSignedUrl(a.storage_path!, TTL_URL_MIDIA_S, baixar ? { download: nome } : undefined);
+      if (!u?.signedUrl) { res.status(404).send('arquivo não encontrado'); return; }
+      if (typeof res.setHeader === 'function') res.setHeader('Referrer-Policy', 'no-referrer');
+      res.redirect(302, u.signedUrl);
+    } catch (e) {
+      console.warn(`[atendimento] anexo ${anexoId.slice(0, 8)} falhou: ${(e as Error).message}`);
+      res.status(500).send('erro ao abrir o arquivo');
+    }
+  }
+
+  /**
+   * GET /leads/:id/arquivos.zip — "⬇ Baixar tudo": fotos e PDFs do lead (cofre
+   * + conversa), do mais antigo pro mais novo, com nomes amigáveis. O .zip vai
+   * saindo arquivo a arquivo (nada de juntar tudo na memória); até 300
+   * arquivos / 200 MB — o que passar fica de fora e o LEIA-ME avisa.
+   */
+  async function arquivosZip(req: Request, res: Response): Promise<void> {
+    const r = req as AuthedRequest;
+    semCache(res);
+    const leadId = String(r.params?.id ?? '');
+    if (!UUID_RE.test(leadId)) { res.status(400).send('id inválido'); return; }
+    const viewer = r.dashUser;
+    if (!viewer?.companyId) { res.status(404).send('lead não encontrado'); return; }
+    const companyId = viewer.companyId;
+    let comecou = false;
+    try {
+      const lead = await leadVisivel(r, leadId);
+      if (!lead) { res.status(404).send('lead não encontrado'); return; }
+      const [anexosR, midiasR] = await Promise.all([
+        deps.supabase.from('lead_anexos').select('id, storage_path, mime_type, size_bytes, created_at, descricao').eq('lead_id', leadId).limit(1000),
+        deps.supabase.from('mensagens_whatsapp').select('id, company_id, lead_id, visivel_so_para, midia_caminho, midia_nome, midia_mime, midia_bytes, criado_em, wamid')
+          .eq('company_id', companyId).eq('lead_id', leadId).not('midia_caminho', 'is', null).limit(1000),
+      ]);
+      const itens: ItemDoZip[] = [];
+      for (const a of (anexosR.data ?? []) as Array<{ id: string; storage_path: string | null; mime_type: string | null; size_bytes: number | null; created_at: string; descricao: string | null }>) {
+        if (!caminhoDoLead(a.storage_path, leadId)) continue;
+        itens.push({ origem: 'anexo', id: a.id, caminho: a.storage_path!, mime: a.mime_type, nome: a.storage_path, quando: a.created_at, bytes: a.size_bytes, descricao: a.descricao });
+      }
+      for (const m of (midiasR.data ?? []) as Array<{ id: string; lead_id: string | null; visivel_so_para: string | null; midia_caminho: string | null; midia_nome: string | null; midia_mime: string | null; midia_bytes: number | null; criado_em: string; wamid: string | null }>) {
+        // número pessoal: só o dono vê (a mesma regra do chat); o caminho tem que ser da empresa
+        if (m.lead_id !== leadId || !linhaVisivelPara(m, viewer.id) || !caminhoDaEmpresa(m.midia_caminho, companyId)) continue;
+        itens.push({ origem: 'midia', id: m.id, caminho: m.midia_caminho!, mime: m.midia_mime, nome: m.midia_nome ?? m.midia_caminho, quando: m.criado_em, bytes: m.midia_bytes, wamid: m.wamid });
+      }
+      const plano = planoDoZip(itens, lead.name);
+      const nomeZip = `${pedacoDeNome(lead.name)}_arquivos_${dataDoArquivo(new Date().toISOString())}.zip`;
+      res.status(200);
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', `attachment; filename="${nomeZip}"`);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      comecou = true;
+      const escrever = (b: Buffer) => new Promise<void>((ok) => { if (res.write(b)) ok(); else res.once('drain', () => ok()); });
+      const zip = new ZipEmFluxo(escrever);
+      let faltaram = plano.ficaram;
+      for (const x of plano.entram) {
+        if (res.destroyed) return;
+        const dados = x.origem === 'anexo' ? await baixarAnexo(deps.supabase, x.caminho) : await baixarMidiaGuardada(deps.supabase, x.caminho);
+        if (!dados) { faltaram++; continue; }
+        await zip.arquivo(x.nomeNoZip, dados, new Date(x.quando));
+      }
+      if (faltaram > 0 || plano.entram.length === 0) {
+        const txt = plano.entram.length === 0 && faltaram === 0
+          ? 'Este lead ainda não tem fotos nem PDFs.\r\n'
+          : `${faltaram} arquivo(s) ficaram de fora (limite de 300 arquivos / 200 MB por .zip, ou arquivo indisponível). Baixe-os um a um pelo botão ⬇ Baixar.\r\n`;
+        await zip.arquivo('LEIA-ME.txt', Buffer.from(txt, 'utf-8'));
+      }
+      await zip.fechar();
+      res.end();
+      audit(deps.supabase, { companyId, userId: viewer.id, entidade: 'lead', entidadeId: leadId, acao: 'baixar_arquivos_zip' }).catch(() => {});
+    } catch (e) {
+      console.warn(`[atendimento] zip ${leadId.slice(0, 8)} falhou: ${(e as Error).message}`);
+      if (!comecou) res.status(500).send('erro ao montar o .zip');
+      else res.destroy();
     }
   }
 
@@ -963,7 +1083,8 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
       if (!podeVerLead(viewer, lead)) { res.status(403).json({ erro: 'lead de outro vendedor' }); return; }
       const [mensagens, anexos, donoPessoal] = await Promise.all([
         historicoDoLead(db, leadId, companyId, viewer.id, deps.supabase).catch(() => [] as MensagemChat[]),
-        Promise.resolve(db.from('lead_anexos').select('id').eq('lead_id', leadId).limit(1)).then((x) => (x.data ?? []) as unknown[]).catch(() => [] as unknown[]),
+        // metadados (sem URL): os balões antigos "[Enviou uma foto]" casam igual à página
+        Promise.resolve(db.from('lead_anexos').select('id, tipo, mime_type, created_at, created_by, descricao').eq('lead_id', leadId).order('created_at', { ascending: false }).limit(500)).then((x) => (x.data ?? []) as unknown[]).catch(() => [] as unknown[]),
         nomeDoDonoPessoal(r),
       ]);
       const envio = can(viewer, 'leads', 'editar') ? await envioDaTela(r, lead, mensagens) : undefined;
@@ -1002,7 +1123,7 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
   return {
     responder: comJson(responder), responderModelo: comJson(responderModelo), assumir, devolver, envioDaTela, modelos, contatoDaTela,
     responderContato: comJson(responderContato), virarLeadDoContato, nomeDoDonoPessoal, conversaJson, contatoJson,
-    responderMidia: comJson(responderMidia), responderContatoMidia: comJson(responderContatoMidia), midia,
+    responderMidia: comJson(responderMidia), responderContatoMidia: comJson(responderContatoMidia), midia, anexo, arquivosZip,
     /** Para o router: multer + handler (o arquivo chega em req.file). */
     comArquivo,
     reagir: comJson(reagir), reagirContato: comJson(reagirContato),
