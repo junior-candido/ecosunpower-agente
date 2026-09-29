@@ -45,7 +45,7 @@ export async function explicarEconomia(
     max_tokens: 400,
     messages: [{ role: 'user', content: prompt }],
   });
-  medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'ia-engenharia', usage: resp.usage });
+  medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'admin:ia-engenharia', usage: resp.usage });
   return resp.content
     .filter((b): b is Anthropic.TextBlock => b.type === 'text')
     .map(b => b.text)

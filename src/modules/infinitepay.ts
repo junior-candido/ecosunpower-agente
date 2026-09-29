@@ -160,7 +160,7 @@ export interface WebhookInfinitePay {
 }
 
 export type VerificarFn = (p: { orderNsu: string; transactionNsu: string; slug: string }) =>
-  Promise<{ ok: boolean; pago?: boolean; pagoCentavos?: number; metodo?: string; parcelas?: number }>;
+  Promise<{ ok: boolean; pago?: boolean; pagoCentavos?: number; valorCentavos?: number; metodo?: string; parcelas?: number }>;
 
 /**
  * Confirma um webhook: reconsulta o payment_check (o webhook não é assinado) e
@@ -171,12 +171,14 @@ export async function webhookConfirmado(
   wh: WebhookInfinitePay,
   valorEsperadoCentavos: number,
   verificar: VerificarFn,
-): Promise<{ confirmado: boolean; erroVerificacao?: boolean; metodo?: string; pagoCentavos?: number; parcelas?: number }> {
+): Promise<{ confirmado: boolean; erroVerificacao?: boolean; metodo?: string; pagoCentavos?: number; valorCentavos?: number; parcelas?: number }> {
   const r = await verificar({ orderNsu: wh.order_nsu, transactionNsu: wh.transaction_nsu, slug: wh.invoice_slug });
   // Não deu pra CONFIRMAR (rede/erro no payment_check): não marca pago, mas
   // sinaliza pro webhook pedir RETRY (senão perde um pagamento de verdade).
   if (!r.ok) return { confirmado: false, erroVerificacao: true };
   if (!r.pago) return { confirmado: false };
   if (typeof r.pagoCentavos === 'number' && r.pagoCentavos < valorEsperadoCentavos) return { confirmado: false };
-  return { confirmado: true, metodo: r.metodo, pagoCentavos: r.pagoCentavos, parcelas: r.parcelas };
+  // valorCentavos = valor da cobrança segundo o payment_check (quem baixa FATURA
+  // exige um valor confirmado — pago ou, na falta, o cobrado — nunca o nosso).
+  return { confirmado: true, metodo: r.metodo, pagoCentavos: r.pagoCentavos, valorCentavos: r.valorCentavos, parcelas: r.parcelas };
 }

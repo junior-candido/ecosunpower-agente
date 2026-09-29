@@ -8,7 +8,7 @@ import { join } from 'path';
 import { contratoDaTela, aplicarMudancas } from './helpers/contrato-tela.js';
 import { CASOS_PASTAS } from './fixtures/casos-pastas.js';
 // Troca comum das telas renovadas: sai o Tailwind do CDN (telas leves, #328).
-import { TELAS_LEVES } from './fixtures/mudancas-telas-leves.js';
+import { TELAS_LEVES, menuTenantSemAssinaturas } from './fixtures/mudancas-telas-leves.js';
 import type { MudancaContrato } from './helpers/contrato-tela.js';
 
 /** CONSERTO (R12): o confirm do "Excluir pasta inteira" tinha QUEBRAS DE LINHA
@@ -32,7 +32,8 @@ const CONTRATO = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures'
 describe('Pasta do Cliente — contrato das 3 telas não muda', () => {
   for (const [nome, render] of Object.entries(CASOS_PASTAS)) {
     it(`contrato: ${nome}`, () => {
-      expect(contratoDaTela(render())).toEqual(aplicarMudancas(CONTRATO[nome], TELAS_LEVES, ...(EXCLUIR_COM_CONFIRM[nome] ? [EXCLUIR_COM_CONFIRM[nome]] : [])));
+      const h = render();
+      expect(contratoDaTela(h)).toEqual(aplicarMudancas(CONTRATO[nome], ...menuTenantSemAssinaturas(h), TELAS_LEVES, ...(EXCLUIR_COM_CONFIRM[nome] ? [EXCLUIR_COM_CONFIRM[nome]] : [])));
     });
   }
 });

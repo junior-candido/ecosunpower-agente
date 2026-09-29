@@ -1,6 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { ECOSUN_COMPANY_ID } from './tenant-resolver.js';
+import { filtrarDisparosLiberados } from './cobranca-recorrente/pausa.js';
+import { medirIa } from './custos/ia-metering.js';
 
 interface CadenceStep {
   days: number;
@@ -82,7 +84,7 @@ export class ReengagementCadence {
   async processDueTouches(): Promise<number> {
     const { data, error } = await this.supabase
       .from('reengagement_touches')
-      .select('id, touch_number, topic_type, leads(id, phone, name)')
+      .select('id, touch_number, topic_type, company_id, leads(id, phone, name)')
       .eq('company_id', ECOSUN_COMPANY_ID) // cron fora de contexto: só EcoSun (tenant = fase 2)
       .eq('status', 'pending')
       .lte('scheduled_for', new Date().toISOString())
@@ -92,9 +94,12 @@ export class ReengagementCadence {
       return 0;
     }
     if (!data || data.length === 0) return 0;
+    // Cobrança recorrente — 2ª trava (ponto único). Hoje só a casa (nunca trava);
+    // quando a reativação de tenant ligar, já nasce respeitando.
+    const liberados = await filtrarDisparosLiberados(data as unknown as Array<{ company_id?: string | null }>, (t) => t.company_id, 'reativação');
 
     let sent = 0;
-    for (const touch of data as unknown as Array<{
+    for (const touch of liberados as unknown as Array<{
       id: string;
       touch_number: number;
       topic_type: string;
@@ -182,6 +187,8 @@ Gere APENAS o texto da mensagem, sem comentario ou explicacao.`;
       max_tokens: 300,
       messages: [{ role: 'user', content: prompt }],
     });
+    // Cron só da casa (a busca filtra ECOSUN) — custo da casa.
+    medirIa({ modelo: res.model ?? 'claude-haiku-4-5-20251001', origem: 'reativacao:reengajamento', usage: res.usage, companyId: ECOSUN_COMPANY_ID });
     return res.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
       .map((b) => b.text)

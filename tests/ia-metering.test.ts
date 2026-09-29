@@ -100,7 +100,8 @@ describe('registrarUsoIa', () => {
     const { client, inserts } = makeFakeClient();
     await registrarUsoIa(client, {
       modelo: 'claude-sonnet-4-6',
-      origem: 'eva',
+      origem: 'conversa:lead',
+      companyId: '00000000-0000-0000-0000-000000000001',
       usage: {
         input_tokens: 1_000_000,
         output_tokens: 1_000_000,
@@ -112,12 +113,13 @@ describe('registrarUsoIa', () => {
     expect(inserts[0].table).toBe('custos_ia_uso');
     expect(inserts[0].row).toEqual({
       modelo: 'claude-sonnet-4-6',
-      origem: 'eva',
+      origem: 'conversa:lead',
       input_tokens: 1_000_000,
       output_tokens: 1_000_000,
       cache_read_tokens: 0,
       cache_write_tokens: 0,
       custo_cents: 9720,
+      company_id: '00000000-0000-0000-0000-000000000001',
     });
   });
 
@@ -134,7 +136,7 @@ describe('registrarUsoIa', () => {
     });
     expect(inserts[0].row.cache_read_tokens).toBe(200);
     expect(inserts[0].row.cache_write_tokens).toBe(300);
-    expect(inserts[0].row.origem).toBeNull();
+    expect(inserts[0].row.origem).toBe('sem-origem#sem-empresa');
   });
 
   it('best-effort: client null → não faz nada e não lança', async () => {

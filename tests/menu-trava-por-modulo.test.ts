@@ -159,9 +159,11 @@ describe('menu da Jimena (Conquista, só "eva")', () => {
   it('Usinas, Financeiro e Marketing TRANCADOS com link pra vitrine; Comercial aberto', () => {
     const grupos = montarMenu(comModulos(jimena, ['eva']), 'command_center', ECOSUN, pode);
     const item = (k: string) => grupos.flatMap((g) => g.itens).find((i) => i.key === k);
-    for (const k of ['monitoramento', 'demonstrativos', 'medicao', 'usinas_kanban', 'financeiro', 'fiscal', 'cobrar', 'assinaturas', 'marketing', 'blog', 'email', 'cadencia', 'rh_vagas', 'pastas', 'pos_venda', 'servicos']) {
+    for (const k of ['monitoramento', 'demonstrativos', 'medicao', 'usinas_kanban', 'financeiro', 'fiscal', 'cobrar', 'marketing', 'blog', 'email', 'cadencia', 'rh_vagas', 'pastas', 'pos_venda', 'servicos']) {
       expect(item(k)?.estado, k).toBe('bloqueado');
     }
+    // Cobrança recorrente (28/09/2026): Assinaturas é a carteira da CASA — nem aparece pro tenant.
+    expect(item('assinaturas'), 'assinaturas').toBeUndefined();
     for (const k of ['leads', 'kanban', 'propostas', 'recados', 'conhecimento', 'command_center', 'atencao', 'minha_assinatura', 'usuarios', 'whatsapp']) {
       expect(item(k)?.estado, k).toBe('visivel');
     }

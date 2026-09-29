@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import Redis from 'ioredis';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { medirIa } from './custos/ia-metering.js';
 
 const IORedis = (Redis as any).default ?? Redis;
 
@@ -193,6 +194,7 @@ export class PricingAssistant {
       ],
       messages: history,
     });
+    medirIa({ modelo: response.model ?? 'claude-sonnet-4-6', origem: 'admin:preco', usage: response.usage });
 
     const reply = response.content
       .filter((block): block is Anthropic.TextBlock => block.type === 'text')

@@ -11,6 +11,7 @@ import {
 } from './followup-vivo-mensagem.js';
 import { registrarEvento } from '../elo/eventos.js';
 import { normalizeBrazilianPhone } from '../meta-leadgen.js';
+import { filtrarDisparosLiberados } from '../cobranca-recorrente/pausa.js';
 
 export interface FollowupVivoDeps {
   client: SupabaseClient;
@@ -214,7 +215,7 @@ export class FollowupVivoService {
     if (errPresas) console.error('[followup-vivo] varredura de sending falhou:', errPresas.message);
     else if (presas && presas.length > 0) console.warn(`[followup-vivo] ${presas.length} etapa(s) presas em sending marcadas failed`);
     const { data: devidas, error } = await this.deps.client.from(T)
-      .select('id, proposta_slug, lead_id, etapa, scheduled_for')
+      .select('id, proposta_slug, lead_id, etapa, scheduled_for, company_id')
       .eq('status', 'pending').lte('scheduled_for', new Date(agoraMs).toISOString())
       .order('scheduled_for', { ascending: true }).limit(this.deps.loteMaximo);
     if (error) {
@@ -230,7 +231,10 @@ export class FollowupVivoService {
       return 0;
     }
     let enviadas = 0;
-    for (const row of (devidas ?? []) as EtapaRow[]) {
+    // Cobrança recorrente — 2ª trava (ponto único): etapa de tenant inadimplente fica PENDENTE
+    // (não é travada nem marcada) e volta, reagendada com espaçamento, quando ele pagar.
+    const liberadas = await filtrarDisparosLiberados((devidas ?? []) as Array<EtapaRow & { company_id?: string | null }>, (r) => r.company_id, 'follow-up de proposta');
+    for (const row of liberadas as EtapaRow[]) {
       try { if (await this.processarUma(row, agoraMs)) enviadas++; }
       catch (err) {
         const msg = (err as Error)?.message ?? String(err);

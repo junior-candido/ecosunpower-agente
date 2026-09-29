@@ -3,6 +3,7 @@ import Redis from 'ioredis';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import type { CalendarService } from './calendar.js';
+import { medirIa } from './custos/ia-metering.js';
 
 const IORedis = (Redis as any).default ?? Redis;
 
@@ -274,6 +275,7 @@ export class SchedulingAssistant {
       ],
       messages: history,
     });
+    medirIa({ modelo: response.model ?? 'claude-sonnet-4-6', origem: 'admin:agendamento', usage: response.usage });
 
     const claudeReply = response.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')

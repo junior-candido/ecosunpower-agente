@@ -56,7 +56,7 @@ export async function resumirMetricas(
       system: 'Você é um analista de vendas da EcoSunPower. Gere resumos curtos, claros e motivacionais para o gestor.',
       messages: [{ role: 'user', content: buildPrompt(metricas) }],
     });
-    medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'bi', usage: response.usage });
+    medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'resumo:bi', usage: response.usage });
 
     const bloco = response.content.find(b => b.type === 'text');
     if (!bloco || bloco.type !== 'text') return FALLBACK;
