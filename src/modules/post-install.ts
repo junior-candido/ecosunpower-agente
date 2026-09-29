@@ -3,6 +3,8 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { registrarEvento } from './elo/eventos.js';
 import { empresa } from './empresa-config.js';
 import { filtrarDisparosLiberados } from './cobranca-recorrente/pausa.js';
+import { medirIa } from './custos/ia-metering.js';
+import { ECOSUN_COMPANY_ID } from './tenant-resolver.js';
 
 // Enum de installation_status. Fonte unica — importe no endpoint pra
 // validacao, evita drift entre codigo e migration (CHECK constraint espelha
@@ -187,7 +189,7 @@ export class PostInstallService {
   async processDueTouches(): Promise<number> {
     const { data, error } = await this.supabase
       .from('post_install_touches')
-      .select('id, touch_type, company_id, leads(id, phone, name, city, energy_data, opt_out)')
+      .select('id, touch_type, company_id, leads(id, phone, name, city, energy_data, opt_out, company_id)')
       .eq('status', 'pending')
       .lte('scheduled_for', new Date().toISOString())
       .limit(10);
@@ -210,6 +212,7 @@ export class PostInstallService {
         city: string | null;
         energy_data: Record<string, unknown> | null;
         opt_out: boolean | null;
+        company_id?: string | null;
       } | null;
     }>) {
       const lead = touch.leads;
@@ -231,7 +234,7 @@ export class PostInstallService {
         continue;
       }
       try {
-        const message = await this.generateMessage(touch.touch_type, lead.name);
+        const message = await this.generateMessage(touch.touch_type, lead.name, lead.company_id ?? null);
         await this.sendText(lead.phone, message);
         await this.supabase
           .from('post_install_touches')
@@ -259,6 +262,8 @@ export class PostInstallService {
   private async generateMessage(
     type: TouchStep['type'],
     name: string | null,
+    /** Empresa do lead (custo de IA). Sem → casa (lead antigo sem dono). */
+    companyId: string | null = null,
   ): Promise<string> {
     const firstName = (name ?? '').split(' ')[0] || 'tudo certo';
     const guide = TOPIC_GUIDE[type].replace('{{review_link}}', this.reviewLink);
@@ -288,6 +293,8 @@ Gere APENAS o texto da mensagem, sem explicacao.`;
       max_tokens: 300,
       messages: [{ role: 'user', content: prompt }],
     });
+    // Custo na empresa do LEAD (sem dono = casa). Não esconde tenant na casa.
+    medirIa({ modelo: res.model ?? 'claude-haiku-4-5-20251001', origem: 'reativacao:pos-instalacao', usage: res.usage, companyId: companyId ?? ECOSUN_COMPANY_ID });
     return res.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
       .map((b) => b.text)

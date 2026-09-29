@@ -68,6 +68,8 @@ export const TELAS_RENOVADAS: string[] = [
   'whatsapp-views.ts',
   'minha-assinatura-views.ts',
   'configuracoes-casca.ts',
+  // Custo de IA por empresa (28/09/2026) — só a casa, nasceu no padrão cc-
+  'custo-ia-views.ts',
 
   // Cobrança recorrente (28/09/2026) — Financeiro › Assinaturas (lista + detalhe), nasceu no padrão cc-
   'assinaturas-views.ts',

@@ -21,6 +21,8 @@ import { usina, ALERTAS_RESUMO, SPARK_7D, KPIS_EVA } from './casos-monitoramento
 import { telasOnda3 } from './telas-onda3.js';
 import { telasCobranca } from './telas-cobranca.js';
 import { USER_CASA, leadRow, leadDetalhe, SERVICOS_LEAD, FILTROS_CHEIOS } from './miolo-leads.js';
+import { renderCustoIaPage } from '../../src/modules/dashboard/custo-ia-views.js';
+import { painelCustoIaExemplo } from './casos-custo-ia.js';
 
 const hora = (h: number) => new Date(Date.now() - h * 3600_000).toISOString();
 const uuid = (i: number) => `${String(i).padStart(8, '0')}-1111-4111-8111-111111111111`;
@@ -132,5 +134,7 @@ export function telasRenovadas(n: number, user: DashUser = USER_CASA): Record<No
     ...telasOnda3(n, user),
     // Cobrança recorrente (28/09/2026): Assinaturas (casa) + Minha assinatura com faturas (tenant)
     ...telasCobranca(n, user),
+    // Custo de IA (28/09/2026) — tela só da casa
+    'custo-ia': renderCustoIaPage(painelCustoIaExemplo(Math.max(2, Math.min(n, 30))), user),
   };
 }

@@ -88,11 +88,11 @@ export async function redigirMensagem(client: Anthropic, ctx: ContextoRedacao): 
   let response;
   try {
     response = await client.messages.create({ model: MODELO_FORTE, max_tokens: 512, messages: [{ role: 'user', content: prompt }] });
-    medirIa({ modelo: MODELO_FORTE, origem: 'monitoramento', usage: response.usage });
+    medirIa({ modelo: MODELO_FORTE, origem: 'escrita:abordagem-monitoramento', usage: response.usage });
   } catch (err) {
     console.warn('[abordagem] Opus indisponível, fallback Haiku:', (err as Error).message);
     response = await client.messages.create({ model: MODELO_RAPIDO, max_tokens: 512, messages: [{ role: 'user', content: prompt }] });
-    medirIa({ modelo: MODELO_RAPIDO, origem: 'monitoramento', usage: response.usage });
+    medirIa({ modelo: MODELO_RAPIDO, origem: 'escrita:abordagem-monitoramento', usage: response.usage });
   }
   const raw = response.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('');
   const limpa = limparMensagem(raw);

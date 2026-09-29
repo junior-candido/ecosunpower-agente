@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { ECOSUN_COMPANY_ID } from './tenant-resolver.js';
 import { filtrarDisparosLiberados } from './cobranca-recorrente/pausa.js';
+import { medirIa } from './custos/ia-metering.js';
 
 interface CadenceStep {
   days: number;
@@ -186,6 +187,8 @@ Gere APENAS o texto da mensagem, sem comentario ou explicacao.`;
       max_tokens: 300,
       messages: [{ role: 'user', content: prompt }],
     });
+    // Cron só da casa (a busca filtra ECOSUN) — custo da casa.
+    medirIa({ modelo: res.model ?? 'claude-haiku-4-5-20251001', origem: 'reativacao:reengajamento', usage: res.usage, companyId: ECOSUN_COMPANY_ID });
     return res.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
       .map((b) => b.text)

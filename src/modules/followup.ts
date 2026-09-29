@@ -274,7 +274,7 @@ Gere APENAS o texto da mensagem, sem explicacao.`;
       max_tokens: 300,
       messages: [{ role: 'user', content: prompt }],
     });
-    medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'followup', usage: res.usage });
+    medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'reativacao:followup', usage: res.usage, companyId: ECOSUN_COMPANY_ID }); // cron só da casa
     const raw = res.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
       .map((b) => b.text)

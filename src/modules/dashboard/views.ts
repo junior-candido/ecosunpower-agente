@@ -100,7 +100,7 @@ export type ChaveAtiva =
   | 'monitoramento' | 'medicao' | 'usinas_kanban' | 'pos_venda' | 'pastas' | 'marketing' | 'blog'
   | 'email' | 'cadencia' | 'leads' | 'conversas' | 'recados' | 'conhecimento' | 'kanban' | 'clientes' | 'financeiro'
   | 'fiscal' | 'cobrar' | 'assinaturas' | 'minha_assinatura' | 'whatsapp' | 'servicos' | 'usuarios'
-  | 'empresas' | 'rh_candidatos' | 'rh_vagas' | 'rh_busca' | 'cerebro' | 'lojas' | 'predio'
+  | 'empresas' | 'custo_ia' | 'rh_candidatos' | 'rh_vagas' | 'rh_busca' | 'cerebro' | 'lojas' | 'predio'
   | 'demonstrativos' | 'tv' | 'atencao' | 'energia';
 
 interface LayoutInput {

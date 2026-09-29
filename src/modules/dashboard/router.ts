@@ -37,6 +37,7 @@ import type { ProposalAssistant } from '../proposal-assistant.js';
 import type { MetaWhatsAppService } from '../meta-whatsapp.js';
 import {
   criarSessionAuth,
+  comCustoAposUpload,
   setSessionCookie,
   clearSessionCookie,
   segredoDaSessao,
@@ -285,10 +286,11 @@ export function createDashboardRouter(
   });
   const telemetriaService = new TelemetriaService(supabaseService, monitoringService);
   // Upload em memória, reusado por várias rotas (fotos, anexos, docs do contrato).
-  const upload = multer({
+  // comCustoAposUpload: depois do upload o custo de IA segue na empresa do login.
+  const upload = comCustoAposUpload(multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 20 * 1024 * 1024 },
-  });
+  }));
 
   // Middleware-fábrica de gating de permissão por área/nível. Aplicado ANTES
   // dos handlers das rotas por área. Sem permissão → 403. Compatível com o
@@ -1092,8 +1094,8 @@ b.onclick=async function(){
   });
 
   // ── Fiscal (NFS-e) — F1: preparar + anexar · F2: config A1 + emitir ────
-  const uploadPdf = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
-  const uploadPfx = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+  const uploadPdf = comCustoAposUpload(multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }));
+  const uploadPfx = comCustoAposUpload(multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } }));
 
   // Recados de quem e DE DENTRO e escreveu no numero da assistente (migration 118).
   // A assistente nao trata como lead, mas nada se perde: cai aqui pra empresa ler.
@@ -2143,6 +2145,12 @@ b.onclick=async function(){
         ? { tipo: 'erro' as const, texto: String(req.query.erro) }
         : undefined;
     res.type('html').send(renderEmpresasPage(empresas, req.dashUser, aviso));
+  });
+
+  // ----- CUSTO DE IA por empresa (28/09/2026): SÓ admin da casa (portão na rota).
+  router.get('/custo-ia', async (req: AuthedRequest, res) => {
+    const { criarRotaCustoIa } = await import('./custo-ia-rota.js');
+    await criarRotaCustoIa(supabase)(req, res);
   });
 
   router.post('/empresas/nova', async (req: AuthedRequest, res) => {
@@ -7614,10 +7622,10 @@ b.onclick=async function(){
   });
 
   // Multer instance para A4 (até 100MB por arquivo pra acomodar vídeo)
-  const uploadProposta = multer({
+  const uploadProposta = comCustoAposUpload(multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 100 * 1024 * 1024 },
-  });
+  }));
 
   router.post('/propostas/novo',
     exigir('propostas', 'criar'),
