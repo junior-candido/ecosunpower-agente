@@ -259,7 +259,7 @@ import { BUILD_VERSION } from './build-info.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { readFileSync } from 'fs';
-import { montarBlocoProposta } from './modules/proposal-context.js';
+import { montarBlocoProposta, montarContextoConsultora } from './modules/proposal-context.js';
 import { corrigirOrtografia } from './modules/corretor-ortografico.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -1450,7 +1450,7 @@ async function main() {
       if (!match) return '';
       const bloco = montarBlocoProposta((match as any).dados_input, (match as any).cliente_nome);
       if (!bloco) return '';
-      return `\n\n${consultoraPropostaPrompt}\n\n${bloco}`;
+      return montarContextoConsultora(consultoraPropostaPrompt, bloco, empresa());
     } catch (err) {
       console.warn('[consultora-proposta] montarContextoProposta falhou:', (err as Error).message);
       return '';

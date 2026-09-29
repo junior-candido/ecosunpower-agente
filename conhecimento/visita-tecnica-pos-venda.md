@@ -52,7 +52,7 @@ Trigger:
 > - Fotos + laudo escrito em até 48h
 >
 > Duração ~2h no local, pagamento PIX antes da visita.
-> Posso agendar pra você? Qual dia/horário fica melhor?"
+> Qual dia/horário fica melhor pra você? Eu anoto e o Junior confirma com você."
 
 ## Diferença importante de outras visitas
 

@@ -28,6 +28,16 @@ describe('prompts não podem ter nome da EcoSunPower fixo (multi-tenant)', () =>
       }
     });
   }
+  // 29/09/2026: o "Junior" maiúsculo já estava travado, mas 16 frases-modelo em
+  // minúsculas ("ja repasso pro junior", "voce ja conhece o junior?") passavam
+  // e iam pros clientes dos tenants.
+  for (const arquivo of arquivos) {
+    it(`${arquivo} não tem "junior" nem em minúsculas`, () => {
+      const texto = readFileSync(join(promptsDir, arquivo), 'utf-8');
+      const linha = texto.split('\n').find((l) => /\bjunior\b/i.test(l));
+      expect(linha, `"junior" fixo em ${arquivo} — use {{rt_o}}/{{rt_pro}}/{{rt_do}}`).toBeUndefined();
+    });
+  }
   it('achou os arquivos de prompt (guarda contra teste vazio)', () => {
     expect(arquivos.length).toBeGreaterThan(2);
   });
