@@ -48,3 +48,11 @@ export const MUDANCAS_R5: Record<string, MudancaContrato[]> = {
   'atencao-tenant': [R5_CSS_CC_NO_HEAD],
 };
 
+
+
+// ════════════════════════════════════════════════════════════════════════
+// R21 — Comercial II (contratos, Fechou!, contrato do lead, recados, lojas, conhecimento)
+// ════════════════════════════════════════════════════════════════════════
+
+/** R21: trocas por caso de tests/fixtures/casos-comercial2.ts. */
+export const MUDANCAS_R21: Record<string, MudancaContrato[]> = {};

@@ -1,0 +1,24 @@
+// Renovação do miolo — R21: Comercial II (Contratos & Procurações, Fechou!,
+// formulário do contrato do lead + documento travado, Recados, Comparador de
+// Lojas e "O que a assistente sabe"). CONTRATO gravado da tela antiga
+// (tests/fixtures/contrato-comercial2.json): todos os forms (ler-documentos
+// multipart, enviar-doc com o confirm, salvar-drive, contrato-form com os
+// formaction de IA/parcelas/congelar, vincular proposta), os ids do script
+// (campo-*, btn-preview, form-contrato, preview-doc) e o data-usar/data-valor.
+// A TRAVA DE SAÍDA do contrato (PR #317) é do servidor e não muda aqui.
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { contratoDaTela, aplicarMudancas } from './helpers/contrato-tela.js';
+import { CASOS_COMERCIAL2 } from './fixtures/casos-comercial2.js';
+import { MUDANCAS_R21, r5Menu } from './fixtures/mudancas-onda4.js';
+
+const CONTRATO = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contrato-comercial2.json'), 'utf-8'));
+
+describe('Comercial II — contrato das telas não muda', () => {
+  for (const [nome, render] of Object.entries(CASOS_COMERCIAL2)) {
+    it(`contrato: ${nome}`, () => {
+      expect(contratoDaTela(render())).toEqual(aplicarMudancas(CONTRATO[nome], ...r5Menu(CONTRATO[nome]), ...(MUDANCAS_R21[nome] ?? [])));
+    });
+  }
+});
