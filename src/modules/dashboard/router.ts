@@ -119,7 +119,7 @@ import { EMPRESA_CASA as EMPRESA_PADRAO_PASTA } from './canal-envio.js';
 import type { BlogGenerator, BlogDraft } from '../blog-generator.js';
 import { renderBlogDraftsPage, renderBlogIndisponivel, renderBlogRevisarPage, renderBlogLayout } from './blog-views.js';
 import { renderEmailPage, renderEmailLayout, renderEmailIndisponivel } from './email-views.js';
-import { renderMedicaoPage } from './medicao-views.js';
+import { renderMedicaoTela } from './medicao-views.js';
 import {
   renderDemonstrativosLista, renderDemonstrativoCliente, renderConferenciaPdf, renderDigitar, renderEnviarPdf,
   renderConfirmarEnvioRelatorio, type ResultadoLeituraPdf,
@@ -926,12 +926,7 @@ b.onclick=async function(){
     const resumo = escolhido
       ? await resumoDoAparelho(client, escolhido, companyId, horas)
       : { aparelho: null, agora: null, demanda: null, janelas: [], consumoDiaKwh: null, injecaoDiaKwh: null, minutosSemReceber: null };
-    res.type('text/html').send(renderLayout({
-      active: 'medicao',
-      title: 'Medição',
-      body: renderMedicaoPage(aparelhos, resumo, horas),
-      user: req.dashUser,
-    }));
+    res.type('text/html').send(renderMedicaoTela(aparelhos, resumo, horas, req.dashUser));
   });
 
   // GESTÃO DE ENERGIA G1 (energia-rotas.ts): lista, cadastro do medidor, "Energia

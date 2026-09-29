@@ -67,3 +67,15 @@ const R21_VOLTAR_BUSCA_INTEIRO: MudancaContrato = {
 const R21_FORMS = ['form-faltando', 'form-cheio', 'form-ia', 'form-ia-falhou', 'form-ia-off', 'form-congelado', 'form-sem-proposta', 'form-aditivo', 'form-procuracao-tenant'];
 /** R21: trocas por caso de tests/fixtures/casos-comercial2.ts (além de TELAS_LEVES). */
 export const MUDANCAS_R21: Record<string, MudancaContrato[]> = Object.fromEntries(R21_FORMS.map((c) => [c, [R21_VOLTAR_BUSCA_INTEIRO]]));
+
+
+// ════════════════════════════════════════════════════════════════════════
+// R22 — Operação II (pós-venda, medição)
+// ════════════════════════════════════════════════════════════════════════
+
+/** R22: trocas por caso de tests/fixtures/casos-operacao2.ts. Sem entrada → só
+ *  a troca comum TELAS_LEVES (o teste aplica). Enquanto a tela antiga está no
+ *  ar, cada caso declara []. */
+export const MUDANCAS_R22: Record<string, MudancaContrato[]> = Object.fromEntries(
+  ['pos-venda', 'pos-venda-sem-agenda', 'pos-venda-vazio', 'pos-venda-tenant', 'medicao', 'medicao-um-aparelho', 'medicao-sem-leitura', 'medicao-sem-aparelho', 'medicao-tenant'].map((c) => [c, []]),
+);

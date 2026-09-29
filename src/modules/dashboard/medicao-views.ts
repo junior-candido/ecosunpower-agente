@@ -11,6 +11,8 @@
 // dependência, carrega em qualquer celular.
 
 import type { ResumoMedicao, Aparelho } from './medicao-queries.js';
+import { renderLayout } from './views.js';
+import type { DashUser } from './permissions.js';
 
 function esc(s: unknown): string {
   return String(s ?? '')
@@ -214,4 +216,9 @@ export function renderMedicaoPage(
       </p>
     </div>
   </div>`;
+}
+
+/** A tela inteira (casca + miolo) — antes o router montava a casca. */
+export function renderMedicaoTela(aparelhos: Aparelho[], r: ResumoMedicao, horas: number, user: DashUser | undefined): string {
+  return renderLayout({ active: 'medicao', title: 'Medição', body: renderMedicaoPage(aparelhos, r, horas), user });
 }
