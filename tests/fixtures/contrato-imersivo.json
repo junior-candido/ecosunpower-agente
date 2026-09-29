@@ -1,0 +1,76 @@
+{
+  "predio": {
+    "formularios": [],
+    "fetches": [
+      "'/dashboard/api/predio'"
+    ],
+    "links": [
+      "/dashboard/home"
+    ],
+    "ids": [
+      "aviso-vazio",
+      "cena",
+      "letreiro-itens",
+      "painel",
+      "tooltip"
+    ],
+    "idsAusentes": [],
+    "seletores": [],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": []
+  },
+  "cerebro": {
+    "formularios": [
+      {
+        "method": "GET",
+        "action": "",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "GET",
+        "action": "",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [
+      "'/dashboard/cerebro/custos'",
+      "'/dashboard/cerebro/custos/fixo'",
+      "'/dashboard/cerebro/perguntar'"
+    ],
+    "links": [],
+    "ids": [
+      "askBtn",
+      "askForm",
+      "askInput",
+      "cofre",
+      "cofreClose",
+      "cofreDados",
+      "cofreForm",
+      "cofreLock",
+      "cofreMsg",
+      "cofrePin",
+      "fixoAdd",
+      "fixoNome",
+      "fixoValor",
+      "links",
+      "micBtn",
+      "panel",
+      "panelBody",
+      "panelClose",
+      "say",
+      "stage",
+      "stageZone",
+      "voiceToggle"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".house, .brain"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": []
+  }
+}

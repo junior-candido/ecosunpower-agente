@@ -95,3 +95,11 @@ export const MUDANCAS_R22: Record<string, MudancaContrato[]> = {
   'medicao-sem-aparelho': [TELAS_LEVES],
   'medicao-tenant': [TELAS_LEVES],
 };
+
+
+// ════════════════════════════════════════════════════════════════════════
+// R23 — Prédio Vivo e Cérebro dentro da casca (modo imersivo)
+// ════════════════════════════════════════════════════════════════════════
+
+/** R23: trocas por caso de tests/fixtures/casos-imersivo.ts. */
+export const MUDANCAS_R23: Record<string, MudancaContrato[]> = {};

@@ -25,7 +25,7 @@ function toScriptJson(value: unknown): string {
   return JSON.stringify(value).replace(/</g, '\\u003c');
 }
 
-export function renderCerebroPage(snap: SnapshotElo, falas: string[]): string {
+export function renderCerebroPage(snap: SnapshotElo, falas: string[], _user?: unknown): string {
   const listaFalas = falas.length > 0 ? falas : ['Oi, eu sou o Elo.'];
   const primeiraFala = escapeHtml(listaFalas[0]);
   const snapJson = toScriptJson(snap);

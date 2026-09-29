@@ -6,7 +6,7 @@
 // painel lateral. Dados: fetch em /dashboard/api/predio (polling 10s) OU
 // window.__PREDIO_MOCK__ (preview de aprovação do Junior, regra do visual).
 
-export function renderPredioPage(): string {
+export function renderPredioPage(_user?: unknown): string {
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>🏢 Prédio Vivo — EcoSunPower</title>
