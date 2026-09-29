@@ -30,7 +30,7 @@ export interface LancamentoRow {
 
 const COLS = 'id, tipo, status, valor, data_evento, competencia, contraparte, descricao, categoria_id, pf_pj, lead_id, conta_id, tem_nota, storage_path, extracao, created_at, banco_conta, favorecido_id, confianca, arquivo_id';
 
-export type BancoConta = 'sicoob_cc'|'sicoob_cartao'|'itau_pj'|'itau_pf'|'visa_emp'|'latam'|'santander_pj'|'mercado_pago'|'dinheiro'|'desconhecido';
+export type BancoConta = 'sicoob_cc'|'sicoob_cartao'|'itau_pj'|'itau_pf'|'visa_emp'|'latam'|'santander_pj'|'mercado_pago'|'infinitepay'|'dinheiro'|'desconhecido';
 
 // Chave de duplicidade: mesmo banco + dia + valor + descrição normalizada (extrato importado 2× não entra 2×).
 export function hashDedupe(k: { bancoConta: BancoConta; dataEvento: string; valor: number; descricao: string | null }): string {
@@ -64,7 +64,7 @@ export async function criarConfirmado(client: SupabaseClient, l: {
   tipo: 'despesa' | 'entrada'; valor: number; dataEvento: string;
   contraparte: string | null; descricao: string | null; categoriaId: string | null;
   pfPj: 'PF' | 'PJ' | 'FRONTEIRA'; leadId: string | null; storagePath: string | null;
-  mimeType: string | null; origem: 'zap_midia' | 'zap_texto' | 'extrato' | 'tela' | 'conta'; messageId: string | null;
+  mimeType: string | null; origem: 'zap_midia' | 'zap_texto' | 'extrato' | 'tela' | 'conta' | 'assinatura'; messageId: string | null;
   extracao: Record<string, unknown>; createdBy: string; temNota: boolean;
   bancoConta: BancoConta; favorecidoId: string | null; confianca: 'alta' | 'media' | 'baixa' | 'pendente'; arquivoId: string | null;
 }): Promise<string> {
