@@ -24,7 +24,7 @@ function memRepo(): RepoPedidos & { rows: LinhaPedido[] } {
   return {
     rows,
     async inserir(p) {
-      const id = `0000000${++n}-aaaa-bbbb-cccc-dddddddddddd`;
+      const k = ++n; const id = `${String(k).repeat(4)}000${k}-aaaa-bbbb-cccc-dddddddddddd`;
       rows.push({ id, company_id: p.companyId, lead_id: p.leadId, phone: p.phone, tipo: p.tipo, inicio: p.inicioISO, fim: p.fimISO, resultado: ST_PENDENTE, created_at: new Date(T0).toISOString(), calendar_event_id: null });
       return id;
     },
@@ -42,6 +42,12 @@ function memRepo(): RepoPedidos & { rows: LinhaPedido[] } {
       return true;
     },
     async listarPendentes() { return rows.filter(r => r.resultado === ST_PENDENTE); },
+    async listarConfirmando() { return rows.filter(r => r.resultado === ST_CONFIRMANDO); },
+    async expirarAntigos(antes) {
+      let k = 0;
+      for (const r of rows) if (r.resultado === ST_PENDENTE && r.inicio < antes) { r.resultado = ST_EXPIRADA; k++; }
+      return k;
+    },
     async listarPendentesDaEmpresa(cid, leadId) { return rows.filter(r => r.company_id === cid && r.resultado === ST_PENDENTE && (!leadId || r.lead_id === leadId)); },
   };
 }
@@ -146,7 +152,7 @@ describe('registrarPedido', () => {
     const t = montar({ empresa: tenant, botoes: false });
     await t.svc.registrarPedido(novo());
     expect(t.enviarAdmin).toHaveBeenCalledTimes(1);
-    expect(t.enviarAdmin.mock.calls[0][0]).toContain('1 ✅ Confirmar e avisar o cliente');
+    expect(t.enviarAdmin.mock.calls[0][0]).toMatch(/1 [0-9A-F]{4} ✅ Confirmar e avisar o cliente/);
     expect(t.enviarAdmin.mock.calls[0][0]).toContain('Clara');
   });
 
@@ -375,5 +381,129 @@ describe('prometeAgendamento (observabilidade)', () => {
     expect(prometeAgendamento('Meet confirmado pra sexta')).toBe(true);
     expect(prometeAgendamento(textoClienteAguardando(ecosun, 'meet', INICIO))).toBe(false);
     expect(prometeAgendamento('Vou confirmar com o Junior')).toBe(false);
+  });
+});
+
+describe('respostas numeradas do admin (modo texto)', () => {
+  it('"1" vale mesmo com o telefone chegando em outra grafia, e só uma vez', async () => {
+    const t = montar({ empresa: tenant, botoes: false });
+    await t.svc.registrarPedido(novo());
+    expect(await t.svc.tratarTextoDoAdmin('556199990000', '1')).toContain('Confirmado');
+    expect(await t.svc.tratarTextoDoAdmin('556199990000', '1')).toBeNull();
+    expect(t.agenda.createEvent).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('revisões (28/09): robustez', () => {
+  it('memória: o texto que o cliente recebeu no pedido entra na conversa', async () => {
+    const t = montar();
+    await t.svc.registrarPedido(novo());
+    expect(t.registrarNaConversa.mock.calls[0][2]).toContain('Anotei sua preferência');
+  });
+
+  it('dois pedidos em texto: "1" sozinho pede o código; "1 CÓDIGO" resolve o certo', async () => {
+    const { codigoPedido } = await import('../src/modules/vendas/agendamento-pendente.js');
+    const t = montar({ empresa: tenant, botoes: false });
+    const a = await t.svc.registrarPedido(novo());
+    const b = await t.svc.registrarPedido({ ...novo(), phone: '5561977776666', leadId: 'L2' });
+    expect(await t.svc.tratarTextoDoAdmin('5561999990000', '1')).toContain('mais de um pedido');
+    expect(t.agenda.createEvent).not.toHaveBeenCalled();
+    const r = await t.svc.tratarTextoDoAdmin('5561999990000', `3 ${codigoPedido(b.id).toLowerCase()}`);
+    expect(r).toContain('pediu outro dia');
+    expect(t.repo.rows.find(x => x.id === b.id)!.resultado).toBe(ST_NAO_CONFIRMADA);
+    expect(t.repo.rows.find(x => x.id === a.id)!.resultado).toBe(ST_PENDENTE);
+  });
+
+  it('com botões WABA, um "1" solto nunca é com a gente', async () => {
+    const t = montar();
+    await t.svc.registrarPedido(novo());
+    expect(await t.svc.tratarTextoDoAdmin('5561999990000', '1')).toBeNull();
+  });
+
+  it('✅ fora da janela de 24 h: confirma na agenda e manda o admin avisar', async () => {
+    const t = montar();
+    const { id } = await t.svc.registrarPedido(novo());
+    t.enviarCliente.mockResolvedValueOnce('janela');
+    const r = await t.svc.responder('ok', id, null);
+    expect(t.repo.rows[0].resultado).toBeNull();
+    expect(r).toContain('avise você');
+  });
+
+  it('📞 com o Google fora: confirma sem evento e avisa pra criar à mão', async () => {
+    const t = montar();
+    t.agenda.createEvent.mockRejectedValueOnce(new Error('403 forbidden'));
+    const { id } = await t.svc.registrarPedido(novo());
+    const r = await t.svc.responder('eu', id, null);
+    expect(t.repo.rows[0].resultado).toBeNull();
+    expect(r).toContain('crie à mão');
+  });
+
+  it('evento que já existe no Google (✅ anterior caiu no meio) é reaproveitado, não duplicado', async () => {
+    const { idEventoDoPedido } = await import('../src/modules/vendas/agendamento-pendente.js');
+    const t = montar();
+    t.agenda.createEvent.mockRejectedValueOnce(new Error('The requested identifier already exists.'));
+    const { id } = await t.svc.registrarPedido(novo());
+    await t.svc.responder('ok', id, null);
+    expect(t.agenda.createEvent.mock.calls[0][0].eventId).toBe(idEventoDoPedido(id));
+    expect(t.repo.rows[0]).toMatchObject({ resultado: null, calendar_event_id: idEventoDoPedido(id) });
+    expect(idEventoDoPedido(id)).toMatch(/^[a-v0-9]{5,1024}$/);
+  });
+
+  it('horário que já passou não pode ser confirmado', async () => {
+    const t = montar();
+    const { id } = await t.svc.registrarPedido(novo());
+    t.setAgora(Date.parse(INICIO) + 60_000);
+    expect(await t.svc.responder('ok', id, null)).toContain('já passou');
+    expect(t.agenda.createEvent).not.toHaveBeenCalled();
+  });
+
+  it('relógio destrava pedido preso em "confirmando" e avisa o admin', async () => {
+    const t = montar();
+    const { id } = await t.svc.registrarPedido(novo());
+    t.repo.rows[0].resultado = ST_CONFIRMANDO;
+    t.enviarAdmin.mockClear();
+    await t.svc.processarPendentes((async (_c: string, fn: () => Promise<unknown>) => fn()) as never);
+    expect(t.repo.rows.find(x => x.id === id)!.resultado).toBe(ST_PENDENTE);
+    expect(t.enviarAdmin.mock.calls[0][0]).toContain('não terminou');
+  });
+
+  it('Redis fora: o relógio não manda nada (não repete a cada 15 min)', async () => {
+    const t = montar();
+    await t.svc.registrarPedido(novo());
+    t.enviarAdmin.mockClear(); t.enviarCliente.mockClear();
+    t.kv.get = async () => { throw new Error('redis down'); };
+    t.setAgora(T0 + 24 * H);
+    await t.svc.processarPendentes((async (_c: string, fn: () => Promise<unknown>) => fn()) as never);
+    expect(t.enviarCliente).not.toHaveBeenCalled();
+    expect(t.enviarAdmin).not.toHaveBeenCalled();
+  });
+
+  it('faxina: pedido com horário passado há mais de 3 dias expira sem mensagem', async () => {
+    const t = montar();
+    await t.svc.registrarPedido(novo());
+    t.enviarCliente.mockClear();
+    t.setAgora(Date.parse(INICIO) + 4 * 24 * H);
+    await t.svc.processarPendentes((async () => undefined) as never);
+    expect(t.repo.rows[0].resultado).toBe(ST_EXPIRADA);
+    expect(t.enviarCliente).not.toHaveBeenCalled();
+  });
+
+  it('🕐: botão de outra coisa ou texto sem cara de horário NÃO vai pro cliente', async () => {
+    const { pareceComando, pareceHorario } = await import('../src/modules/vendas/agendamento-pendente.js');
+    expect(pareceComando('menucat_financeiro')).toBe(true);
+    expect(pareceComando('findel-no')).toBe(true);
+    expect(pareceComando('10:30')).toBe(false);
+    expect(pareceComando('quinta: 10h')).toBe(false);
+    expect(pareceHorario('sexta à tarde')).toBe(true);
+    expect(pareceHorario('bom dia')).toBe(false);
+    const t = montar();
+    const { id } = await t.svc.registrarPedido(novo());
+    t.enviarCliente.mockClear();
+    await t.svc.responder('outro', id, '5561999990000');
+    expect(await t.svc.tratarTextoDoAdmin('5561999990000', 'menucat_financeiro')).toBeNull();
+    await t.svc.responder('outro', id, '5561999990000');
+    expect(await t.svc.tratarTextoDoAdmin('5561999990000', 'bom dia')).toContain('Não entendi');
+    expect(await t.svc.tratarTextoDoAdmin('5561999990000', 'sexta 10h')).toContain('Mandei sua sugestão');
+    expect(t.enviarCliente).toHaveBeenCalledTimes(1);
   });
 });

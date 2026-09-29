@@ -265,6 +265,7 @@ export function interpolarEmpresa(texto: string, e: EmpresaConfig): string {
     // confirma lá é o admin dele, e o cliente não precisa saber quem é.
     rt_confirma: ehEcosun(e) ? `${f ? 'a' : 'o'} ${e.rtApelido}` : 'nossa equipe',
     rt_confirma_O: ehEcosun(e) ? `${f ? 'A' : 'O'} ${e.rtApelido}` : 'Nossa equipe',
+    rt_confirma_pro: ehEcosun(e) ? `${f ? 'pra' : 'pro'} ${e.rtApelido}` : 'pra nossa equipe',
     criterio_lead_valor: String(e.criterioLeadValor),
     criterio_lead_kwh: String(e.criterioLeadKwh),
     marcas_texto: listaMarcasTexto(e),

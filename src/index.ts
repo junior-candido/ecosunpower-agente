@@ -842,6 +842,26 @@ async function main() {
     const e = empresa();
     return { companyId: e.companyId, ehEcosun: ehEcosun(e), rtApelido: e.rtApelido, rtGenero: e.rtGenero, nomeAtendente: e.nomeAtendente };
   };
+  /** A última mensagem do cliente foi há menos de 24 h? (janela do WhatsApp oficial) */
+  const clienteNaJanela24h = async (leadId: string): Promise<boolean> => {
+    const { data } = await supabase.getClient().from('conversations').select('messages')
+      .eq('lead_id', leadId).order('created_at', { ascending: false }).limit(2);
+    let ultima = 0;
+    for (const c of (data ?? []) as Array<{ messages?: Array<{ role?: string; timestamp?: string }> }>) {
+      for (const m of c.messages ?? []) {
+        if (m.role === 'user' && m.timestamp) ultima = Math.max(ultima, Date.parse(m.timestamp) || 0);
+      }
+    }
+    return ultima > 0 && Date.now() - ultima < 24 * 3_600_000 - 10 * 60_000;
+  };
+  /** Mensagem que o SISTEMA mandou ao cliente entra na memória da Eva (senão ela não sabe o que o cliente leu). */
+  const registrarMsgNaConversa = async (leadId: string, companyId: string, texto: string): Promise<void> => {
+    const conv = await supabase.getOrCreateConversation(leadId, companyId);
+    await supabase.updateConversation(conv.id, {
+      messages: [...(conv.messages ?? []), { role: 'assistant' as const, content: texto, timestamp: new Date().toISOString() }],
+      message_count: (conv.message_count ?? 0) + 1,
+    });
+  };
   const agendamentoPendente = new AgendamentoPendenteService({
     repo: repoPedidosAgenda(supabase.getClient()),
     kv: followupRedis,
@@ -855,9 +875,18 @@ async function main() {
     empresaAtual: empresaAgendaAtual,
     // Mesma regra do sendAdminWithButtons: botão WABA só na EcoSunPower.
     temBotoes: () => Boolean(metaWaba) && ehEcosun(),
-    enviarCliente: async (phone, texto) => {
-      if (isSandbox) { console.log(`[sandbox] [agenda-pendente] -> ${phone}: ${texto}`); return; }
+    enviarCliente: async (phone, texto, leadId) => {
+      if (isSandbox) { console.log(`[sandbox] [agenda-pendente] -> ${phone}: ${texto}`); return 'ok'; }
+      // Atendimento assumido (takeover) / opt-out / Eva desligada: a Eva não fala.
+      if (await takeover.isPaused(phone).catch(() => false)) return 'pausado';
+      if (leadId) {
+        const { data: l } = await supabase.getClient().from('leads').select('opt_out, eva_active').eq('id', leadId).maybeSingle();
+        if (l && (l.opt_out === true || l.eva_active === false)) return 'pausado';
+      }
+      // WhatsApp oficial (EcoSun): texto livre só dentro de 24 h da última mensagem do cliente.
+      if (metaWaba && ehEcosun() && !canalExigeEvolution() && leadId && !(await clienteNaJanela24h(leadId))) return 'janela';
       await sendText(phone, texto);
+      return 'ok';
     },
     enviarAdmin: async (texto, botoes) => {
       const destino = destinoAdminDaEmpresa(config.engineerPhone);
@@ -867,13 +896,7 @@ async function main() {
       return true;
     },
     destinoAdmin: () => destinoAdminDaEmpresa(config.engineerPhone),
-    registrarNaConversa: async (leadId, companyId, texto) => {
-      const conv = await supabase.getOrCreateConversation(leadId, companyId);
-      await supabase.updateConversation(conv.id, {
-        messages: [...(conv.messages ?? []), { role: 'assistant' as const, content: texto, timestamp: new Date().toISOString() }],
-        message_count: (conv.message_count ?? 0) + 1,
-      });
-    },
+    registrarNaConversa: (leadId, companyId, texto) => registrarMsgNaConversa(leadId, companyId, texto),
     aoConfirmar: async (p, evento) => {
       // O que antes acontecia na hora em que a Eva marcava — agora só no ✅.
       if (p.leadId) {
@@ -5671,10 +5694,13 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       });
 
       // Update conversation
+      // Turno do pedido de agendamento: a fala livre da Eva foi segurada (TRAVA-AGENDA)
+      // — não entra na memória; o texto que o cliente recebeu entra pelo fluxo do pedido.
+      const turnoDePedido = response.actions.some(a => a.action === 'schedule_visit');
       const updatedMessages = [
         ...conversation.messages,
         { role: 'user' as const, content: text, timestamp: new Date().toISOString() },
-        { role: 'assistant' as const, content: response.text, timestamp: new Date().toISOString() },
+        ...(turnoDePedido ? [] : [{ role: 'assistant' as const, content: response.text, timestamp: new Date().toISOString() }]),
       ];
 
       const messagesToKeep = updatedMessages.slice(-20);
@@ -5686,8 +5712,14 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         qualification_step: conversation.qualification_step,
       });
 
-      // Handle actions from Claude (may be multiple in a single response)
-      for (const act of response.actions) {
+      // Handle actions from Claude (may be multiple in a single response).
+      // schedule_visit primeiro: o dossiê (qualification_complete) vê o pedido aberto
+      // e não manda um 2º aviso — independe da ordem que o modelo escreveu.
+      const acoesOrdenadas = [
+        ...response.actions.filter(a => a.action === 'schedule_visit'),
+        ...response.actions.filter(a => a.action !== 'schedule_visit'),
+      ];
+      for (const act of acoesOrdenadas) {
         try {
           await handleAction(act, leadId, from, conversation.id, db);
         } catch (err) {
@@ -6090,19 +6122,25 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         let clientCoordinates = (d.client_coordinates as string | undefined)?.trim();
         // Fall back to coords saved from a shared WhatsApp location
         if (!clientCoordinates) {
-          const leadNow = await db.getLeadByPhone(from);
+          const leadNow = await db.getLeadByPhone(from).catch(() => null);
           const ed = leadNow?.energy_data as Record<string, unknown> | undefined;
           if (ed?.shared_coordinates && typeof ed.shared_coordinates === 'string') {
             clientCoordinates = ed.shared_coordinates;
           }
         }
 
+        // Tudo que o fluxo responde aqui vai também pra memória da Eva (a fala
+        // livre dela neste turno foi segurada — sem isso ela não sabe o que o cliente leu).
+        const responderClienteAgenda = async (msg: string): Promise<void> => {
+          if (!isSandbox) await sendText(from, msg);
+          await registrarMsgNaConversa(leadId, db.companyIdDaMensagem ?? ECOSUN_COMPANY_ID, msg).catch(() => {});
+        };
         const startMs = startISO ? Date.parse(startISO) : NaN;
         if (!startISO || Number.isNaN(startMs)) {
           console.warn(`[agenda-pendente] schedule_visit sem datetime_iso valido para ${from} (${String(startISO)})`);
           // A resposta da Eva deste turno foi segurada (ver trava abaixo do brain) —
           // o cliente não pode ficar no vácuo.
-          if (!isSandbox) await sendText(from, 'Qual dia e horário ficam melhores pra você? Atendemos de segunda a sexta, das 8h às 16h.');
+          await responderClienteAgenda('Qual dia e horário ficam melhores pra você? Atendemos de segunda a sexta, das 8h às 16h.');
           break;
         }
 
@@ -6130,9 +6168,14 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           const isWeekday = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].includes(weekday);
           const inBusinessHours = hour >= 8 && (endHour < 16 || (endHour === 16 && endMinute === 0));
 
-          if (!isWeekday || !inBusinessHours || startMs <= Date.now()) {
+          if (startMs <= Date.now()) {
+            await responderClienteAgenda('ops, esse dia/horário já passou. qual outro dia fica bom pra você? atendemos de segunda a sexta, das 8h às 16h.');
+            console.log(`[agenda-pendente] horário no passado para ${from}: ${startISO}`);
+            break;
+          }
+          if (!isWeekday || !inBusinessHours) {
             const msg = 'ops, esse horário não dá: atendemos de segunda a sexta, das 8h às 16h. pode ser outro dia ou horário dentro desse intervalo?';
-            if (!isSandbox) await sendText(from, msg);
+            await responderClienteAgenda(msg);
             console.log(`[calendar] Outside business hours for ${from} at ${startISO} (weekday=${weekday}, ${hour}:${minute}-${endHour}:${endMinute})`);
             break;
           }
@@ -6142,11 +6185,15 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           // checa de novo antes de criar o evento.
           const agendaAlvo = agendaDaEmpresa(config.googleCalendarId ?? null);
           if (calendar && agendaAlvo) {
-            const available = await calendar.isAvailable(inicioISO, endISO, agendaAlvo);
+            // Se a consulta falhar, segue com o pedido — o ✅ confere de novo.
+            const available = await calendar.isAvailable(inicioISO, endISO, agendaAlvo).catch((err) => {
+              console.warn(`[agenda-pendente] pré-checagem de conflito falhou (${(err as Error).message}) — segue o pedido`);
+              return true;
+            });
             if (!available) {
               const q = quemConfirma(empresaAgendaAtual());
               const msg = `opa, ${q.o} já tem compromisso nesse horário. pode ser outro dia ou horário?`;
-              if (!isSandbox) await sendText(from, msg);
+              await responderClienteAgenda(msg);
               console.log(`[calendar] Conflict for ${from} at ${startISO} — asked for another time`);
               break;
             }
@@ -6186,7 +6233,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           console.error(`[agenda-pendente] Falha ao registrar pedido de ${from}:`, err);
           const q = quemConfirma(empresaAgendaAtual());
           const msg = `anotei seu pedido, mas tive uma dificuldade aqui. ${q.o} vai entrar em contato com você pra combinar o horário.`;
-          if (!isSandbox) await sendText(from, msg);
+          await responderClienteAgenda(msg);
           // O cliente ouviu "vai entrar em contato" — o admin TEM que saber.
           const destinoFalha = destinoAdminDaEmpresa(config.engineerPhone);
           if (!isSandbox && destinoFalha) {
@@ -8172,8 +8219,11 @@ ${pedido.texto}` : pedido.texto;
     // pela empresa dentro do serviço.
     if (!parsed.fromMe && companyIdDaInstancia && parsed.type === 'text' && parsed.content) {
       const cidAgenda = companyIdDaInstancia;
-      const instAgenda = await evolutionTenant.instanciaDaEmpresa(cidAgenda).catch(() => undefined);
-      const tratouAgenda = await comEmpresaDe(cidAgenda, () => comCanal(
+      // Barato primeiro: só o admin daquela empresa segue (nada de consulta pra cliente comum).
+      const ehAdminAgenda = comEmpresaDe(cidAgenda, () => ehAdminDaEmpresaAtual(parsed.from));
+      // A instância por onde a mensagem CHEGOU (sem ela não responde — nunca cai no canal da EcoSun).
+      const instAgenda = instanciaOrigem || undefined;
+      const tratouAgenda = ehAdminAgenda && Boolean(instAgenda) && await comEmpresaDe(cidAgenda, () => comCanal(
         { companyId: cidAgenda, evolutionInstance: instAgenda },
         () => tratarRespostaAgendaDoAdmin(parsed.from, parsed.content),
       )).catch((e) => { console.warn(`[agenda-pendente] resposta do admin do tenant falhou: ${(e as Error).message}`); return false; });

@@ -32,9 +32,8 @@ export const ST_EXPIRADA = 'expirada';
 const H = 3_600_000;
 export const LEMBRETE_ADMIN_MS = 3 * H;
 export const AVISO_CLIENTE_MS = 24 * H;
-const TTL_DETALHES_S = 15 * 24 * 3600;
+const TTL_DETALHES_S = 60 * 24 * 3600;
 const TTL_SUGESTAO_S = 15 * 60;
-const TTL_ULTIMO_S = 24 * 3600;
 const TZ = 'America/Sao_Paulo';
 
 export type TipoAgendamento = 'visita' | 'meet';
@@ -88,6 +87,10 @@ export interface RepoPedidos {
   transicionar(id: string, companyId: string, de: string, para: string | null, extra?: { calendarEventId?: string | null }): Promise<boolean>;
   /** Todos os pendentes (todas as empresas) — só pro relógio. */
   listarPendentes(): Promise<LinhaPedido[]>;
+  /** Pendentes cujo horário passou antes de `antesDeISO` viram 'expirada' sem mensagem (faxina). */
+  expirarAntigos(antesDeISO: string): Promise<number>;
+  /** Pedidos presos em 'confirmando' (todas as empresas) — pro relógio destravar. */
+  listarConfirmando(): Promise<LinhaPedido[]>;
   /** Pendentes de UMA empresa (painel). */
   listarPendentesDaEmpresa(companyId: string, leadId?: string): Promise<LinhaPedido[]>;
 }
@@ -104,7 +107,7 @@ export interface AgendaGoogle {
   isAvailable(startISO: string, endISO: string, calendarId?: string): Promise<boolean>;
   createEvent(input: {
     summary: string; description?: string; startISO: string; endISO: string;
-    location?: string; withMeet?: boolean; calendarId?: string;
+    location?: string; withMeet?: boolean; calendarId?: string; eventId?: string;
   }): Promise<EventoCriado>;
 }
 
@@ -118,6 +121,8 @@ export interface EmpresaAgenda {
 
 export interface Botao { id: string; title: string }
 
+export type ResultadoEnvioCliente = 'ok' | 'janela' | 'pausado';
+
 export interface AgendamentoDeps {
   repo: RepoPedidos;
   kv: KV;
@@ -127,7 +132,11 @@ export interface AgendamentoDeps {
   empresaAtual: () => EmpresaAgenda;
   /** A empresa em contexto pode usar botões WABA? (só EcoSun com WABA). */
   temBotoes: () => boolean;
-  enviarCliente: (phone: string, texto: string) => Promise<void>;
+  /**
+   * Fala com o cliente. 'janela' = fora das 24 h do WhatsApp oficial; 'pausado' =
+   * atendimento assumido/opt-out/Eva desligada. void = enviado.
+   */
+  enviarCliente: (phone: string, texto: string, leadId?: string | null) => Promise<ResultadoEnvioCliente | void>;
   /** Manda pro admin DA EMPRESA EM CONTEXTO. false = empresa sem admin (nada saiu). */
   enviarAdmin: (texto: string, botoes: Botao[]) => Promise<boolean>;
   /** Telefone do admin da empresa em contexto (só dígitos no uso), ou null. */
@@ -177,7 +186,7 @@ export function textoClienteConfirmado(e: EmpresaAgenda, p: PedidoAgendamento, m
   if (p.tipo === 'meet') {
     return [
       `Tudo certo! ✅ ${q.O} confirmou nossa conversa pelo Google Meet: ${quando}.`,
-      meetLink ? `\nLink do Meet: ${meetLink}\n\nÉ só clicar no horário.` : '\nO link chega por aqui antes do horário.',
+      meetLink ? `\nLink do Meet: ${meetLink}\n\nÉ só clicar no horário.` : `\n${q.O} te manda o link antes do horário.`,
       'Se precisar mudar, é só me chamar.',
     ].join('\n');
   }
@@ -186,6 +195,12 @@ export function textoClienteConfirmado(e: EmpresaAgenda, p: PedidoAgendamento, m
     p.clientAddress ? `📍 ${p.clientAddress}` : '',
     'Se precisar mudar, é só me chamar.',
   ].filter(Boolean).join('\n');
+}
+
+/** Nota na conversa (não vai pro cliente) quando o admin escolhe "Eu mesmo aviso". */
+export function notaConfirmadoPeloAdmin(e: EmpresaAgenda, p: PedidoAgendamento): string {
+  const q = quemConfirma(e);
+  return `📌 Nota interna: ${q.o} confirmou ${p.tipo === 'meet' ? 'o Meet' : 'a visita'} de ${formatarDataHora(p.inicioISO)} e vai avisar o cliente pessoalmente.`;
 }
 
 export function textoClienteNaoPode(e: EmpresaAgenda, p: PedidoAgendamento): string {
@@ -246,14 +261,20 @@ export function botoesPedido(id: string): { principais: Botao[]; extra: Botao[] 
   };
 }
 
-/** Versão em texto (sem botões WABA — tenant/Evolution): responde com o número. */
-export const OPCOES_TEXTO = [
-  'Responda só com o número:',
-  '1 ✅ Confirmar e avisar o cliente',
-  '2 📞 Confirmar — eu mesmo aviso o cliente',
-  '3 ❌ Não posso nesse horário',
-  '4 🕐 Sugerir outro horário',
-].join('\n');
+/** Código curto do pedido (4 primeiros caracteres do id) — pra resposta em texto. */
+export function codigoPedido(id: string): string { return id.replace(/-/g, '').slice(0, 4).toUpperCase(); }
+
+/** Versão em texto (sem botões WABA — tenant/Evolution): número + código do pedido. */
+export function opcoesTexto(id: string): string {
+  const c = codigoPedido(id);
+  return [
+    `Responda com o número e o código *${c}* (ex.: "1 ${c}"):`,
+    `1 ${c} ✅ Confirmar e avisar o cliente`,
+    `2 ${c} 📞 Confirmar — eu mesmo aviso o cliente`,
+    `3 ${c} ❌ Não posso nesse horário`,
+    `4 ${c} 🕐 Sugerir outro horário`,
+  ].join('\n');
+}
 
 const ACAO_POR_NUMERO: Record<string, AcaoAdmin> = { '1': 'ok', '2': 'eu', '3': 'nao', '4': 'outro' };
 
@@ -309,8 +330,8 @@ export function passoDoRelogio(p: PedidoAgendamento, agoraMs: number): PassoRelo
 function soDigitos(v: string | null | undefined): string { return (v ?? '').replace(/\D/g, ''); }
 
 const kDetalhes = (id: string) => `agd:pedido:${id}`;
+const kConfirmando = (id: string) => `agd:confirmando:${id}`;
 const kSugestao = (cid: string, admin: string) => `agd:sugerir:${cid}:${soDigitos(admin)}`;
-const kUltimo = (cid: string, admin: string) => `agd:ultimo:${cid}:${soDigitos(admin)}`;
 
 export interface NovoPedido {
   leadId: string | null;
@@ -324,25 +345,27 @@ export interface NovoPedido {
 export class AgendamentoPendenteService {
   constructor(private readonly d: AgendamentoDeps) {}
 
-  private async detalhes(id: string): Promise<DetalhesPedido> {
+  /** null = o Redis falhou (diferente de "não tem detalhes": {}). */
+  private async detalhes(id: string): Promise<DetalhesPedido | null> {
     try {
       const raw = await this.d.kv.get(kDetalhes(id));
       return raw ? (JSON.parse(raw) as DetalhesPedido) : {};
     } catch (err) {
       this.d.log('warn', `[agenda-pendente] detalhes do pedido ${id} ilegíveis: ${(err as Error).message}`);
-      return {};
+      return null;
     }
   }
 
-  private async salvarDetalhes(id: string, det: DetalhesPedido): Promise<void> {
-    try { await this.d.kv.set(kDetalhes(id), JSON.stringify(det), 'EX', TTL_DETALHES_S); }
-    catch (err) { this.d.log('warn', `[agenda-pendente] não salvei detalhes do pedido ${id}: ${(err as Error).message}`); }
+  private async salvarDetalhes(id: string, det: DetalhesPedido): Promise<boolean> {
+    try { await this.d.kv.set(kDetalhes(id), JSON.stringify(det), 'EX', TTL_DETALHES_S); return true; }
+    catch (err) { this.d.log('warn', `[agenda-pendente] não salvei detalhes do pedido ${id}: ${(err as Error).message}`); return false; }
   }
 
-  private async montar(linha: LinhaPedido): Promise<PedidoAgendamento> {
+  private async montar(linha: LinhaPedido): Promise<PedidoAgendamento & { detalhesOk: boolean }> {
     const det = await this.detalhes(linha.id);
     return {
-      ...det,
+      ...(det ?? {}),
+      detalhesOk: det !== null,
       id: linha.id,
       companyId: linha.company_id,
       leadId: linha.lead_id,
@@ -355,6 +378,22 @@ export class AgendamentoPendenteService {
     };
   }
 
+  /** Manda ao cliente e guarda na memória da Eva. false = não saiu (motivo no log). */
+  private async falarComCliente(p: { phone: string; leadId: string | null; companyId: string; id?: string }, txt: string): Promise<boolean> {
+    let r: ResultadoEnvioCliente | void;
+    try { r = await this.d.enviarCliente(p.phone, txt, p.leadId); }
+    catch (err) {
+      this.d.log('error', `[agenda-pendente] não consegui mandar ao cliente ${p.phone} (pedido ${p.id ?? '-'}): ${(err as Error).message}`, { pedido_id: p.id ?? null });
+      return false;
+    }
+    if (r && r !== 'ok') {
+      this.d.log('warn', `[agenda-pendente] mensagem ao cliente ${p.phone} NÃO enviada (${r}) — pedido ${p.id ?? '-'}`, { pedido_id: p.id ?? null, motivo: r });
+      return false;
+    }
+    if (p.leadId) await this.d.registrarNaConversa(p.leadId, p.companyId, txt).catch(() => {});
+    return true;
+  }
+
   private async enviarPedidoAoAdmin(p: PedidoAgendamento, cabecalho?: string): Promise<boolean> {
     const e = this.d.empresaAtual();
     const corpo = textoAdminPedido(p, e.nomeAtendente, cabecalho);
@@ -364,15 +403,7 @@ export class AgendamentoPendenteService {
       if (ok) await this.d.enviarAdmin('Prefere propor outro horário ao cliente?', b.extra);
       return ok;
     }
-    const ok = await this.d.enviarAdmin(`${corpo}\n\n${OPCOES_TEXTO}`, []);
-    if (ok) {
-      const admin = this.d.destinoAdmin();
-      if (admin) {
-        try { await this.d.kv.set(kUltimo(p.companyId, admin), p.id, 'EX', TTL_ULTIMO_S); }
-        catch (err) { this.d.log('warn', `[agenda-pendente] não guardei o último pedido do admin: ${(err as Error).message}`); }
-      }
-    }
-    return ok;
+    return this.d.enviarAdmin(`${corpo}\n\n${opcoesTexto(p.id)}`, []);
   }
 
   /**
@@ -388,8 +419,11 @@ export class AgendamentoPendenteService {
     await this.salvarDetalhes(id, n.detalhes);
     const p: PedidoAgendamento = { ...n.detalhes, id, companyId: e.companyId, leadId: n.leadId, phone: n.phone, tipo: n.tipo, inicioISO: n.inicioISO, fimISO: n.fimISO, resultado: ST_PENDENTE, criadoEmMs: this.d.agoraMs() };
 
-    await this.d.enviarCliente(n.phone, textoClienteAguardando(e, n.tipo, n.inicioISO));
-    const adminAvisado = await this.enviarPedidoAoAdmin(p);
+    // A memória da Eva guarda o que o cliente RECEBEU (a resposta livre dela foi segurada).
+    await this.falarComCliente({ ...p }, textoClienteAguardando(e, n.tipo, n.inicioISO));
+    let adminAvisado = false;
+    try { adminAvisado = await this.enviarPedidoAoAdmin(p); }
+    catch (err) { this.d.log('error', `[agenda-pendente] aviso do pedido ${id} ao admin falhou: ${(err as Error).message}`, { pedido_id: id }); }
     if (!adminAvisado) {
       this.d.log('error', `[agenda-pendente] pedido ${id} da empresa ${e.companyId} SEM admin pra confirmar — fica só no painel`, { pedido_id: id });
     }
@@ -419,6 +453,9 @@ export class AgendamentoPendenteService {
     const p = await this.buscar(id);
     if (!p) return '⚠️ Não achei esse pedido de agendamento.';
     if (p.resultado !== ST_PENDENTE) return `ℹ️ Esse pedido já foi resolvido antes (${descreverResultado(p.resultado)}). Nada mudou.`;
+    if ((acao === 'ok' || acao === 'eu') && Date.parse(p.inicioISO) <= this.d.agoraMs()) {
+      return `⚠️ Esse horário (${formatarDataHora(p.inicioISO)}) já passou. Use ❌ Não posso ou 🕐 Sugerir horário.`;
+    }
     switch (acao) {
       case 'ok': return this.confirmar(p, true);
       case 'eu': return this.confirmar(p, false);
@@ -437,8 +474,11 @@ export class AgendamentoPendenteService {
     if (!(await this.d.repo.transicionar(p.id, p.companyId, ST_PENDENTE, ST_CONFIRMANDO))) {
       return 'ℹ️ Esse pedido já está sendo resolvido (clique repetido?). Nada mudou.';
     }
+    // Se o processo cair aqui no meio, o relógio destrava depois de 10 min.
+    await this.d.kv.set(kConfirmando(p.id), String(this.d.agoraMs()), 'EX', 24 * 3600).catch(() => {});
     const agendaId = this.d.agendaDaEmpresa();
     let evento: EventoCriado | null = null;
+    let falhaAgenda = false;
     if (this.d.agenda && agendaId) {
       // Conflito checado DE NOVO: a agenda pode ter mudado desde o pedido.
       try {
@@ -448,33 +488,53 @@ export class AgendamentoPendenteService {
           this.d.log('warn', `[agenda-pendente] conflito no ✅ do pedido ${p.id} (${p.inicioISO})`);
           return `⚠️ Esse horário (${formatarDataHora(p.inicioISO)}) já está ocupado na sua agenda. Nada foi marcado.\nToque ❌ Não posso ou 🕐 Sugerir horário no pedido.`;
         }
-        evento = await this.d.agenda.createEvent(montarEvento(p, agendaId));
+        try {
+          evento = await this.d.agenda.createEvent({ ...montarEvento(p, agendaId), eventId: idEventoDoPedido(p.id) });
+        } catch (err) {
+          // Id fixo por pedido: se um ✅ anterior já criou o evento (timeout, queda),
+          // o Google responde "já existe" — usa o que está lá em vez de duplicar.
+          if (!/already exists|409|duplicate/i.test((err as Error).message)) throw err;
+          evento = { eventId: idEventoDoPedido(p.id), htmlLink: '' };
+          this.d.log('warn', `[agenda-pendente] evento do pedido ${p.id} já existia no Google — reaproveitado`);
+        }
       } catch (err) {
-        await this.d.repo.transicionar(p.id, p.companyId, ST_CONFIRMANDO, ST_PENDENTE);
         this.d.log('error', `[agenda-pendente] falha na agenda ao confirmar ${p.id}: ${(err as Error).message}`, { pedido_id: p.id });
-        return '⚠️ Não consegui criar o evento no Google Agenda agora. O pedido continua pendente — tente de novo em instantes.';
+        if (avisarCliente) {
+          await this.d.repo.transicionar(p.id, p.companyId, ST_CONFIRMANDO, ST_PENDENTE);
+          return '⚠️ Não consegui criar o evento no Google Agenda agora. O pedido continua pendente — tente de novo em instantes, ou use 📞 Eu mesmo aviso (confirma sem o evento).';
+        }
+        // "Eu mesmo aviso": o admin já decidiu e vai falar com o cliente — confirma
+        // sem o evento (agenda da empresa com problema não pode travar tudo).
+        falhaAgenda = true;
       }
     } else {
       this.d.log('warn', `[agenda-pendente] empresa ${p.companyId} sem agenda do Google: pedido ${p.id} confirmado sem evento`);
     }
-    const gravou = await this.d.repo.transicionar(p.id, p.companyId, ST_CONFIRMANDO, null, { calendarEventId: evento?.eventId ?? null });
+    let gravou = false;
+    try { gravou = await this.d.repo.transicionar(p.id, p.companyId, ST_CONFIRMANDO, null, { calendarEventId: evento?.eventId ?? null }); }
+    catch (err) { this.d.log('error', `[agenda-pendente] gravar confirmação do pedido ${p.id} falhou: ${(err as Error).message}`, { pedido_id: p.id }); }
     if (!gravou) this.d.log('error', `[agenda-pendente] evento ${evento?.eventId ?? '-'} criado mas não gravei a confirmação do pedido ${p.id}`, { pedido_id: p.id });
+    await this.d.kv.del(kConfirmando(p.id)).catch(() => {});
 
     try { await this.d.aoConfirmar(p, evento); }
     catch (err) { this.d.log('warn', `[agenda-pendente] pós-confirmação falhou ${p.id}: ${(err as Error).message}`); }
 
+    let clienteAvisado = true;
     if (avisarCliente) {
-      const txt = textoClienteConfirmado(e, p, evento?.meetLink);
-      await this.d.enviarCliente(p.phone, txt);
-      if (p.leadId) await this.d.registrarNaConversa(p.leadId, p.companyId, txt).catch(() => {});
+      clienteAvisado = await this.falarComCliente(p, textoClienteConfirmado(e, p, evento?.meetLink));
+    } else if (p.leadId) {
+      // Não sai nada pro cliente, mas a Eva precisa saber que está confirmado.
+      await this.d.registrarNaConversa(p.leadId, p.companyId, notaConfirmadoPeloAdmin(e, p)).catch(() => {});
     }
     this.d.log('info', `[agenda-pendente] pedido ${p.id} CONFIRMADO pelo admin (avisarCliente=${avisarCliente}) evento=${evento?.eventId ?? 'sem agenda'}`, { pedido_id: p.id, evento: evento?.eventId ?? null });
 
     return [
-      avisarCliente
-        ? `✅ Confirmado! A ${e.nomeAtendente} já avisou o cliente.`
-        : `✅ Confirmado! A ${e.nomeAtendente} NÃO falou com o cliente — você avisa.`,
-      evento?.htmlLink ? `📅 ${evento.htmlLink}` : (evento ? '' : '⚠️ Sem agenda do Google configurada: o evento não foi criado.'),
+      !avisarCliente
+        ? `✅ Confirmado! A ${e.nomeAtendente} NÃO falou com o cliente — você avisa.`
+        : clienteAvisado
+          ? `✅ Confirmado! A ${e.nomeAtendente} já avisou o cliente.`
+          : `✅ Confirmado na agenda.${AVISO_TXT_FN(p.phone)}`,
+      evento?.htmlLink ? `📅 ${evento.htmlLink}` : (evento ? '' : falhaAgenda ? '⚠️ O Google Agenda falhou: o evento NÃO foi criado — crie à mão.' : '⚠️ Sem agenda do Google configurada: o evento não foi criado.'),
       evento?.meetLink ? `🎥 Meet: ${evento.meetLink}` : '',
       !avisarCliente ? `📞 ${p.phone}` : '',
     ].filter(Boolean).join('\n');
@@ -485,11 +545,11 @@ export class AgendamentoPendenteService {
     if (!(await this.d.repo.transicionar(p.id, p.companyId, ST_PENDENTE, ST_NAO_CONFIRMADA))) {
       return 'ℹ️ Esse pedido já foi resolvido. Nada mudou.';
     }
-    const txt = textoClienteNaoPode(e, p);
-    await this.d.enviarCliente(p.phone, txt);
-    if (p.leadId) await this.d.registrarNaConversa(p.leadId, p.companyId, txt).catch(() => {});
-    this.d.log('info', `[agenda-pendente] pedido ${p.id} recusado pelo admin — cliente convidado a escolher outro horário`, { pedido_id: p.id });
-    return `👍 Ok. A ${e.nomeAtendente} pediu outro dia/horário ao cliente. Quando ele escolher, chega um novo pedido pra você.`;
+    const foi = await this.falarComCliente(p, textoClienteNaoPode(e, p));
+    this.d.log('info', `[agenda-pendente] pedido ${p.id} recusado pelo admin — cliente convidado a escolher outro horário (enviado=${foi})`, { pedido_id: p.id });
+    return foi
+      ? `👍 Ok. A ${e.nomeAtendente} pediu outro dia/horário ao cliente. Quando ele escolher, chega um novo pedido pra você.`
+      : `👍 Ok, pedido recusado.${AVISO_TXT_FN(p.phone)}`;
   }
 
   /** O admin propõe outro horário (texto livre): vai pro cliente e o pedido fecha. */
@@ -502,11 +562,11 @@ export class AgendamentoPendenteService {
     if (!(await this.d.repo.transicionar(p.id, p.companyId, ST_PENDENTE, ST_NAO_CONFIRMADA))) {
       return 'ℹ️ Esse pedido já foi resolvido antes. Não mandei a sugestão.';
     }
-    const txt = textoClienteSugestao(e, p, sugestao);
-    await this.d.enviarCliente(p.phone, txt);
-    if (p.leadId) await this.d.registrarNaConversa(p.leadId, p.companyId, txt).catch(() => {});
-    this.d.log('info', `[agenda-pendente] admin sugeriu "${sugestao}" pro pedido ${p.id}`, { pedido_id: p.id });
-    return '📨 Mandei sua sugestão ao cliente. Quando ele responder, chega um novo pedido pra você confirmar.';
+    const foi = await this.falarComCliente(p, textoClienteSugestao(e, p, sugestao));
+    this.d.log('info', `[agenda-pendente] admin sugeriu "${sugestao}" pro pedido ${p.id} (enviado=${foi})`, { pedido_id: p.id });
+    return foi
+      ? '📨 Mandei sua sugestão ao cliente. Quando ele responder, chega um novo pedido pra você confirmar.'
+      : `Pedido fechado, mas a sugestão não saiu.${AVISO_TXT_FN(p.phone)}`;
   }
 
   /**
@@ -527,52 +587,91 @@ export class AgendamentoPendenteService {
       if (/^(cancelar|cancela|sair)$/i.test(t)) return '👍 Ok, não mandei nada. O pedido continua aguardando você.';
       // Comando (/menu, botão de outra coisa) no meio: desiste da sugestão e deixa
       // o comando seguir o caminho dele — nunca manda comando pro cliente.
-      if (/^(\/|menu$|evabt:|[a-z_]+:)/i.test(t)) {
+      if (pareceComando(t)) {
         this.d.log('info', `[agenda-pendente] sugestão do pedido ${idSugestao} abandonada (admin mandou comando)`);
         return null;
+      }
+      if (!pareceHorario(t)) {
+        await this.d.kv.set(kSugestao(e.companyId, adminPhone), idSugestao, 'EX', TTL_SUGESTAO_S).catch(() => {});
+        return '🤔 Não entendi como horário. Escreva algo como "quinta 10h" ou "sexta à tarde" — ou "cancelar".';
       }
       return this.sugerirHorario(idSugestao, t);
     }
 
-    const acaoNum = ACAO_POR_NUMERO[t];
-    if (acaoNum) {
-      let ultimo: string | null = null;
-      try { ultimo = await this.d.kv.get(kUltimo(e.companyId, adminPhone)); } catch { ultimo = null; }
-      if (ultimo) return this.responder(acaoNum, ultimo, adminPhone);
+    // Resposta numerada (só quem recebe o pedido em TEXTO — com botões WABA um
+    // "1" solto nunca é com a gente). "1 7F3A" = ação 1 no pedido de código 7F3A.
+    // Sem código só vale se houver UM pedido esperando; com vários, pede o código
+    // (evita confirmar o pedido errado quando chega um lembrete de outro).
+    const mNum = t.match(/^([1-4])(?:\s+([0-9a-f]{4}))?$/i);
+    if (mNum && !this.d.temBotoes()) {
+      const acaoNum = ACAO_POR_NUMERO[mNum[1]];
+      const pendentes = await this.listarPendentesDaEmpresa();
+      if (pendentes.length === 0) return null;
+      const alvo = mNum[2]
+        ? pendentes.filter(x => codigoPedido(x.id) === mNum[2].toUpperCase())
+        : pendentes;
+      if (alvo.length === 1) return this.responder(acaoNum, alvo[0].id, adminPhone);
+      if (mNum[2] && alvo.length === 0) return `⚠️ Não achei pedido esperando com o código ${mNum[2].toUpperCase()}.`;
+      const lista = pendentes.slice(0, 8).map(x => `• *${codigoPedido(x.id)}* — ${x.leadNome || x.phone}, ${formatarDataHora(x.inicioISO)}`).join('\n');
+      return `Tem mais de um pedido esperando. Responda com o número e o código, ex.: "${mNum[1]} ${codigoPedido(pendentes[0].id)}"\n${lista}`;
     }
     return null;
+  }
+
+  /** Pedido preso em 'confirmando' há mais de 10 min (queda no meio do ✅) volta a pendente e o admin é avisado. */
+  private async destravarConfirmando(rodarNaEmpresa: <T>(companyId: string, fn: () => Promise<T>) => Promise<T>, agora: number): Promise<void> {
+    let presos: LinhaPedido[] = [];
+    try { presos = await this.d.repo.listarConfirmando(); } catch (err) { this.d.log('warn', `[agenda-pendente] listar 'confirmando' falhou: ${(err as Error).message}`); return; }
+    for (const l of presos) {
+      let desde: number | null = null;
+      try { const v = await this.d.kv.get(kConfirmando(l.id)); desde = v ? Number(v) : null; } catch { continue; }
+      if (desde !== null && agora - desde < 10 * 60_000) continue;
+      if (!(await this.d.repo.transicionar(l.id, l.company_id, ST_CONFIRMANDO, ST_PENDENTE).catch(() => false))) continue;
+      await this.d.kv.del(kConfirmando(l.id)).catch(() => {});
+      this.d.log('error', `[agenda-pendente] pedido ${l.id} estava preso em 'confirmando' — voltou a pendente`, { pedido_id: l.id });
+      await rodarNaEmpresa(l.company_id, async () => {
+        await this.d.enviarAdmin(`⚠️ Uma confirmação de agendamento (📞 ${l.phone}, ${formatarDataHora(new Date(l.inicio).toISOString())}) não terminou. Confira a agenda antes de confirmar de novo — o evento pode já existir.`, []).catch(() => false);
+      }).catch(() => {});
+    }
   }
 
   /** Relógio (cron): lembrete ao admin (3 h), aviso ao cliente (24 h), expiração. */
   async processarPendentes(rodarNaEmpresa: <T>(companyId: string, fn: () => Promise<T>) => Promise<T>): Promise<{ lembretes: number; avisos: number; expirados: number }> {
     const r = { lembretes: 0, avisos: 0, expirados: 0 };
     const agora = this.d.agoraMs();
+    // Faxina: pedido cujo horário passou há mais de 3 dias sem ninguém conseguir
+    // avisar (ex.: empresa sem instância) sai da fila sem mensagem.
+    try {
+      const velhos = await this.d.repo.expirarAntigos(new Date(agora - 3 * 24 * H).toISOString());
+      if (velhos > 0) this.d.log('warn', `[agenda-pendente] ${velhos} pedido(s) antigo(s) expirado(s) sem aviso (faxina)`);
+    } catch (err) { this.d.log('warn', `[agenda-pendente] faxina falhou: ${(err as Error).message}`); }
+    await this.destravarConfirmando(rodarNaEmpresa, agora);
     const linhas = await this.d.repo.listarPendentes();
     for (const linha of linhas) {
       try {
         const p = await this.montar(linha);
         const passo = passoDoRelogio(p, agora);
         if (!passo) continue;
+        // Redis fora: sem saber se já lembrou/avisou, NÃO manda (senão repete a cada 15 min).
+        if (!p.detalhesOk && passo !== 'expirar') continue;
         await rodarNaEmpresa(p.companyId, async () => {
           const e = this.d.empresaAtual();
           if (passo === 'expirar') {
             if (!(await this.d.repo.transicionar(p.id, p.companyId, ST_PENDENTE, ST_EXPIRADA))) return;
-            const txt = textoClienteExpirado(e, p);
-            await this.d.enviarCliente(p.phone, txt);
-            if (p.leadId) await this.d.registrarNaConversa(p.leadId, p.companyId, txt).catch(() => {});
-            await this.d.enviarAdmin(`⌛ O pedido de ${p.leadNome || p.phone} para ${formatarDataHora(p.inicioISO)} passou sem confirmação. A ${e.nomeAtendente} pediu outra data ao cliente.`, []);
+            const foi = await this.falarComCliente(p, textoClienteExpirado(e, p));
+            await this.d.enviarAdmin(`⌛ O pedido de ${p.leadNome || p.phone} para ${formatarDataHora(p.inicioISO)} passou sem confirmação. ` +
+              (foi ? `A ${e.nomeAtendente} pediu outra data ao cliente.` : `Não consegui falar com o cliente — avise você: 📞 ${p.phone}`), []).catch(() => false);
             this.d.log('warn', `[agenda-pendente] pedido ${p.id} EXPIROU sem confirmação`, { pedido_id: p.id });
             r.expirados++;
           } else if (passo === 'avisar_cliente') {
-            const txt = textoClienteDemora(e, p);
-            await this.d.enviarCliente(p.phone, txt);
-            if (p.leadId) await this.d.registrarNaConversa(p.leadId, p.companyId, txt).catch(() => {});
-            await this.salvarDetalhes(p.id, { ...extrairDetalhes(p), clienteAvisadoEmMs: agora, lembreteEmMs: p.lembreteEmMs ?? agora });
+            // Marca ANTES de mandar: se não der pra marcar, não manda (evita repetir).
+            if (!(await this.salvarDetalhes(p.id, { ...extrairDetalhes(p), clienteAvisadoEmMs: agora, lembreteEmMs: p.lembreteEmMs ?? agora }))) return;
+            await this.falarComCliente(p, textoClienteDemora(e, p));
             await this.enviarPedidoAoAdmin(p, '⏰ *Cliente esperando há 24 h — confirme o agendamento*');
             this.d.log('warn', `[agenda-pendente] pedido ${p.id} com 24 h sem resposta — cliente avisado, admin lembrado`, { pedido_id: p.id });
             r.avisos++;
           } else {
-            await this.salvarDetalhes(p.id, { ...extrairDetalhes(p), lembreteEmMs: agora });
+            if (!(await this.salvarDetalhes(p.id, { ...extrairDetalhes(p), lembreteEmMs: agora }))) return;
             await this.enviarPedidoAoAdmin(p, '⏰ *Lembrete — pedido de agendamento sem resposta*');
             this.d.log('info', `[agenda-pendente] lembrete (3 h) do pedido ${p.id} ao admin`, { pedido_id: p.id });
             r.lembretes++;
@@ -586,9 +685,29 @@ export class AgendamentoPendenteService {
   }
 }
 
-function extrairDetalhes(p: PedidoAgendamento): DetalhesPedido {
-  const { id: _i, companyId: _c, leadId: _l, phone: _p, tipo: _t, inicioISO: _s, fimISO: _f, resultado: _r, criadoEmMs: _m, ...det } = p;
+const AVISO_TXT_FN = (phone: string) => `\n⚠️ Não consegui falar com o cliente (fora da janela de 24 h do WhatsApp ou atendimento pausado) — avise você: 📞 ${phone}`;
+
+/** Id do evento no Google derivado do pedido (base32hex: 0-9 a-v) — o mesmo pedido nunca vira 2 eventos. */
+export function idEventoDoPedido(pedidoId: string): string {
+  return `agd${pedidoId.replace(/-/g, '').toLowerCase()}`;
+}
+
+/** Texto do admin que é comando/botão (não é horário pra mandar ao cliente). */
+export function pareceComando(t: string): boolean {
+  if (/^\/|^menu$|^evabt:/i.test(t)) return true;
+  // Um "token" só, começando por letra, com _ : ou - (ids de botão: menucat_financeiro, findel-no, finrec:…)
+  return /^[a-z][a-z0-9_:-]*$/i.test(t) && /[_:-]/.test(t);
+}
+
+function extrairDetalhes(p: PedidoAgendamento & { detalhesOk?: boolean }): DetalhesPedido {
+  const { id: _i, companyId: _c, leadId: _l, phone: _p, tipo: _t, inicioISO: _s, fimISO: _f, resultado: _r, criadoEmMs: _m, detalhesOk: _d, ...det } = p;
   return det;
+}
+
+/** O texto do admin parece um dia/horário? (senão não vai pro cliente) */
+export function pareceHorario(t: string): boolean {
+  const n = t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  return /\d|segunda|terca|quarta|quinta|sexta|sabado|domingo|amanha|manha|tarde|hoje|semana/.test(n);
 }
 
 export function descreverResultado(r: string | null): string {
@@ -669,8 +788,19 @@ export function repoSupabase(client: ClienteSupabase): RepoPedidos {
       if (error) throw new Error(`visitas transicionar: ${error.message}`);
       return (data ?? []).length > 0;
     },
+    async listarConfirmando() {
+      const { data, error } = await client.from('visitas').select(COLUNAS).eq('resultado', ST_CONFIRMANDO).limit(100);
+      if (error) throw new Error(`visitas confirmando: ${error.message}`);
+      return (data ?? []) as LinhaPedido[];
+    },
+    async expirarAntigos(antesDeISO) {
+      const { data, error } = await client.from('visitas').update({ resultado: ST_EXPIRADA })
+        .eq('resultado', ST_PENDENTE).lt('inicio', antesDeISO).select('id');
+      if (error) throw new Error(`visitas expirar: ${error.message}`);
+      return (data ?? []).length;
+    },
     async listarPendentes() {
-      const { data, error } = await client.from('visitas').select(COLUNAS).eq('resultado', ST_PENDENTE).order('created_at', { ascending: true }).limit(200);
+      const { data, error } = await client.from('visitas').select(COLUNAS).eq('resultado', ST_PENDENTE).order('inicio', { ascending: true }).limit(500);
       if (error) throw new Error(`visitas listar: ${error.message}`);
       return (data ?? []) as LinhaPedido[];
     },

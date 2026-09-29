@@ -55,6 +55,9 @@ export class CalendarService {
         items: [{ id: alvo }],
       },
     });
+    // Agenda sem acesso/inexistente volta com `errors` e busy vazio — isso NÃO é "livre".
+    const erros = res.data.calendars?.[alvo]?.errors ?? [];
+    if (erros.length > 0) throw new Error(`freebusy ${alvo}: ${erros.map(e => e.reason).join(',')}`);
     const busy = res.data.calendars?.[alvo]?.busy ?? [];
     return busy.length === 0;
   }
@@ -64,7 +67,7 @@ export class CalendarService {
    * então toda empresa da plataforma agendava na agenda do dono da EcoSunPower.
    * Quem chama passa a agenda da empresa; sem valor, mantém a de sempre.
    */
-  async createEvent(input: CreateEventInput & { withMeet?: boolean; colorId?: string; calendarId?: string }): Promise<CreateEventResult & { meetLink?: string }> {
+  async createEvent(input: CreateEventInput & { withMeet?: boolean; colorId?: string; calendarId?: string; eventId?: string }): Promise<CreateEventResult & { meetLink?: string }> {
     const attendees = (input.attendeeEmails ?? [])
       .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))
       .map((email) => ({
@@ -74,6 +77,8 @@ export class CalendarService {
       }));
 
     const requestBody: calendar_v3.Schema$Event = {
+      // Id fixo (opcional): o mesmo pedido nunca vira dois eventos — o Google recusa id repetido.
+      ...(input.eventId ? { id: input.eventId } : {}),
       summary: input.summary,
       description: input.description,
       location: input.location,
