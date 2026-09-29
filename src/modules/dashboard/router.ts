@@ -2511,15 +2511,18 @@ b.onclick=async function(){
     try {
       const viewer = (req as AuthedRequest).dashUser!;
       const { listarConversas, lerFiltros } = await import('./conversas-queries.js');
-      const { renderAtendimentoPage } = await import('./atendimento-views.js');
+      const { renderAtendimentoPage, pedeSoMiolo, CABECALHO_MIOLO, LISTA_VAZIA } = await import('./atendimento-views.js');
       const filtros = lerFiltros(req.query as Record<string, unknown>);
+      // Troca suave (28/09): o script pede só o miolo (chat + resumo) — a lista não é redesenhada.
+      const soMiolo = pedeSoMiolo((n) => req.get(n));
       // P2b: ?contato= abre a conversa do número PESSOAL com quem ainda não é lead (só o dono vê).
       const ct = req.query.contato ? await rotasAtendimento.contatoDaTela(req as AuthedRequest) : null;
       if (ct && 'leadId' in ct) return res.redirect(`/dashboard/leads/${ct.leadId}?canal=whatsapp_business`);
       // company_id sai SÓ da sessão (dentro de listarConversas, .eq explícito).
-      const lista = await listarConversas(bancoDoOperador(req as AuthedRequest, supabase), viewer, filtros, supabase);
+      const lista = soMiolo ? LISTA_VAZIA : await listarConversas(bancoDoOperador(req as AuthedRequest, supabase), viewer, filtros, supabase);
       const donoPessoal = ct?.donoPessoal ?? await rotasAtendimento.nomeDoDonoPessoal(req as AuthedRequest);
-      res.type('text/html').send(renderAtendimentoPage({ user: viewer, lista, filtros, lead: null, contato: ct?.contato ?? null, donoPessoal }));
+      if (soMiolo) res.set('Cache-Control', 'no-store').vary(CABECALHO_MIOLO);
+      res.type('text/html').send(renderAtendimentoPage({ user: viewer, lista, filtros, lead: null, contato: ct?.contato ?? null, donoPessoal, soMiolo }));
     } catch (err) {
       console.error('[dashboard/leads/conversas]', err);
       res.status(500).send(`<h2>Erro ao carregar conversas</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
@@ -2541,11 +2544,15 @@ b.onclick=async function(){
       const { listarConversas, historicoDoLead, lerFiltros } = await import('./conversas-queries.js');
       const db = bancoDoOperador(req as AuthedRequest, supabase);
       const filtros = lerFiltros(req.query as Record<string, unknown>);
+      // Troca suave (28/09): o script pede só o miolo (chat + resumo) — a lista
+      // não é redesenhada, então nem é buscada. As travas abaixo são as MESMAS.
+      const { pedeSoMiolo, CABECALHO_MIOLO, LISTA_VAZIA } = await import('./atendimento-views.js');
+      const soMiolo = pedeSoMiolo((n) => req.get(n));
       // Parte 2: o chat junta a memória da Eva com o histórico do painel
       // (envios com autor/canal + "assumiu"/"devolveu") e traz o campo de resposta.
       const extrasP = Promise.all([
         servicosDoLead(supabase, id).catch(() => []),
-        listarConversas(db, viewer, filtros, supabase),
+        soMiolo ? Promise.resolve(LISTA_VAZIA) : listarConversas(db, viewer, filtros, supabase),
         historicoDoLead(db, id, viewer.companyId, viewer.id, supabase).catch(() => undefined),
         rotasAtendimento.nomeDoDonoPessoal(req as AuthedRequest),
       ]);
@@ -2592,7 +2599,8 @@ b.onclick=async function(){
       const envio = can(viewer, 'leads', 'editar') ? await rotasAtendimento.envioDaTela(req as AuthedRequest, lead, mensagens ?? []) : undefined;
       // W3: abriu a conversa → marca como lida no WhatsApp pessoal (só o dono, com a opção ligada).
       rotasAtendimento.aoAbrirConversa(req as AuthedRequest, { leadId: id });
-      res.send(renderLeadDetailPage(lead, [], String(req.query.docs ?? ''), String(req.query.envio ?? ''), servicosDoCliente, viewer, { lista, filtros, mensagens, envio, donoPessoal }));
+      if (soMiolo) res.set('Cache-Control', 'no-store').vary(CABECALHO_MIOLO);
+      res.send(renderLeadDetailPage(lead, [], String(req.query.docs ?? ''), String(req.query.envio ?? ''), servicosDoCliente, viewer, { lista, filtros, mensagens, envio, donoPessoal, soMiolo }));
     } catch (err) {
       console.error('[dashboard/leads/:id]', err);
       res.status(500).send(`<h2>Erro ao carregar lead</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
