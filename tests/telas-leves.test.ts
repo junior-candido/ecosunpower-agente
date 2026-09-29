@@ -102,7 +102,8 @@ describe('renderLayout — sem data URI grande nem CSS comum embutido', () => {
     const h = renderLayout({ active: 'home', title: 'X', body: '', user: USER_CASA });
     expect(h).not.toContain('data:image');
     expect(h.split(`src="${URL_LOGO_CASA}"`).length - 1).toBe(2);
-    expect(h).toMatch(/<a href="\/dashboard\/home"[^>]*>\s*<img src="[^"]+" alt="EcoSunPower"/);
+    // TROCA DELIBERADA (renovação do miolo R5, decisão D1 = a — ok do Junior no PR): a logo leva ao Command Center (a entrada de todos).
+    expect(h).toMatch(/<a href="\/dashboard\/command-center"[^>]*>\s*<img src="[^"]+" alt="EcoSunPower"/);
   });
 
   it('tenant sem logo: NUNCA recebe a logo da EcoSun (nem por URL)', () => {

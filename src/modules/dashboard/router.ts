@@ -138,7 +138,8 @@ import type { ManutencaoTipo } from './manutencao-motor.js';
 import { criarOS, abrirOSDeManutencao, getOS, salvarOS, addFotoOS, listFotosOS, fotoCountsPorItem, concluirOS } from './os-queries.js';
 import { renderOSPage, renderOSLaudoHtml } from './os-views.js';
 import { hidratarChecklist, resumoOS, type OSTipo } from './os-checklist.js';
-import { rotaCommandCenter, rotaCentralAtencao, rotaModoTv } from './command-center-rotas.js';
+import { rotaCommandCenter, rotaCentralAtencao, rotaModoTv, travaCockpitDaCasa } from './command-center-rotas.js';
+import { paginaInicialDe, destinoDepoisDoLogin } from './entrada.js';
 import { rotaMapaJson, rotaLocalizarPagina, rotaLocalizarUma, rotaSalvarPosicao } from './mapa-usinas-rotas.js';
 import { blocoMiniMapaUsina } from './mapa-usinas-views.js';
 import { montarRotasEnergia } from './energia-rotas.js';
@@ -164,7 +165,7 @@ function renderImportLeadsJunhoPage(r: ResultadoImport, didApply: boolean): stri
   const banner = didApply
     ? `<div style="background:#064e3b;border:1px solid #34d399;border-radius:12px;padding:16px;margin-bottom:20px">
          ✅ <strong>Importado!</strong> ${r.gravados} gravados · ${r.pulados} pulados · ${r.erros} erros.
-         Os "cadência Eva" entram na fila no próximo ciclo do cron. <a href="/dashboard/cockpit" style="color:#34d399">Ver dashboard →</a>
+         Os "cadência Eva" entram na fila no próximo ciclo do cron. <a href="/dashboard/command-center" style="color:#34d399">Ver dashboard →</a>
        </div>`
     : `<div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:16px;margin-bottom:20px">
          🔍 <strong>Prévia</strong> — ${r.gravados} prontos · ${r.pulados} pulados · ${r.erros} erros. Nada gravado ainda.
@@ -357,9 +358,11 @@ export function createDashboardRouter(
   router.post('/login', async (req: Request, res: Response) => {
     const login = String(req.body?.login ?? '').trim();
     const senha = String(req.body?.senha ?? '');
+    // R5 (D1 = a): sem `next` do painel → a entrada (Command Center), decidida
+    // depois de saber quem entrou (destinoDepoisDoLogin). O `next` segue valendo.
     const next = typeof req.body?.next === 'string' && req.body.next.startsWith('/dashboard')
       ? req.body.next
-      : '/dashboard/cockpit';
+      : undefined;
 
     // [Fase 2 A1] Login MULTI-EMPRESA: candidatos de todas as empresas (EcoSun
     // primeiro — comportamento antigo preservado), a senha desempata.
@@ -377,7 +380,7 @@ export function createDashboardRouter(
     setSessionCookie(res, found.user.id, req.body?.manter === '1');
     await touchLastLogin(supabase, found.user.id);
     await audit(supabase, { companyId: found.user.companyId, userId: found.user.id, entidade: 'sessao', acao: 'login' });
-    res.redirect(next.startsWith('/dashboard') ? next : '/dashboard/cockpit');
+    res.redirect(destinoDepoisDoLogin(next, found.user));
   });
 
   router.post('/logout', (_req: Request, res: Response) => {
@@ -466,7 +469,7 @@ export function createDashboardRouter(
     setSessionCookie(res, tok.userId, false);
     await touchLastLogin(supabase, tok.userId);
     await audit(supabase, { companyId: tok.companyId, userId: tok.userId, entidade: 'sessao', acao: tok.tipo === 'convite' ? 'senha_criada_convite' : 'senha_redefinida' });
-    res.redirect('/dashboard/cockpit');
+    res.redirect(paginaInicialDe(u));
   });
 
   router.get('/esqueci-senha', async (_req: Request, res: Response) => {
@@ -520,9 +523,9 @@ export function createDashboardRouter(
   // empresa → 404. Ver trava-proposta-empresa.ts e tests/propostas-trava-empresa.test.ts.
   router.use('/propostas', criarTravaPropostaDaEmpresa(supabase));
 
-  // Raiz redireciona pro cockpit (visao geral 1-tela). Era /home antes.
-  router.get('/', (_req, res) => {
-    res.redirect('/dashboard/cockpit');
+  // Raiz → a entrada (R5, D1 = a): Command Center para todos. Era o Cockpit.
+  router.get('/', (req, res) => {
+    res.redirect(paginaInicialDe((req as AuthedRequest).dashUser));
   });
 
   // ----- COBRANÇAS (InfinitePay) — gera link de pagamento pro cliente -----
@@ -2150,6 +2153,11 @@ b.onclick=async function(){
   router.get('/monitoramento/localizar', rotaLocalizarPagina(supabase));
   router.post('/monitoramento/localizar/:id', rotaLocalizarUma(supabase));
   router.post('/monitoramento/:id/posicao', rotaSalvarPosicao(supabase));
+
+  // Cockpit ANTIGO (saiu do menu no R5): só da casa. A consulta dele não filtra
+  // empresa e o SYNC AGORA sincroniza as usinas de todas — tenant no GET vai
+  // pro Command Center dele; POST/JSON → 403 (command-center-rotas.ts).
+  router.use('/cockpit', travaCockpitDaCasa);
 
   // Cockpit: 1 tela dark neon com KPIs + gauges + funil + atividade + top leads.
   // Auto-refresh 30s (gauges) + 5min (page completa). ECharts via CDN.
@@ -6378,7 +6386,7 @@ b.onclick=async function(){
         '<div style="font-family:sans-serif;text-align:center;padding:60px 20px;color:#334155">'
         + '<h2>🔒 Em breve para a sua empresa</h2>'
         + '<p>Esta área ainda está sendo preparada no ambiente multi-empresa.</p>'
-        + '<a href="/dashboard/cockpit">← voltar ao painel</a></div>',
+        + '<a href="/dashboard/command-center">← voltar ao painel</a></div>',
       );
       return;
     }

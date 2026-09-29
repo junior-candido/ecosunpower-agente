@@ -61,7 +61,10 @@ describe('menu lateral — tenant só vê áreas explícitas do papel', () => {
 
   it('EcoSun continua vendo os itens soltos de sempre (nada muda pra casa)', () => {
     const html = sidebarDe(ECOSUN_OPERADOR);
-    expect(html).toContain('Cockpit');
+    // TROCA DELIBERADA (R5, D2 = a — ok do Junior no PR): o Cockpit saiu do menu;
+    // a casa continua com a Visão geral e o resto dos itens soltos.
+    expect(html).not.toContain('href="/dashboard/cockpit"');
+    expect(html).toContain('Visão geral');
     expect(html).toContain('Manutenção');
     expect(html).toContain('Monitoramento');
   });

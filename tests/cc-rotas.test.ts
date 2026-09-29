@@ -8,6 +8,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { rotaCommandCenter, rotaCentralAtencao, rotaModoTv, CC_ABERTO_A_TENANTS } from '../src/modules/dashboard/command-center-rotas.js';
 import { fetchCommandCenterKpis } from '../src/modules/dashboard/queries.js';
 import type { DashUser } from '../src/modules/dashboard/permissions.js';
+import { paginaInicialDe } from '../src/modules/dashboard/entrada.js';
 
 const ECOSUN = '00000000-0000-0000-0000-000000000001';
 const junior: DashUser = { id: 'u', companyId: ECOSUN, nome: 'Junior', login: 'j', isAdmin: true, roleNome: 'Administrador', permissoes: {} };
@@ -118,10 +119,14 @@ describe('GET /dashboard/command-center', () => {
     expect(h).not.toContain('/dashboard/tv');
   });
 
-  it('sem sessão também vai pro Cockpit (nunca pra Home da casa)', async () => {
+  // TROCA DELIBERADA (renovação do miolo R5, D1 = a — ok do Junior no PR):
+  // o destino é paginaInicialDe(...) — sem sessão, a tela de login (o Cockpit
+  // saiu do menu; o Command Center mandaria de volta e criaria laço).
+  it('sem sessão vai pro login (nunca pra Home da casa nem pro Cockpit)', async () => {
     const res = resFalso();
     await rotaCommandCenter(dbCompleto())(reqDe(undefined), res as unknown as Response);
-    expect(res.redirect).toHaveBeenCalledWith('/dashboard/cockpit');
+    expect(res.redirect).toHaveBeenCalledWith(paginaInicialDe(undefined));
+    expect(paginaInicialDe(undefined)).toBe('/dashboard/login');
   });
 
   it('a flag de abertura pro tenant está ligada', () => {
@@ -227,10 +232,11 @@ describe('GET /dashboard/atencao', () => {
     for (const c of db.chamadas) expect(c.filtros, c.tabela).toContainEqual(['eq', 'company_id', tenant.companyId]);
   });
 
-  it('sem sessão vai pro Cockpit', async () => {
+  // TROCA DELIBERADA (R5, D1 = a): sem sessão → paginaInicialDe(undefined) = login.
+  it('sem sessão vai pro login', async () => {
     const res = resFalso();
     await rotaCentralAtencao(dbCompleto())(reqDe(undefined), res as unknown as Response);
-    expect(res.redirect).toHaveBeenCalledWith('/dashboard/cockpit');
+    expect(res.redirect).toHaveBeenCalledWith(paginaInicialDe(undefined));
   });
 
   it('EcoSun vê a lista completa, com o filtro da URL', async () => {
@@ -246,10 +252,12 @@ describe('GET /dashboard/atencao', () => {
 });
 
 describe('GET /dashboard/tv', () => {
-  it('tenant é mandado pro Cockpit (Modo TV é só da casa)', async () => {
+  // TROCA DELIBERADA (R5, D1 = a): tenant → paginaInicialDe(tenant) = Command Center dele.
+  it('tenant é mandado pro Command Center dele (Modo TV é só da casa)', async () => {
     const res = resFalso();
     await rotaModoTv()(reqDe(tenant), res as unknown as Response);
-    expect(res.redirect).toHaveBeenCalledWith('/dashboard/cockpit');
+    expect(res.redirect).toHaveBeenCalledWith(paginaInicialDe(tenant));
+    expect(paginaInicialDe(tenant)).toBe('/dashboard/command-center');
     expect(res.send).not.toHaveBeenCalled();
   });
 

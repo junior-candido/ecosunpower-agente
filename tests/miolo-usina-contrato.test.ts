@@ -7,6 +7,8 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { contratoDaTela, aplicarMudancas } from './helpers/contrato-tela.js';
+// R5 (Onda 4): o Cockpit saiu do menu — sai o link /dashboard/cockpit das telas da casa.
+import { r5Menu } from './fixtures/mudancas-onda4.js';
 import { CASOS_USINA, SISTEMA } from './fixtures/casos-usina.js';
 // Troca comum das telas renovadas: sai o Tailwind do CDN (telas leves, #328).
 import { TELAS_LEVES } from './fixtures/mudancas-telas-leves.js';
@@ -25,7 +27,7 @@ const CONTRATO = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures'
 describe('Usina — contrato das telas não muda', () => {
   for (const [nome, render] of Object.entries(CASOS_USINA)) {
     it(`contrato: ${nome}`, () => {
-      expect(contratoDaTela(render())).toEqual(aplicarMudancas(CONTRATO[nome], TELAS_LEVES, ...(nome.startsWith('detalhe') ? [RELATORIO_NO_DETALHE, TEMA_GRAFICOS, ...(nome === 'detalhe-mes' || nome === 'detalhe-tenant' ? [MINI_MAPA_DA_MAIN] : [])] : nome === 'dados' ? [TEMA_GRAFICOS] : [])));
+      expect(contratoDaTela(render())).toEqual(aplicarMudancas(CONTRATO[nome], ...r5Menu(CONTRATO[nome]), TELAS_LEVES, ...(nome.startsWith('detalhe') ? [RELATORIO_NO_DETALHE, TEMA_GRAFICOS, ...(nome === 'detalhe-mes' || nome === 'detalhe-tenant' ? [MINI_MAPA_DA_MAIN] : [])] : nome === 'dados' ? [TEMA_GRAFICOS] : [])));
     });
   }
 });

@@ -13,6 +13,7 @@
 // então confere o módulo aqui mesmo; as rotas /monitoramento/* passam também
 // pela trava central de módulos.
 
+import { paginaInicialDe } from './entrada.js';
 import type { Request, Response } from 'express';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AuthedRequest } from './auth.js';
@@ -83,7 +84,7 @@ export function rotaMapaJson(supabase: SupabaseClient, agoraFn: () => Date = () 
 export function rotaLocalizarPagina(supabase: SupabaseClient): Handler {
   return async (req, res) => {
     const user = usuario(req);
-    if (!user) { res.redirect('/dashboard/cockpit'); return; }
+    if (!user) { res.redirect(paginaInicialDe(user)); return; } // sem sessão → login (R5)
     if (!can(user, 'usinas', 'editar')) {
       res.status(403).type('text/html').send('<h2>Sem permissão</h2><p>Localizar usinas pede permissão de editar usinas.</p>');
       return;

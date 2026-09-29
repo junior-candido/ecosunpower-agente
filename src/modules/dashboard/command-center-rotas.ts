@@ -7,8 +7,10 @@
 // DA SESSÃO. Acesso a cada bloco = papel do usuário E módulo contratado
 // (empresa_modulos, lido 1x por requisição, fail-closed). O que a empresa não
 // contratou aparece trancado (vitrine). Aberto pro tenant desde 28/09/2026
-// (primeiro: Conquista Solar). Modo TV continua só da casa. Sem sessão (ou sem
-// permissão) vai pro Cockpit — a entrada do tenant —, nunca pra /home.
+// (primeiro: Conquista Solar). Modo TV continua só da casa.
+// R5 (nova entrada, D1 = a): quem não pode ver vai pra paginaInicialDe(user) —
+// sem sessão → login; tenant no Modo TV → Command Center dele. Nunca pro
+// Cockpit (saiu do menu e é só da casa) nem pra /home.
 
 import type { Request, Response } from 'express';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -23,6 +25,7 @@ import {
 import { modulosDaRequisicao } from './modulos-contratados.js';
 import { todasEmpresasConhecidas } from '../empresa-config.js';
 import { renderCommandCenterPage, renderCentralAtencaoPage, renderModoTvPage } from './command-center-views.js';
+import { paginaInicialDe } from './entrada.js';
 
 type Handler = (req: Request, res: Response) => Promise<void>;
 
@@ -86,7 +89,7 @@ export function rotaCommandCenter(supabase: SupabaseClient, agoraFn: () => Date 
   return async (req, res) => {
     const user = (req as AuthedRequest).dashUser;
     if (!podeVer(user)) {
-      res.redirect('/dashboard/cockpit');
+      res.redirect(paginaInicialDe(user));
       return;
     }
     const agora = agoraFn();
@@ -101,7 +104,7 @@ export function rotaCentralAtencao(supabase: SupabaseClient, agoraFn: () => Date
   return async (req, res) => {
     const user = (req as AuthedRequest).dashUser;
     if (!podeVer(user)) {
-      res.redirect('/dashboard/cockpit');
+      res.redirect(paginaInicialDe(user));
       return;
     }
     const agora = agoraFn();
@@ -118,9 +121,27 @@ export function rotaModoTv(): Handler {
   return async (req, res) => {
     const user = (req as AuthedRequest).dashUser;
     if (!ehDaCasa(user)) {
-      res.redirect('/dashboard/cockpit');
+      res.redirect(paginaInicialDe(user));
       return;
     }
     res.type('text/html').send(renderModoTvPage(user));
   };
+}
+
+/**
+ * Trava do Cockpit antigo (R5): a rota continua viva, mas SÓ para a casa.
+ * A consulta do Cockpit (cockpit-queries.ts) não filtra empresa — lê os leads,
+ * conversas e campanhas de todas — e o tenant caía nela depois do login. O
+ * "SYNC AGORA" (POST /cockpit/sync) sincronizava as usinas de TODAS as
+ * empresas. Tenant: GET → Command Center dele; POST/JSON → 403.
+ * Registrada no router com router.use('/cockpit', …) antes das rotas.
+ */
+export function travaCockpitDaCasa(req: Request, res: Response, next: () => void): void {
+  const user = (req as AuthedRequest).dashUser;
+  if (ehDaCasa(user)) { next(); return; }
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    res.redirect(paginaInicialDe(user));
+    return;
+  }
+  res.status(403).json({ ok: false, error: 'Área indisponível para a sua empresa.' });
 }

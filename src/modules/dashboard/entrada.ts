@@ -1,26 +1,37 @@
 // src/modules/dashboard/entrada.ts
 // Um lugar só que decide a TELA DE ENTRADA do painel e para onde a logo leva.
 //
-// Renovação do miolo, R0 (28/09/2026): o tenant era mandado para /dashboard/home,
-// que não está no menu dele (e cuja consulta é da casa). Agora:
-//  - EcoSun continua na Home (por enquanto; a troca da entrada é do R5, decisão D1);
-//  - tenant vai para o Command Center dele (dado escopado pela empresa da sessão);
-//  - sem usuário (tela legada/teste) fica como sempre: Home.
-// Função pura: sem banco, sem sessão.
+// Renovação do miolo:
+//  - R0 (28/09/2026): o tenant era mandado para /dashboard/home, que não está
+//    no menu dele (e cuja consulta é da casa) → passou para o Command Center.
+//  - R5 (decisão D1 = a): o Command Center é a entrada de TODO MUNDO (EcoSun e
+//    tenant) — depois do login sem `next`, em `/`, na logo e no convite. O
+//    Cockpit saiu do menu (a rota /cockpit continua viva, só para a casa).
+//  - Sem sessão → tela de login (nunca o Command Center: ele mandaria de volta
+//    pro login e criaria laço).
+// Funções puras: sem banco, sem sessão.
 
 import type { DashUser } from './permissions.js';
-import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
 
-export const ENTRADA_CASA = '/dashboard/home';
-export const ENTRADA_TENANT = '/dashboard/command-center';
+export const ENTRADA = '/dashboard/command-center';
+export const TELA_LOGIN = '/dashboard/login';
 
-/** Tela de entrada de quem está logado. */
+/** Tela de entrada de quem está logado (sem sessão → login). */
 export function paginaInicialDe(user: DashUser | undefined): string {
-  if (!user) return ENTRADA_CASA;
-  return user.companyId === ECOSUN_COMPANY_ID ? ENTRADA_CASA : ENTRADA_TENANT;
+  return user ? ENTRADA : TELA_LOGIN;
 }
 
-/** Para onde a logo do menu (e o "← voltar" da vitrine) leva. Hoje = entrada. */
-export function linkDaLogo(user: DashUser | undefined): string {
+/** Para onde a logo do menu (e o "← voltar" da vitrine) leva. A casca só é
+ *  montada para quem está logado; tela legada sem `user` também vai para a
+ *  entrada (nunca para o login, que é tela de fora). */
+export function linkDaLogo(_user: DashUser | undefined): string {
+  return ENTRADA;
+}
+
+/** Destino depois do login: o `next` pedido (só caminho do próprio painel) ou
+ *  a entrada. Não aceita `//host` nem `/dashboard` seguido de barra invertida
+ *  (o navegador trata `\` como `/` e poderia sair do site). */
+export function destinoDepoisDoLogin(next: unknown, user: DashUser | undefined): string {
+  if (typeof next === 'string' && /^\/dashboard(?:[/?#]|$)/.test(next) && !next.includes('\\')) return next;
   return paginaInicialDe(user);
 }

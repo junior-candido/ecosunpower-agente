@@ -13,7 +13,7 @@ const TENANT = 'aaaa1111-2222-3333-4444-555566667777';
 // com o gating de cada uma copiado de lá (git show main:src/modules/dashboard/views.ts).
 // O menu novo pode mudar rótulo e grupo, mas NÃO o gating.
 interface Legado { href: string; key: string; area?: string; nivel?: string; soEcosun?: boolean; soTenant?: boolean }
-const ITENS_ANTIGOS: Legado[] = [
+const ITENS_ANTIGOS_TODOS: Legado[] = [
   { href: '/dashboard/home', key: 'home' },
   { href: '/dashboard/cockpit', key: 'cockpit' },
   { href: '/dashboard/cerebro', key: 'cerebro', area: 'relatorios', soEcosun: true },
@@ -52,6 +52,14 @@ const ITENS_ANTIGOS: Legado[] = [
   { href: '/dashboard/empresas', key: 'empresas', area: 'usuarios', nivel: 'administrar', soEcosun: true },
 ];
 
+// TROCA DELIBERADA (renovação do miolo R5, decisão D2 = a — ok do Junior no PR):
+// exceções documentadas da regra "nada se perde". Cada uma diz por quê e onde
+// a rota continua viva.
+const APOSENTADOS_DO_MENU: Record<string, string> = {
+  '/dashboard/cockpit': 'aposentado no R5 (a entrada virou o Command Center); a rota /cockpit continua viva, só da casa, com o link "Cockpit antigo" no rodapé do Command Center',
+};
+const ITENS_ANTIGOS = ITENS_ANTIGOS_TODOS.filter((i) => !(i.href in APOSENTADOS_DO_MENU));
+
 // can() simplificado: admin pode tudo; senão olha as permissões.
 const pode = (u: never, area: string) => {
   const user = u as unknown as { isAdmin?: boolean; permissoes?: Record<string, string[]> };
@@ -67,6 +75,12 @@ describe('MENU_AREAS — nada se perde', () => {
   it('todas as rotas do menu antigo continuam no menu novo', () => {
     const hrefs = new Set(itens.map((i) => i.href));
     for (const { href } of ITENS_ANTIGOS) expect(hrefs.has(href), href).toBe(true);
+  });
+
+  it('só os aposentados documentados saíram do menu (e saíram mesmo)', () => {
+    const hrefs = new Set(itens.map((i) => i.href));
+    for (const href of Object.keys(APOSENTADOS_DO_MENU)) expect(hrefs.has(href), href).toBe(false);
+    expect(ITENS_ANTIGOS_TODOS.length - ITENS_ANTIGOS.length).toBe(Object.keys(APOSENTADOS_DO_MENU).length);
   });
 
   it('cada item antigo mantém chave e gating idênticos (area, nivel, soEcosun, soTenant)', () => {
@@ -89,7 +103,8 @@ describe('MENU_AREAS — nada se perde', () => {
 
   it('inclui a Central de Atenção (fase B) no grupo Command Center', () => {
     const cc = MENU_AREAS.find((g) => g.id === 'command_center')!;
-    expect(cc.itens.map((i) => i.key)).toEqual(['command_center', 'atencao', 'home', 'cockpit', 'predio']);
+    // TROCA DELIBERADA (R5, D2 = a): o Cockpit saiu do grupo.
+    expect(cc.itens.map((i) => i.key)).toEqual(['command_center', 'atencao', 'home', 'predio']);
     expect(cc.itens.find((i) => i.key === 'atencao')!.href).toBe('/dashboard/atencao');
   });
 
@@ -117,7 +132,9 @@ describe('montarMenu — permissões e estado', () => {
   it('EcoSun admin vê tudo que é da casa e nada exclusivo de tenant', () => {
     const m = montarMenu(adminEcosun, 'leads', ECOSUN, pode);
     const keys = m.flatMap((g) => g.itens.map((i) => i.key));
-    expect(keys).toContain('cockpit');
+    // TROCA DELIBERADA (R5, D2 = a): o Cockpit saiu do menu (a casa vê o resto).
+    expect(keys).not.toContain('cockpit');
+    expect(keys).toContain('home');
     expect(keys).toContain('empresas');
     expect(keys).not.toContain('minha_assinatura');
     expect(keys).not.toContain('whatsapp');
@@ -159,7 +176,8 @@ describe('montarMenu — permissões e estado', () => {
     expect(cc.itens.every((i) => i.estado === 'visivel')).toBe(true);
     expect(cc.trancado).toBe(false);
     // EcoSun continua vendo tudo do grupo
-    expect(montarMenu(adminEcosun, 'home', ECOSUN, pode).find((g) => g.id === 'command_center')!.itens).toHaveLength(5);
+    // TROCA DELIBERADA (R5, D2 = a): 4 itens — o Cockpit saiu do grupo.
+    expect(montarMenu(adminEcosun, 'home', ECOSUN, pode).find((g) => g.id === 'command_center')!.itens).toHaveLength(4);
   });
 
   it('tenant não vê o nome da assistente da casa no menu', () => {

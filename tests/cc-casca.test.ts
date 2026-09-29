@@ -34,11 +34,12 @@ describe('renderLayout — casca nova', () => {
     expect(h).toContain('cc-sb');
   });
 
-  it('logo negativa-wide GRANDE da EcoSun, link pra Home', () => {
+  // TROCA DELIBERADA (renovação do miolo R5, decisão D1 = a — ok do Junior no PR): a logo leva ao Command Center (a entrada de todos).
+  it('logo negativa-wide GRANDE da EcoSun, link pro Command Center', () => {
     const h = renderLayout({ active: 'home', title: 'X', body: '', user: junior });
     // logo oficial por arquivo (nome com hash), não mais base64 no HTML
     expect(h).toContain(`src="${URL_LOGO_CASA}"`);
-    expect(h).toMatch(/<a href="\/dashboard\/home"[^>]*>\s*<img[^>]*alt="EcoSunPower"/);
+    expect(h).toMatch(/<a href="\/dashboard\/command-center"[^>]*>\s*<img[^>]*alt="EcoSunPower"/);
   });
 
   it('grupo do item ativo vem aberto; item ativo marcado', () => {
