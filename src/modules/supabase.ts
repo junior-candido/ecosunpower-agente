@@ -1630,23 +1630,27 @@ export class SupabaseService {
    * O filtro de status roda em JS (não em SQL) pela mesma armadilha do NULL
    * documentada em inscreverLeadsElegiveisEmail (um `.not(col,'in',(...))` puro
    * derruba silenciosamente toda linha com a coluna NULL).
+   *
+   * [29/09/2026] Base de UMA empresa (a que dispara). Antes pegava as leads de TODAS
+   * as empresas com o módulo de e-mail: uma campanha da EcoSun (com a marca dela)
+   * cairia na base de um tenant que ligasse o módulo.
    */
-  async listarDestinatariosCampanha(max: number = 1000): Promise<Array<{ id: string; email: string; name: string }>> {
+  async listarDestinatariosCampanha(companyId: string, max: number = 1000): Promise<Array<{ id: string; email: string; name: string }>> {
     const CLIENTE_STATUSES = ['contrato_assinado', 'instalado', 'medidor_trocado', 'operando', 'pos_venda_concluido'];
 
     // [18/09/2026] Mesmo buraco da jornada, e pior: campanha e disparo unico
     // de ate 5.000 destinatarios. Sem este filtro, um envio da EcoSun ia pra
     // base inteira de todos os tenants. Ver migration 128.
     const habilitadas = await this.empresasComModulo('email');
-    if (habilitadas.length === 0) {
-      console.warn('[campanha] nenhuma empresa com modulo de e-mail ativo — campanha sem destinatarios');
+    if (!companyId || !habilitadas.includes(companyId)) {
+      console.warn('[campanha] empresa sem modulo de e-mail ativo — campanha sem destinatarios');
       return [];
     }
 
     const { data, error } = await this.client
       .from('leads')
       .select('id, name, email, status, installation_status, archived_at, email_opt_out, company_id')
-      .in('company_id', habilitadas)
+      .eq('company_id', companyId)
       .not('email', 'is', null)
       .neq('email', '')
       .not('email_opt_out', 'is', true)

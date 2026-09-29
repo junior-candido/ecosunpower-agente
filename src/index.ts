@@ -598,7 +598,8 @@ async function main() {
         imageGen: new ImageGenerator(config.replicateApiToken),
         supabase: supabase.getClient(),
         sender: new EmailSender(process.env.RESEND_API_KEY ?? '', process.env.EMAIL_FROM ?? ''),
-        listarDestinatarios: (max) => supabase.listarDestinatariosCampanha(max),
+        // A campanha sai com a marca e o remetente da EcoSun: só a base da EcoSun.
+        listarDestinatarios: (max) => supabase.listarDestinatariosCampanha(ECOSUN_COMPANY_ID, max),
         baseUrl: config.publicProposalBaseUrl,
         siteUrl: config.siteUrl,
         empresa: empresa().nomeFantasia,
@@ -606,7 +607,7 @@ async function main() {
         // + botões. Fallback sem WABA: texto com a URL da imagem.
         enviarPreview: async (c: CampanhaGerada) => {
           const to = config.engineerPhone;
-          const dest = await supabase.listarDestinatariosCampanha(1000).catch(() => []);
+          const dest = await supabase.listarDestinatariosCampanha(ECOSUN_COMPANY_ID, 1000).catch(() => []);
           const caption = `${c.assunto}\n\n${c.titulo}\n\n~${dest.length} destinatários\n👀 Ver completo: ${config.publicProposalBaseUrl}/e/campanha/${c.id}`;
           const botoes = botoesPreviewCampanha(c.id);
           if (metaWaba) {
@@ -3383,7 +3384,8 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     try {
       const { fetchGoogleAdsSummary } = await import('./modules/dashboard/marketing-queries.js');
       const client = supabase.getClient();
-      const periodo = await fetchGoogleAdsSummary(client, dias);
+      // Só a empresa do canal: sem o filtro, somava o Google Ads de TODAS as empresas.
+      const periodo = await fetchGoogleAdsSummary(client, dias, empresaDoAdmin());
 
       const fmtBRL = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
       const fmtN = (n: number) => n.toLocaleString('pt-BR');
@@ -3414,7 +3416,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
       // Comparativo 30d quando default 7d pedido
       if (dias === 7) {
-        const m30 = await fetchGoogleAdsSummary(client, 30);
+        const m30 = await fetchGoogleAdsSummary(client, 30, empresaDoAdmin());
         if (m30.dias_com_dado > 0) {
           linhas.push(``);
           linhas.push(`*30 dias:* ${fmtBRL(m30.spend_cents)} | ${fmtN(m30.clicks)} cliques | CPC ${fmtCPC(m30.cpc_brl)} | CTR ${fmtCTR(m30.ctr_pct)}`);
@@ -4825,7 +4827,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         // Campanha via Eva: botões do preview. Aprovar dispara o envio (pesado,
         // roda em segundo plano); refazer gera outra; descartar só arquiva.
         onCampanhaAprovar: campanha ? async (id) => {
-          const dest = await supabase.listarDestinatariosCampanha(1000).catch(() => []);
+          const dest = await supabase.listarDestinatariosCampanha(ECOSUN_COMPANY_ID, 1000).catch(() => []);
           await sendText(from, `📤 Enviando pra ${dest.length} leads...`);
           void (async () => {
             try {
@@ -9595,6 +9597,7 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
   const rhTriagem = new TriagemService(
     supabase.getClient(),
     new Anthropic({ apiKey: config.anthropicApiKey }),
+    ECOSUN_COMPANY_ID,   // o aviso vai pro zap do dono da EcoSun: só candidatos dela
     (texto) => sendText(config.engineerPhone, texto),
   );
 
