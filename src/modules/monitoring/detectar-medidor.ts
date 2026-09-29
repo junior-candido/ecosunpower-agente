@@ -3,6 +3,12 @@
 // cadastrada no monitoramento registrou geração real por N dias seguidos →
 // marca `medidor_trocado` (+ medidor_detectado_auto) e avisa o Junior.
 // Hoymiles/Deye sem adapter continuam manuais.
+//
+// LGPD (28/09/2026): o aviso ia SEMPRE pro zap do Junior — inclusive com o nome
+// de cliente de tenant. Agora vai pro admin DA empresa do lead, pelo canal dela
+// (criarAoMarcarMedidor + canal-automatico.ts).
+import { avisoAdminSoDaCasa, type RotaAvisoAdmin } from '../canal-automatico.js';
+
 export const DIAS_GERANDO = 3;
 export const KWH_MINIMO_DIA = 1; // abaixo disso é ruído/teste do instalador
 
@@ -11,6 +17,8 @@ export interface LeadComUsina {
   nome: string | null;
   sistemaId: string;
   apelido: string | null;
+  /** Empresa do lead (leads.company_id). null/ausente = legado = casa. */
+  companyId?: string | null;
 }
 
 export interface DetectarMedidorDb {
@@ -59,6 +67,30 @@ export function textoAvisoMedidor(lead: LeadComUsina, kwh: ReadonlyArray<number>
     `Se a pasta digital já estiver publicada, o aviso pra enviar chega em seguida.`;
 }
 
+export interface AoMarcarDeps {
+  /** Agenda os toques pós-instalação (PostInstallService.scheduleOnMeterSwap). */
+  agendarToques?: (leadId: string) => Promise<void>;
+  /** Rota do aviso admin por empresa. Ausente = só a casa (precisa de `adminPhone`). */
+  avisarAdmin?: RotaAvisoAdmin;
+  adminPhone?: string;
+  sendText: (to: string, text: string) => Promise<void>;
+}
+
+/** O `onMarcado` do cron: agenda os toques e avisa o admin DA empresa do lead. */
+export function criarAoMarcarMedidor(d: AoMarcarDeps): (lead: LeadComUsina, kwh: number[]) => Promise<void> {
+  const avisar = d.avisarAdmin ?? avisoAdminSoDaCasa(d.adminPhone ?? '');
+  return async (lead, kwh) => {
+    if (d.agendarToques) {
+      try {
+        await d.agendarToques(lead.leadId);
+      } catch (err) {
+        console.error('[detectar-medidor] agendar toques falhou', lead.leadId, (err as Error).message);
+      }
+    }
+    await avisar(lead.companyId ?? null, (to) => d.sendText(to, textoAvisoMedidor(lead, kwh)), 'monitoramento');
+  };
+}
+
 function isoDia(d: Date): string { return d.toISOString().slice(0, 10); }
 
 /** Implementação real (supabase-js). */
@@ -70,7 +102,7 @@ export function criarDetectarMedidorDb(client: any): DetectarMedidorDb {
         // Só `instalado` (a pasta publicada já move pra cá — R4). `contrato_assinado`
         // pegaria cliente de SERVIÇO (limpeza/O&M) com usina antiga gerando e
         // marcaria medidor trocado errado. Quem já tem meter_swapped_at fica de fora.
-        .select('id, apelido, lead_id, leads!inner(id, name, installation_status, meter_swapped_at)')
+        .select('id, apelido, lead_id, leads!inner(id, name, installation_status, meter_swapped_at, company_id)')
         .eq('ativo', true)
         .not('lead_id', 'is', null)
         .eq('leads.installation_status', 'instalado')
@@ -82,7 +114,10 @@ export function criarDetectarMedidorDb(client: any): DetectarMedidorDb {
       for (const r of (data ?? []) as any[]) {
         if (vistos.has(r.lead_id)) continue;
         vistos.add(r.lead_id);
-        out.push({ leadId: r.lead_id, nome: r.leads?.name ?? null, sistemaId: r.id, apelido: r.apelido ?? null });
+        out.push({
+          leadId: r.lead_id, nome: r.leads?.name ?? null, sistemaId: r.id, apelido: r.apelido ?? null,
+          companyId: r.leads?.company_id ?? null,
+        });
       }
       return out;
     },

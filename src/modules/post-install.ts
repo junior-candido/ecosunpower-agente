@@ -1,7 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { registrarEvento } from './elo/eventos.js';
-import { empresa } from './empresa-config.js';
+import { empresa, empresaDe } from './empresa-config.js';
+import { ehCasa, empresaDoLead, leadSoDaCasa, type RotaLead } from './canal-automatico.js';
 
 // Enum de installation_status. Fonte unica — importe no endpoint pra
 // validacao, evita drift entre codigo e migration (CHECK constraint espelha
@@ -46,7 +47,7 @@ const TOPIC_GUIDE: Record<TouchStep['type'], string> = {
     'amigo do cliente, nao vendedor. Mencione que medidor foi trocado e ' +
     'sistema ja esta operando. Inclua o link: {{review_link}}. Lembre que ' +
     '1 minuto ajuda muito. Sem pressao. Pode dizer que audio ou texto do ' +
-    'cliente tambem seria bem-vindo (o cliente pode mandar pra Eva).',
+    'cliente tambem seria bem-vindo (o cliente pode mandar pra {{atendente}}).',
   review_nudge:
     'reforco leve pra avaliacao no Google. Nao insistir, so lembrar. Tom: ' +
     'casual, como quem passa pra dar um oi e aproveita pra lembrar. Link: ' +
@@ -66,6 +67,12 @@ export class PostInstallService {
     private anthropic: Anthropic,
     private sendText: (to: string, text: string) => Promise<void>,
     private reviewLink: string,
+    /**
+     * LGPD (28/09/2026): por onde cada toque sai. Casa → Eva/WABA; tenant → a
+     * instância dele, se liberado (canal-automatico.ts). Ausente = só a casa:
+     * cliente de tenant NUNCA recebe pelo número da EcoSunPower.
+     */
+    private rotaLead: RotaLead = leadSoDaCasa,
   ) {}
 
   // Chamado quando Junior marca medidor_trocado. Agenda os 3 toques e atualiza
@@ -77,13 +84,18 @@ export class PostInstallService {
     // Etapa anterior da jornada — só pra enriquecer o evento do Elo (best-effort;
     // qualquer falha aqui NÃO pode atrapalhar a troca do medidor).
     let etapaAntiga: string | null = null;
+    // Empresa do lead: carimba o evento do Elo (sem ela o DEFAULT da coluna
+    // punha o cliente de tenant na linha do tempo da casa — LGPD 28/09/2026).
+    let companyDoLead: string | null = null;
     try {
       const { data: prev } = await this.supabase
         .from('leads')
-        .select('installation_status')
+        .select('installation_status, company_id')
         .eq('id', leadId)
         .maybeSingle();
-      etapaAntiga = (prev as { installation_status?: string | null } | null)?.installation_status ?? null;
+      const p = prev as { installation_status?: string | null; company_id?: string | null } | null;
+      etapaAntiga = p?.installation_status ?? null;
+      companyDoLead = p?.company_id ?? null;
     } catch { /* best-effort: ignora */ }
 
     const { error: updateErr } = await this.supabase
@@ -134,6 +146,7 @@ export class PostInstallService {
       origem: 'pos-venda',
       clienteId: leadId,
       payload: { etapaAntiga, etapaNova: 'medidor_trocado' },
+      companyId: companyDoLead,
     });
   }
 
@@ -186,7 +199,7 @@ export class PostInstallService {
   async processDueTouches(): Promise<number> {
     const { data, error } = await this.supabase
       .from('post_install_touches')
-      .select('id, touch_type, leads(id, phone, name, city, energy_data, opt_out)')
+      .select('id, touch_type, leads(id, phone, name, city, energy_data, opt_out, company_id)')
       .eq('status', 'pending')
       .lte('scheduled_for', new Date().toISOString())
       .limit(10);
@@ -207,6 +220,7 @@ export class PostInstallService {
         city: string | null;
         energy_data: Record<string, unknown> | null;
         opt_out: boolean | null;
+        company_id?: string | null;
       } | null;
     }>) {
       const lead = touch.leads;
@@ -227,9 +241,44 @@ export class PostInstallService {
         console.log(`[post-install] Skipped touch ${touch.id} — lead opted out`);
         continue;
       }
+      // Conteúdo tem que ser DA empresa do lead: o link de avaliação é o dela
+      // (sem link, não pede avaliação — nunca com o link da casa) e o programa
+      // de indicação (R$ 300 no PIX) é da casa, não vai pra cliente de tenant.
+      const companyId = empresaDoLead(lead.company_id);
+      const casa = ehCasa(companyId);
+      const linkDoTenant = empresaDe(companyId).googleReviewUrl;
+      // Tenant com o link da casa (config herdada/copiada) = sem link: a
+      // avaliação no Google tem que ir pra empresa DELE.
+      const link = casa
+        ? this.reviewLink
+        : linkDoTenant && linkDoTenant !== this.reviewLink && linkDoTenant !== empresaDe(null).googleReviewUrl
+          ? linkDoTenant
+          : null;
+      const semConteudo = casa
+        ? null
+        : touch.touch_type === 'indication_invite'
+          ? 'programa de indicacao e da casa'
+          : !link ? 'empresa sem link de avaliacao' : null;
+      if (semConteudo) {
+        await this.supabase.from('post_install_touches').update({ status: 'canceled' }).eq('id', touch.id);
+        console.log(`[post-install] Touch ${touch.id} cancelado (empresa ${companyId}: ${semConteudo})`);
+        continue;
+      }
       try {
-        const message = await this.generateMessage(touch.touch_type, lead.name);
-        await this.sendText(lead.phone, message);
+        let message = '';
+        const rota = await this.rotaLead(companyId, async () => {
+          // Dentro da empresa do lead: o prompt fala em nome DELA.
+          message = await this.generateMessage(touch.touch_type, lead.name, link ?? '');
+          await this.sendText(lead.phone, message);
+        });
+        if (rota === 'erro_ao_decidir') continue; // transitório: tenta no próximo ciclo
+        if (rota !== 'enviado') {
+          // Sem canal próprio / assistente desligada / pausada: não fala pelo
+          // número de ninguém. Cancela pra não entupir a fila (limit 10).
+          await this.supabase.from('post_install_touches').update({ status: 'canceled' }).eq('id', touch.id);
+          console.log(`[post-install] Touch ${touch.id} cancelado (empresa ${companyId}: ${rota})`);
+          continue;
+        }
         await this.supabase
           .from('post_install_touches')
           .update({
@@ -256,9 +305,12 @@ export class PostInstallService {
   private async generateMessage(
     type: TouchStep['type'],
     name: string | null,
+    reviewLink: string = this.reviewLink,
   ): Promise<string> {
     const firstName = (name ?? '').split(' ')[0] || 'tudo certo';
-    const guide = TOPIC_GUIDE[type].replace('{{review_link}}', this.reviewLink);
+    const guide = TOPIC_GUIDE[type]
+      .replace('{{review_link}}', reviewLink)
+      .replace('{{atendente}}', empresa().nomeAtendente);
 
     const prompt = `Voce e ${empresa().rtApelido}, ${empresa().rtTitulo} da ${empresa().nomeFantasia} (${empresa().regiaoAtuacao}).
 Esta mandando uma mensagem pessoal via WhatsApp pra um cliente que JA INSTALOU solar com voce.

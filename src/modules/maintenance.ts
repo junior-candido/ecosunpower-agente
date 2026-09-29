@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { SupabaseService } from './supabase.js';
 import { empresa } from './empresa-config.js';
 import { medirIa } from './custos/ia-metering.js';
+import { leadSoDaCasa, type RotaLead } from './canal-automatico.js';
 
 /**
  * Modulo de manutencao da Eva:
@@ -16,6 +17,12 @@ export class MaintenanceService {
     private supabase: SupabaseService,
     private anthropic: Anthropic,
     private sendText: (to: string, text: string) => Promise<void>,
+    /**
+     * LGPD (28/09/2026): lembrete de cliente de tenant (ex.: aniversário de
+     * usina importada) sai pela instância DELE, em nome dele — nunca pela Eva.
+     * Ausente = só a casa (canal-automatico.ts).
+     */
+    private rotaLead: RotaLead = leadSoDaCasa,
   ) {}
 
   async processIntros(): Promise<number> {
@@ -54,8 +61,18 @@ export class MaintenanceService {
 
     for (const reminder of due) {
       try {
-        const text = await this.generateMaintenanceMessage(reminder.name, reminder.topic);
-        await this.sendBubbles(reminder.phone, text);
+        let text = '';
+        const rota = await this.rotaLead(reminder.company_id ?? null, async () => {
+          // Dentro da empresa do lead: o prompt fala em nome DELA.
+          text = await this.generateMaintenanceMessage(reminder.name, reminder.topic);
+          await this.sendBubbles(reminder.phone, text);
+        });
+        if (rota === 'erro_ao_decidir') continue; // transitório: tenta no próximo dia
+        if (rota !== 'enviado') {
+          // Empresa sem canal próprio/assistente/pausada: não fala pelo número de ninguém.
+          await this.supabase.markMaintenanceReminderFailed(reminder.id, `bloqueado: ${rota}`).catch(() => {});
+          continue;
+        }
         await this.supabase.markMaintenanceReminderSent(reminder.id, text);
 
         // agenda o mesmo lembrete pra proximo ano (recorrente). Usa upsert
