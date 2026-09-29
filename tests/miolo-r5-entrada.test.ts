@@ -114,10 +114,10 @@ describe('rotas do Command Center — redirecionamentos', () => {
 });
 
 describe('/cockpit — continua vivo, só para a casa (segurança)', () => {
-  const chamar = (u: DashUser | undefined, method = 'GET') => {
+  const chamar = (u: DashUser | undefined, method = 'GET', accept = 'text/html') => {
     const res = resFalso();
     const next = vi.fn();
-    travaCockpitDaCasa({ dashUser: u, method } as unknown as Request, res as unknown as Response, next);
+    travaCockpitDaCasa({ dashUser: u, method, headers: { accept } } as unknown as Request, res as unknown as Response, next);
     return { res, next };
   };
   it('casa passa (GET /cockpit segue 200)', () => {
@@ -133,6 +133,12 @@ describe('/cockpit — continua vivo, só para a casa (segurança)', () => {
     const { res, next } = chamar(tenant, 'POST');
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
+  });
+  it('tenant pedindo JSON (GET /cockpit/data) leva 403, não redirect pra HTML', () => {
+    const { res, next } = chamar(tenant, 'GET', 'application/json');
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.redirect).not.toHaveBeenCalled();
   });
   it('router: a trava vem ANTES das rotas do Cockpit', () => {
     const trava = fonteRouter.indexOf("router.use('/cockpit', travaCockpitDaCasa)");

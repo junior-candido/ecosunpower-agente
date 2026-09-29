@@ -29,6 +29,8 @@ import { paginaInicialDe } from './entrada.js';
 
 type Handler = (req: Request, res: Response) => Promise<void>;
 
+const SEM_ACESSO_CC = '<p style="font-family:sans-serif;padding:40px">Esta área ainda não está disponível para a sua empresa.</p>';
+
 /** Command Center e Central de Atenção abertos pro tenant (dado escopado + vitrine). */
 export const CC_ABERTO_A_TENANTS = true;
 
@@ -89,6 +91,9 @@ export function rotaCommandCenter(supabase: SupabaseClient, agoraFn: () => Date 
   return async (req, res) => {
     const user = (req as AuthedRequest).dashUser;
     if (!podeVer(user)) {
+      // Sem sessão → login. Logado sem acesso → 403 (redirecionar pra entrada
+      // seria laço: a entrada É o Command Center desde o R5).
+      if (user) { res.status(403).type('text/html').send(SEM_ACESSO_CC); return; }
       res.redirect(paginaInicialDe(user));
       return;
     }
@@ -104,6 +109,9 @@ export function rotaCentralAtencao(supabase: SupabaseClient, agoraFn: () => Date
   return async (req, res) => {
     const user = (req as AuthedRequest).dashUser;
     if (!podeVer(user)) {
+      // Sem sessão → login. Logado sem acesso → 403 (redirecionar pra entrada
+      // seria laço: a entrada É o Command Center desde o R5).
+      if (user) { res.status(403).type('text/html').send(SEM_ACESSO_CC); return; }
       res.redirect(paginaInicialDe(user));
       return;
     }
@@ -133,13 +141,14 @@ export function rotaModoTv(): Handler {
  * A consulta do Cockpit (cockpit-queries.ts) não filtra empresa — lê os leads,
  * conversas e campanhas de todas — e o tenant caía nela depois do login. O
  * "SYNC AGORA" (POST /cockpit/sync) sincronizava as usinas de TODAS as
- * empresas. Tenant: GET → Command Center dele; POST/JSON → 403.
+ * empresas. Tenant: GET de página → Command Center dele; POST ou JSON → 403.
  * Registrada no router com router.use('/cockpit', …) antes das rotas.
  */
 export function travaCockpitDaCasa(req: Request, res: Response, next: () => void): void {
   const user = (req as AuthedRequest).dashUser;
   if (ehDaCasa(user)) { next(); return; }
-  if (req.method === 'GET' || req.method === 'HEAD') {
+  const querJson = String(req.headers?.accept ?? '').includes('application/json');
+  if ((req.method === 'GET' || req.method === 'HEAD') && !querJson) {
     res.redirect(paginaInicialDe(user));
     return;
   }
