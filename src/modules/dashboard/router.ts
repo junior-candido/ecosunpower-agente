@@ -138,8 +138,9 @@ import type { ManutencaoTipo } from './manutencao-motor.js';
 import { criarOS, abrirOSDeManutencao, getOS, salvarOS, addFotoOS, listFotosOS, fotoCountsPorItem, concluirOS } from './os-queries.js';
 import { renderOSPage, renderOSLaudoHtml } from './os-views.js';
 import { hidratarChecklist, resumoOS, type OSTipo } from './os-checklist.js';
-import { rotaCommandCenter, rotaCentralAtencao, rotaModoTv, travaCockpitDaCasa } from './command-center-rotas.js';
+import { rotaCommandCenter, rotaCentralAtencao, rotaModoTv, travaCockpitDaCasa, nomeDaAssistente } from './command-center-rotas.js';
 import { paginaInicialDe, destinoDepoisDoLogin } from './entrada.js';
+import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
 import { rotaMapaJson, rotaLocalizarPagina, rotaLocalizarUma, rotaSalvarPosicao } from './mapa-usinas-rotas.js';
 import { blocoMiniMapaUsina } from './mapa-usinas-views.js';
 import { montarRotasEnergia } from './energia-rotas.js';
@@ -876,7 +877,10 @@ b.onclick=async function(){
       const { empresaDe } = await import('../empresa-config.js');
       const companyId = req.dashUser!.companyId;
       const aviso = typeof req.query.ok === 'string' ? 'Salvo. A assistente já está usando este texto.' : undefined;
-      res.type('html').send(telaConhecimento(itensDaEmpresa(companyId), empresaDe(companyId).nomeAtendente, req.dashUser, aviso));
+      // R21 (segurança/marca): empresaDe() de um tenant que o cache não conhece cai
+      // nos padrões da casa ("Eva"). Tenant usa o nome CADASTRADO dele ou "assistente".
+      const nome = companyId === ECOSUN_COMPANY_ID ? empresaDe(companyId).nomeAtendente : (nomeDaAssistente(companyId) ?? 'assistente');
+      res.type('html').send(telaConhecimento(itensDaEmpresa(companyId), nome, req.dashUser, aviso));
     } catch (err) {
       console.error('[conhecimento]', err);
       res.status(500).send(`Erro: ${escapeHtmlSimple((err as Error).message)}`);

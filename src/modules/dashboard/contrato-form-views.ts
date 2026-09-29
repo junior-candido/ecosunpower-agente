@@ -5,8 +5,18 @@
 // veio do cadastro + proposta + o que a IA leu da conta/CNH. O que faltou aparece
 // destacado em vermelho ("vai sair em branco no PDF") pro operador completar.
 // Os campos vêm do registro (contratos-registry) — tipo novo não mexe nesta tela.
-import { renderLayout, escapeHtml } from './views.js';
+//
+// Renovação do miolo — R21 (28/09/2026): MESMOS formulários (ler-documentos
+// multipart, form-contrato com os formaction de IA/parcelas/congelar e o
+// confirm do congelar, vincular proposta com o confirm, enviar-doc, salvar-drive),
+// mesmos names e ids (campo-*, lista-*, cf_docs, form-contrato, btn-preview,
+// preview-doc) e o mesmo script (data-usar/data-valor). Visual cc- (tema escuro,
+// sem Tailwind). A TRAVA DE SAÍDA (#317) é do servidor e não muda: a caixa de
+// status continua usando `problemas` (o mesmo resultado da trava).
+import { escapeHtml } from './views.js';
 import { bannerContratos } from './contratos-views.js';
+import { cabecalhoPagina, cartaoSecao, botao, pilulaStatus, icone, abas } from './ui/componentes.js';
+import { renderComercial, avisoHtml, ehCasa, TRILHA_COMERCIAL } from './comercial-casca.js';
 import { gruposDoContrato, type CampoContrato, type DefinicaoContrato } from '../closing/contratos-registry.js';
 import type { AchadoRevisao, SugestaoIa } from '../closing/revisar-contrato.js';
 /** Uma linha da tabela do cartão, já com a frase pronta que vai pro contrato. */
@@ -69,16 +79,12 @@ const FONTE_TEXTO: Record<string, string> = {
 };
 
 function campoHtml(c: CampoContrato, valor: string, vazio: boolean): string {
-  const base = vazio
-    ? 'border-rose-400 bg-rose-50 focus:ring-rose-300'
-    : 'border-slate-300 bg-white focus:ring-amber-400';
-  const trava = c.somenteLeitura ? ' bg-slate-100 text-slate-500 cursor-not-allowed' : '';
-  const cls = `w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 ${base}${trava}`;
+  const cls = vazio ? ' class="cc-cf-vazio"' : '';
   const v = escapeHtml(valor);
 
   if (c.somenteLeitura) {
     // sem `name` → o navegador nem manda esse campo, então não tem como salvar
-    return `<input type="text" value="${v}" disabled class="${cls}" />`;
+    return `<input type="text" value="${v}" disabled />`;
   }
   if (c.tipo === 'select') {
     const opcoes = (c.opcoes ?? [])
@@ -89,10 +95,10 @@ function campoHtml(c: CampoContrato, valor: string, vazio: boolean): string {
     // o operador ficaria sem entender por que o valor antigo voltou.
     const temEscolhido = (c.opcoes ?? []).some((o) => o.valor === valor);
     const opcaoVazia = temEscolhido ? '' : '<option value="">— escolher —</option>';
-    return `<select name="${c.id}" id="campo-${c.id}" class="${cls}">${opcaoVazia}${opcoes}</select>`;
+    return `<select name="${c.id}" id="campo-${c.id}"${cls}>${opcaoVazia}${opcoes}</select>`;
   }
   if (c.tipo === 'textarea') {
-    return `<textarea name="${c.id}" id="campo-${c.id}" rows="3" class="${cls}" placeholder="${escapeHtml(c.dica ?? '')}">${v}</textarea>`;
+    return `<textarea name="${c.id}" id="campo-${c.id}" rows="3"${cls} placeholder="${escapeHtml(c.dica ?? '')}">${v}</textarea>`;
   }
   // Lista de atalhos, mas campo LIVRE: o operador escolhe uma das de sempre ou
   // escreve o que combinou com o cliente. (É o caso da forma de pagamento.)
@@ -100,12 +106,12 @@ function campoHtml(c: CampoContrato, valor: string, vazio: boolean): string {
     const lista = `lista-${c.id}`;
     const itens = (c.sugestoes ?? []).map((s) => `<option value="${escapeHtml(s)}"></option>`).join('');
     return `<input type="text" name="${c.id}" id="campo-${c.id}" value="${v}" list="${lista}"
-        placeholder="${escapeHtml(c.dica ?? '')}" autocomplete="off" class="${cls}" />
+        placeholder="${escapeHtml(c.dica ?? '')}" autocomplete="off"${cls} />
       <datalist id="${lista}">${itens}</datalist>`;
   }
   const htmlType = c.tipo === 'data' ? 'date' : 'text';
   const inputmode = c.tipo === 'numero' || c.tipo === 'moeda' ? ' inputmode="decimal"' : '';
-  return `<input type="${htmlType}" name="${c.id}" id="campo-${c.id}" value="${v}"${inputmode} placeholder="${escapeHtml(c.dica ?? '')}" class="${cls}" />`;
+  return `<input type="${htmlType}" name="${c.id}" id="campo-${c.id}" value="${v}"${inputmode} placeholder="${escapeHtml(c.dica ?? '')}"${cls} />`;
 }
 
 // A sugestão da IA NÃO entra no campo sozinha. Fica aqui do lado, dizendo de onde
@@ -114,33 +120,28 @@ function campoHtml(c: CampoContrato, valor: string, vazio: boolean): string {
 // cadastro do cliente.
 function cartaoSugestao(c: CampoContrato, s: SugestaoIa): string {
   const onde = FONTE_TEXTO[s.fonte] ?? 'nas fontes';
-  return `<div class="mt-1.5 rounded-lg border border-violet-300 bg-violet-50 px-3 py-2">
-      <div class="flex items-start gap-2">
-        <span class="text-sm">🤖</span>
-        <div class="min-w-0 flex-1">
-          <div class="text-sm text-violet-900">Achei <strong>${escapeHtml(s.valor)}</strong> ${escapeHtml(onde)}.</div>
-          <div class="text-xs text-violet-700 mt-0.5 truncate" title="${escapeHtml(s.trecho)}">“${escapeHtml(s.trecho)}”</div>
-        </div>
-        <button type="button" data-usar="${escapeHtml(c.id)}" data-valor="${escapeHtml(s.valor)}"
-          class="shrink-0 px-2.5 py-1 rounded-md text-xs font-semibold bg-violet-600 text-white hover:bg-violet-700">usar</button>
+  return `<div class="cc-cf-sug">
+      ${icone('spark', 'sm')}
+      <div class="cc-cf-sug-txt">Achei <strong>${escapeHtml(s.valor)}</strong> ${escapeHtml(onde)}.
+        <small title="${escapeHtml(s.trecho)}">“${escapeHtml(s.trecho)}”</small>
       </div>
+      <button type="button" data-usar="${escapeHtml(c.id)}" data-valor="${escapeHtml(s.valor)}" class="cc-btn cc-btn-sm">usar</button>
     </div>`;
 }
 
 function campo(c: CampoContrato, valor: string, sugestao?: SugestaoIa): string {
   const vazio = !!c.obrigatorio && !valor;
   const marca = vazio && !sugestao
-    ? '<span class="ml-2 text-xs font-normal text-rose-600">vai sair em branco no PDF</span>'
+    ? '<span class="cc-cf-falta">vai sair em branco no PDF</span>'
     : '';
-  const cor = vazio ? 'text-rose-700 font-semibold' : 'text-slate-600';
   // Input/textarea mostram a dica como placeholder; select não tem placeholder,
   // então a dica aparece escrita embaixo (senão viraria código morto — e é nela
   // que mora o efeito jurídico de escolhas como a da visita técnica).
   const dica = (c.somenteLeitura || c.tipo === 'select') && c.dica
-    ? `<div class="text-xs text-slate-400 mt-1">${escapeHtml(c.dica)}</div>`
+    ? `<div class="cc-cf-dica">${escapeHtml(c.dica)}</div>`
     : '';
-  return `<div>
-      <label class="block text-sm mb-1 ${cor}">${escapeHtml(c.label)}${marca}</label>
+  return `<div class="cc-campo">
+      <span${vazio ? ' class="cc-cf-rot-vazio"' : ''}>${escapeHtml(c.label)}${marca}</span>
       ${campoHtml(c, valor, vazio)}
       ${sugestao ? cartaoSugestao(c, sugestao) : ''}
       ${dica}
@@ -154,60 +155,59 @@ const dataHoraBR = (iso: string) => {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 };
 
-// 📌 "Este é o contrato que vale" — congela o retrato do que foi combinado.
+// "Este é o contrato que vale" — congela o retrato do que foi combinado.
 // Sem isso não existe aditivo: o aditivo precisa dizer "antes era 24x sem juros",
 // e esse "antes" só existe se alguém tiver carimbado o contrato.
 function congelar(page: ContratoFormInput): string {
   if (page.def.tipo === 'aditivo') return ''; // aditivo não se congela; contrato sim
   const v = page.vigente;
 
-  const caixa = (cls: string, dentro: string) =>
-    `<section class="rounded-xl border ${cls} p-5 mb-4">${dentro}</section>`;
-
   // O botão vive DENTRO do formulário (formaction): ele salva o que está na tela e
   // só então congela. Se ficasse fora, quem preenchesse e clicasse direto aqui
   // carimbaria os dados velhos, em silêncio.
-  const botao = (texto: string, cls: string) => `
-    <button formaction="/dashboard/leads/${page.leadId}/contrato-congelar"
+  const botaoCongelar = (texto: string) => `
+    <button type="submit" formaction="/dashboard/leads/${page.leadId}/contrato-congelar"
       onclick="return confirm('Salvar o que está na tela e congelar como o contrato que vale?')"
-      class="px-4 py-2 rounded-lg text-sm font-semibold ${cls}">${texto}</button>`;
+      class="cc-btn">${icone('lock', 'sm')}${texto}</button>`;
 
   if (!v) {
-    return caixa('border-slate-200 bg-white shadow-sm', `
-      <h2 class="font-semibold text-slate-900 mb-1">📌 Este contrato ainda não foi congelado</h2>
-      <p class="text-sm text-slate-600 mb-3">
+    return cartaoSecao({
+      titulo: 'Este contrato ainda não foi congelado',
+      acoesHtml: pilulaStatus('acompanhar', 'não congelado'),
+      corpoHtml: `<p class="cc-cm-nota" style="margin:0 0 12px">
         Enquanto não congelar, o PDF é montado do zero toda vez (a partir do cadastro e da proposta) —
         se a proposta mudar amanhã, o "contrato original" muda junto. Congelar salva o que está na tela e guarda
         o <strong>retrato</strong> do que foi combinado, com data. <strong>É o que permite fazer aditivo depois.</strong>
       </p>
-      ${botao('✅ Este é o contrato que vale', 'bg-slate-900 text-white hover:bg-slate-700')}`);
+      ${botaoCongelar('Este é o contrato que vale')}`,
+    });
   }
 
-  return caixa('border-emerald-300 bg-emerald-50', `
-    <h2 class="font-semibold text-slate-900 mb-1">📌 Contrato congelado em ${dataHoraBR(v.congeladoEm)}</h2>
-    <p class="text-sm text-emerald-900 mb-3">
+  return cartaoSecao({
+    titulo: `Contrato congelado em ${dataHoraBR(v.congeladoEm)}`,
+    acoesHtml: pilulaStatus('normal', 'congelado'),
+    corpoHtml: `<p class="cc-cm-nota" style="margin:0 0 8px">
       Valendo: <strong>${dinheiro(v.valor)}</strong> — ${escapeHtml(v.formaPagamento)}.
       Mudou alguma coisa? Faz um <strong>termo aditivo</strong> (lá em cima), que ele cita este contrato sozinho.
     </p>
-    <p class="text-sm text-emerald-900 mb-3">
-      📄 Gerar PDF, Mandar e Salvar no Drive (contrato e procuração) usam a versão congelada, com a data do congelamento.
+    <p class="cc-cm-nota" style="margin:0 0 12px">
+      Gerar PDF, Mandar e Salvar no Drive (contrato e procuração) usam a versão congelada, com a data do congelamento.
       Corrigiu algum dado aqui? <strong>Congele de novo</strong> — senão sai a versão antiga.
     </p>
-    ${botao('🔄 Congelar de novo (vira a versão seguinte)', 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50')}`);
+    ${botaoCongelar('Congelar de novo (vira a versão seguinte)')}`,
+  });
 }
 
-// 📎 O aditivo sem contrato congelado não tem o que citar.
+// O aditivo sem contrato congelado não tem o que citar.
 function avisoAditivo(page: ContratoFormInput): string {
   if (page.def.tipo !== 'aditivo' || page.vigente) return '';
-  return `<div class="mb-4 text-sm px-4 py-3 rounded-lg border bg-amber-50 border-amber-300 text-amber-800">
-      <strong>Esse cliente não tem contrato congelado.</strong> O aditivo precisa dizer "fica alterado o contrato
+  return avisoHtml('atencao', `<strong>Esse cliente não tem contrato congelado.</strong> O aditivo precisa dizer "fica alterado o contrato
       firmado em tal data" — e essa data não existe ainda. Vai na aba do <strong>Contrato</strong>, confere os dados
       e clica em <strong>"Este é o contrato que vale"</strong>. Aí volta aqui. (O aditivo gera assim mesmo, mas com a
-      data em branco pra preencher à mão.)
-    </div>`;
+      data em branco pra preencher à mão.)`);
 }
 
-// 💳 A calculadora do cartão. Usa a MESMA tabela da proposta (proposal/cartao-solar)
+// A calculadora do cartão. Usa a MESMA tabela da proposta (proposal/cartao-solar)
 // — se usasse outra, o cliente leria um número na proposta e assinaria outro no
 // contrato. Financiamento de banco NÃO entra: quem define a parcela é o banco, e a
 // máquina não pode inventar juros de banco dentro de um contrato.
@@ -221,38 +221,33 @@ function calculadoraCartao(page: ContratoFormInput): string {
   let resultado = '';
 
   if (page.parcelamentoSemValor) {
-    resultado = `<div class="mt-3 text-sm px-3 py-2 rounded-lg border bg-amber-50 border-amber-300 text-amber-800">
-        Preenche o <strong>valor</strong> primeiro — sem ele não tem o que parcelar.
-      </div>`;
+    resultado = `<div style="margin-top:12px">${avisoHtml('atencao', 'Preenche o <strong>valor</strong> primeiro — sem ele não tem o que parcelar.')}</div>`;
   } else if (page.parcelamento) {
-    const linhas = page.parcelamento.linhas.map((l) => `<tr class="border-t border-slate-100">
-          <td class="py-1.5 pr-3 text-slate-600 whitespace-nowrap">${l.parcelas}x</td>
-          <td class="py-1.5 pr-3 font-semibold text-slate-900 whitespace-nowrap">${dinheiro(l.parcela)}</td>
-          <td class="py-1.5 pr-3"><span class="text-xs text-slate-500">total ${dinheiro(l.total)}</span></td>
-          <td class="py-1.5 text-right">
-            <button type="button" data-usar="${campoAlvo}" data-valor="${escapeHtml(l.frase)}"
-              class="px-2.5 py-1 rounded-md text-xs font-semibold bg-slate-900 text-white hover:bg-slate-700">usar</button>
+    const linhas = page.parcelamento.linhas.map((l) => `<tr>
+          <td class="cc-n">${l.parcelas}x</td>
+          <td class="cc-n"><strong>${dinheiro(l.parcela)}</strong></td>
+          <td><span class="cc-faint">total ${dinheiro(l.total)}</span></td>
+          <td class="cc-r">
+            <button type="button" data-usar="${campoAlvo}" data-valor="${escapeHtml(l.frase)}" class="cc-btn cc-btn-sm">usar</button>
           </td>
         </tr>`).join('');
-    resultado = `<div class="mt-3 rounded-lg border border-slate-200 overflow-hidden">
-        <div class="px-3 py-2 bg-slate-50 text-xs text-slate-600">
+    resultado = `<div class="cc-cf-parc">
+        <div class="cc-cf-parc-t">
           Em cima de <strong>${dinheiro(page.parcelamento.valor)}</strong>. Clica em <strong>usar</strong> pra escrever no documento.
         </div>
-        <div class="max-h-64 overflow-y-auto">
-          <table class="w-full text-sm px-3"><tbody>${linhas}</tbody></table>
+        <div class="cc-cf-parc-l">
+          <table><tbody>${linhas}</tbody></table>
         </div>
       </div>`;
   }
 
-  return `<div class="sm:col-span-2 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
-      <div class="flex flex-wrap items-center gap-3">
-        <span class="font-semibold text-slate-900 text-sm">💳 Calcular a parcela no cartão</span>
-        <button formaction="${alvo}" class="px-3 py-1.5 rounded-lg text-sm bg-indigo-600 text-white hover:bg-indigo-700">
-          Calcular
-        </button>
-        <span class="text-xs text-slate-500">${escapeHtml(deOnde)} — é a mesma conta que a proposta mostrou pro cliente</span>
+  return `<div class="cc-cm-cheia cc-cf-calc">
+      <div class="cc-cm-acoes">
+        <strong>Calcular a parcela no cartão</strong>
+        <button type="submit" formaction="${alvo}" class="cc-btn cc-btn-sm">${icone('wallet', 'sm')}Calcular</button>
+        <span class="cc-cm-nota" style="margin:0">${escapeHtml(deOnde)} — é a mesma conta que a proposta mostrou pro cliente</span>
       </div>
-      <p class="text-xs text-slate-500 mt-2">
+      <p class="cc-cm-nota">
         Financiamento de banco não entra aqui: quem define a parcela é o banco, na aprovação. Escreve no campo o que veio aprovado.
       </p>
       ${resultado}
@@ -262,93 +257,75 @@ function calculadoraCartao(page: ContratoFormInput): string {
 function grupo(titulo: string, campos: CampoContrato[], valores: Record<string, string>, sugestoes: Record<string, SugestaoIa>, extra = ''): string {
   if (campos.length === 0) return '';
   const faltam = campos.filter((c) => c.obrigatorio && !valores[c.id]).length;
-  const aviso = faltam > 0
-    ? `<span class="text-xs px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 font-semibold">${faltam} em branco</span>`
-    : '<span class="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">completo</span>';
-  return `<section class="rounded-xl border border-slate-200 bg-white p-5 mb-4 shadow-sm">
-      <div class="flex items-center gap-3 mb-4">
-        <h2 class="font-semibold text-slate-900">${escapeHtml(titulo)}</h2>
-        ${aviso}
-      </div>
-      <div class="grid gap-4 sm:grid-cols-2">
+  const selo = faltam > 0 ? pilulaStatus('critico', `${faltam} em branco`) : pilulaStatus('normal', 'completo');
+  return cartaoSecao({
+    titulo,
+    acoesHtml: selo,
+    corpoHtml: `<div class="cc-cm-grade">
         ${campos.map((c) => campo(c, valores[c.id] ?? '', sugestoes[c.id])).join('\n')}
         ${extra}
-      </div>
-    </section>`;
+      </div>`,
+  });
 }
 
-// 👀 O contrato montado, do jeitinho que vai virar PDF — inclusive com o que você
+// O contrato montado, do jeitinho que vai virar PDF — inclusive com o que você
 // acabou de digitar e ainda não salvou (o botão reposta o formulário pra prévia).
 // O quadro é TRANCADO (sandbox): o documento leva nome/endereço que vieram de
 // fora (perfil do WhatsApp, CNH, formulário do Meta) e não pode rodar nada aqui.
 function preview(page: ContratoFormInput): string {
   const url = `/dashboard/leads/${page.leadId}/contrato-preview?tipo=${encodeURIComponent(page.def.tipo)}`;
-  return `<section class="rounded-xl border border-slate-200 bg-white p-5 mb-4 shadow-sm">
-      <div class="flex items-center gap-3 mb-3">
-        <h2 class="font-semibold text-slate-900">👀 Como vai ficar o documento</h2>
-        <span class="text-xs text-slate-500">mesmo template do PDF</span>
-        <button type="button" id="btn-preview"
-          class="ml-auto px-2.5 py-1 rounded-md text-xs bg-slate-100 text-slate-700 hover:bg-slate-200">↻ ver como está agora</button>
-      </div>
-      <iframe id="preview-doc" name="preview-doc" src="${url}" title="Prévia do documento" sandbox=""
-        class="w-full h-[520px] rounded-lg border border-slate-200 bg-white"></iframe>
-      <p class="text-xs text-slate-500 mt-2">O quadro mostra o documento <strong>salvo</strong>. Digitou algo e quer ver antes de salvar? Clica em <strong>ver como está agora</strong>.</p>
-    </section>`;
+  return cartaoSecao({
+    titulo: 'Como vai ficar o documento',
+    dica: 'mesmo template do PDF',
+    acoesHtml: `<button type="button" id="btn-preview" class="cc-btn cc-btn-sm">↻ ver como está agora</button>`,
+    corpoHtml: `<iframe id="preview-doc" name="preview-doc" src="${url}" title="Prévia do documento" sandbox="" class="cc-cf-prev"></iframe>
+      <p class="cc-cm-nota">O quadro mostra o documento <strong>salvo</strong>. Digitou algo e quer ver antes de salvar? Clica em <strong>ver como está agora</strong>.</p>`,
+  });
 }
 
-// 🤖 O que a IA fez. Regra de ouro: se ela NÃO respondeu, a tela diz isso na cara —
+// O que a IA fez. Regra de ouro: se ela NÃO respondeu, a tela diz isso na cara —
 // jamais um "está tudo certo" sobre um contrato que a máquina não leu.
 function revisaoIa(page: ContratoFormInput): string {
-  const box = (cls: string, txt: string) => `<div class="text-sm px-4 py-3 rounded-lg border mb-2 ${cls}">${txt}</div>`;
-
   if (page.iaIndisponivel) {
-    return box('bg-slate-50 border-slate-300 text-slate-700', 'A IA não está ligada neste servidor (falta a chave). O contrato gera do mesmo jeito — só não tem quem confira.');
+    return avisoHtml('info', 'A IA não está ligada neste servidor (falta a chave). O contrato gera do mesmo jeito — só não tem quem confira.');
   }
   if (!page.iaRodou) return '';
 
   if (page.iaFalhou) {
-    return `<section class="rounded-xl border border-amber-300 bg-amber-50 p-5 mb-4">
-        <h2 class="font-semibold text-slate-900 mb-2">🤖 Não consegui revisar</h2>
-        <p class="text-sm text-amber-900">A IA não respondeu agora (pode ser crédito da Anthropic, ou ela demorou demais). <strong>Ninguém conferiu este contrato.</strong> Tenta de novo daqui a pouco, ou confere na mão antes de mandar.</p>
-      </section>`;
+    return cartaoSecao({
+      titulo: 'Não consegui revisar',
+      acoesHtml: pilulaStatus('atencao', 'IA não respondeu'),
+      corpoHtml: `<p class="cc-cm-nota" style="margin:0">A IA não respondeu agora (pode ser crédito da Anthropic, ou ela demorou demais). <strong>Ninguém conferiu este contrato.</strong> Tenta de novo daqui a pouco, ou confere na mão antes de mandar.</p>`,
+    });
   }
 
   const achados = page.achados ?? [];
   const nSug = Object.keys(page.sugestoes ?? {}).length;
-  const cor = (g: string) => g === 'alto'
-    ? 'bg-rose-50 border-rose-300 text-rose-800'
-    : g === 'baixo' ? 'bg-slate-50 border-slate-300 text-slate-700' : 'bg-amber-50 border-amber-300 text-amber-800';
-  const icone = (g: string) => (g === 'alto' ? '🔴' : g === 'baixo' ? '⚪' : '🟡');
+  const tom = (g: string): 'erro' | 'info' | 'atencao' => (g === 'alto' ? 'erro' : g === 'baixo' ? 'info' : 'atencao');
 
   const lista = achados.length === 0
-    ? box('bg-emerald-50 border-emerald-300 text-emerald-800', 'A IA não apontou nada de errado. <strong>Isso não é garantia</strong> — dá uma lida no documento aí em cima antes de mandar.')
-    : achados.map((a) => box(cor(a.gravidade), `${icone(a.gravidade)} ${escapeHtml(a.texto)}`)).join('');
+    ? avisoHtml('ok', 'A IA não apontou nada de errado. <strong>Isso não é garantia</strong> — dá uma lida no documento aí em cima antes de mandar.')
+    : achados.map((a) => avisoHtml(tom(a.gravidade), escapeHtml(a.texto))).join('');
 
   const sug = nSug > 0
-    ? box('bg-violet-50 border-violet-300 text-violet-800', `🤖 Achei ${nSug} dado(s) que estavam faltando. Estão nos cartões roxos lá embaixo, com o trecho de onde eu tirei. <strong>Confere e clica em "usar"</strong> — eu não preencho nada sozinha.`)
-    : box('bg-slate-50 border-slate-300 text-slate-700', 'Não encontrei os dados que faltam — nem no cadastro, nem na proposta, nem na conversa. Preenche na mão.');
+    ? avisoHtml('info', `Achei ${nSug} dado(s) que estavam faltando. Estão nos cartões roxos lá embaixo, com o trecho de onde eu tirei. <strong>Confere e clica em "usar"</strong> — eu não preencho nada sozinha.`)
+    : avisoHtml('info', 'Não encontrei os dados que faltam — nem no cadastro, nem na proposta, nem na conversa. Preenche na mão.');
 
-  return `<section class="rounded-xl border border-violet-200 bg-violet-50/40 p-5 mb-4">
-      <h2 class="font-semibold text-slate-900 mb-3">🤖 O que a IA fez</h2>
-      ${sug}
-      ${lista}
-    </section>`;
+  return cartaoSecao({ titulo: 'O que a IA fez', corpoHtml: `${sug}${lista}` });
 }
 
-function abas(page: ContratoFormInput): string {
-  const itens = page.tipos.map((t) => {
-    const ativo = t.tipo === page.def.tipo;
-    const cls = ativo
-      ? 'bg-slate-900 text-white'
-      : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50';
-    return `<a href="/dashboard/leads/${page.leadId}/contrato-form?tipo=${encodeURIComponent(t.tipo)}"
-        class="px-3 py-1.5 rounded-lg text-sm font-medium ${cls}">${t.emoji} ${escapeHtml(t.nome)}</a>`;
+function abasTipos(page: ContratoFormInput): string {
+  return abas({
+    rotuloNav: 'Tipo de documento',
+    itens: page.tipos.map((t) => ({
+      rotulo: `${t.emoji} ${t.nome}`,
+      href: `/dashboard/leads/${page.leadId}/contrato-form?tipo=${encodeURIComponent(t.tipo)}`,
+      ativo: t.tipo === page.def.tipo,
+    })),
   });
-  return `<div class="flex flex-wrap gap-2 mb-5">${itens.join('')}</div>`;
 }
 
 function avisos(page: ContratoFormInput): string {
-  const box = (cls: string, txt: string) => `<div class="mb-4 text-sm px-4 py-3 rounded-lg border ${cls}">${txt}</div>`;
   // Mesmos avisos de envio/Drive da tela de busca (inclusive "cliente sem
   // telefone" e "Drive desligado", que aqui sumiam).
   let out = bannerContratos(page.docsResultado ?? '', page.envioResultado ?? '', page.driveResultado ?? '');
@@ -358,8 +335,8 @@ function avisos(page: ContratoFormInput): string {
   // emitido com "____" nela (o operador tinha posto o valor nos combinados à parte).
   if (page.faltando.some((c) => c.id === 'com_forma_pagamento')) {
     const temCombinados = !!(page.valores['disposicoes_especiais'] ?? '').trim();
-    out += box('bg-red-50 border-red-300 text-red-800',
-      `<strong>⚠️ Forma de pagamento vazia.</strong> Do jeito que está, a cláusula de pagamento sai com uma linha em branco no contrato.` +
+    out += avisoHtml('erro',
+      `<strong>Forma de pagamento vazia.</strong> Do jeito que está, a cláusula de pagamento sai com uma linha em branco no contrato.` +
       (temCombinados ? ' Vi texto nos "Combinados à parte" — se o pagamento estiver lá, ele vai no campo <strong>Forma de pagamento</strong> (é ele que aparece na cláusula certa).' : ''));
   }
   const problemas = page.problemas ?? [];
@@ -369,29 +346,29 @@ function avisos(page: ContratoFormInput): string {
       ? `<strong>${n} campo(s) em branco.</strong> Completa aqui embaixo (o vermelho) e salva.`
       : '<strong>O documento ainda não pode sair.</strong>';
     const lista = problemas.length
-      ? `<ul class="mt-1 ml-4 list-disc text-xs">${problemas.map((p) => `<li>${escapeHtml(p)}</li>`).join('')}</ul>`
-      : `<div class="mt-1 text-xs">${nomes}</div>`;
-    out += box('bg-amber-50 border-amber-300 text-amber-800',
+      ? `<ul style="margin:6px 0 0 18px;list-style:disc">${problemas.map((p) => `<li>${escapeHtml(p)}</li>`).join('')}</ul>`
+      : `<div style="margin-top:4px;font-size:12.5px">${nomes}</div>`;
+    out += avisoHtml('atencao',
       `${titulo} Enquanto isso, <strong>Gerar PDF, Mandar e Salvar no Drive ficam travados</strong> — a prévia mostra o que falta.${lista}`);
   } else if (page.salvo) {
-    out += box('bg-emerald-50 border-emerald-300 text-emerald-800', '✅ Salvo, e não falta nada. Pode gerar o PDF ou mandar no zap.');
+    out += avisoHtml('ok', 'Salvo, e não falta nada. Pode gerar o PDF ou mandar no zap.');
   } else {
-    out += box('bg-emerald-50 border-emerald-300 text-emerald-800', '✅ Está tudo preenchido. Pode gerar.');
+    out += avisoHtml('ok', 'Está tudo preenchido. Pode gerar.');
   }
   if (page.salvo && n > 0) {
-    out += box('bg-slate-50 border-slate-300 text-slate-700', 'Salvei o que você preencheu. Os campos acima seguem em branco — o documento só sai quando completar.');
+    out += avisoHtml('info', 'Salvei o que você preencheu. Os campos acima seguem em branco — o documento só sai quando completar.');
   }
   if (page.vinculoResultado === 'ok') {
-    out += box('bg-emerald-50 border-emerald-300 text-emerald-800', '🔗 Proposta vinculada. Os dados da usina e o valor agora vêm dela.');
+    out += avisoHtml('ok', 'Proposta vinculada. Os dados da usina e o valor agora vêm dela.');
   } else if (page.vinculoResultado === 'erro') {
-    out += box('bg-red-50 border-red-300 text-red-800', 'Não consegui vincular a proposta (ela pode já estar ligada a outro cliente). Nada mudou.');
+    out += avisoHtml('erro', 'Não consegui vincular a proposta (ela pode já estar ligada a outro cliente). Nada mudou.');
   }
   if (page.propostaExpiradaEm) {
-    out += box('bg-amber-50 border-amber-300 text-amber-800',
-      `⏰ <strong>proposta expirada em ${escapeHtml(diaMesBR(page.propostaExpiradaEm))} — conferir valores.</strong> Os dados da usina e o valor vieram dela; se o preço mudou, corrige aqui antes de gerar.`);
+    out += avisoHtml('atencao',
+      `<strong>proposta expirada em ${escapeHtml(diaMesBR(page.propostaExpiradaEm))} — conferir valores.</strong> Os dados da usina e o valor vieram dela; se o preço mudou, corrige aqui antes de gerar.`);
   }
   if (!page.temProposta) {
-    out += box('bg-slate-50 border-slate-300 text-slate-700', 'Esse cliente não tem proposta ligada — os dados da usina e o valor não vieram sozinhos. Preenche na mão aqui.');
+    out += avisoHtml('info', 'Esse cliente não tem proposta ligada — os dados da usina e o valor não vieram sozinhos. Preenche na mão aqui.');
     out += vincularProposta(page);
   }
   return out;
@@ -415,18 +392,19 @@ function vincularProposta(page: ContratoFormInput): string {
   const itens = orfas.map((p) => {
     const quando = diaMesBR(p.created_at);
     const rotulo = `${p.numero_proposta ? escapeHtml(p.numero_proposta) + ' · ' : ''}${escapeHtml(p.cliente_nome ?? '(sem nome)')} · ${escapeHtml(quando)}`;
-    return `<form method="POST" action="/dashboard/leads/${encodeURIComponent(page.leadId)}/contrato-vincular-proposta" class="flex items-center justify-between gap-2 py-1"
+    return `<form method="POST" action="/dashboard/leads/${encodeURIComponent(page.leadId)}/contrato-vincular-proposta" class="cc-cf-orfa"
         onsubmit="return confirm('Ligar esta proposta a este cliente? Os dados da usina e o valor passam a vir dela.')">
         <input type="hidden" name="tipo" value="${escapeHtml(page.def.tipo)}" />
         <input type="hidden" name="proposta_id" value="${escapeHtml(p.id)}" />
-        <span class="text-sm">${rotulo}</span>
-        <button class="px-3 py-1 rounded-lg text-xs bg-slate-900 text-white hover:bg-slate-700">🔗 Vincular proposta</button>
+        <span>${rotulo}</span>
+        ${botao({ rotulo: 'Vincular proposta', tipo: 'submit', tamanho: 'sm' })}
       </form>`;
   }).join('');
-  return `<div class="mb-4 text-sm px-4 py-3 rounded-lg border bg-white border-slate-300 text-slate-700">
-      <strong>Achei proposta(s) sem cliente com esse nome</strong> (salvas sem telefone). Se uma delas é deste cliente, vincula:
-      <div class="mt-2 divide-y divide-slate-100">${itens}</div>
-    </div>`;
+  return cartaoSecao({
+    titulo: 'Achei proposta(s) sem cliente com esse nome',
+    dica: 'salvas sem telefone — se uma for deste cliente, vincula',
+    corpoHtml: itens,
+  });
 }
 
 function acoes(page: ContratoFormInput): string {
@@ -434,36 +412,35 @@ function acoes(page: ContratoFormInput): string {
   const doc = def.tipo === 'procuracao' ? 'procuracao' : 'contrato';
   const hidden = `<input type="hidden" name="next" value="form" />
       <input type="hidden" name="tipo_contrato" value="${escapeHtml(def.tipo)}" />`;
-  const enviar = (destino: 'cliente' | 'eu', label: string, cls: string) => {
+  const enviar = (destino: 'cliente' | 'eu', label: string) => {
     const conf = destino === 'cliente' ? ` onsubmit="return confirm('Enviar direto pro WhatsApp do cliente?')"` : '';
-    return `<form method="POST" action="/dashboard/leads/${leadId}/enviar-doc" class="inline"${conf}>
+    return `<form method="POST" action="/dashboard/leads/${leadId}/enviar-doc"${conf}>
         ${hidden}
         <input type="hidden" name="tipo" value="${doc}" />
         <input type="hidden" name="destino" value="${destino}" />
-        <button class="px-3 py-2 rounded-lg text-sm ${cls}">${label}</button>
+        ${botao({ rotulo: label, tipo: 'submit', icone: 'send' })}
       </form>`;
   };
-  return `<div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-1">Entregar o documento</div>
-      <p class="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
-        ⚠️ Estes botões usam o que está <strong>salvo</strong>. Se você mexeu em algum campo agora, clica em <strong>💾 Salvar dados</strong> antes — senão o cliente recebe o documento sem a sua alteração.
-      </p>
-      <div class="flex flex-wrap gap-2">
-        <a href="/dashboard/leads/${leadId}/${doc}.pdf?tipo=${encodeURIComponent(def.tipo)}" target="_blank"
-          class="px-3 py-2 rounded-lg text-sm bg-indigo-600 text-white hover:bg-indigo-700">📄 Gerar PDF</a>
-        ${enviar('cliente', '📤 Mandar pro cliente', 'bg-emerald-600 text-white hover:bg-emerald-700')}
-        ${enviar('eu', '📤 Mandar pro meu zap', 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200')}
-        <form method="POST" action="/dashboard/leads/${leadId}/salvar-drive" class="inline">
+  return cartaoSecao({
+    titulo: 'Entregar o documento',
+    corpoHtml: `${avisoHtml('atencao', 'Estes botões usam o que está <strong>salvo</strong>. Se você mexeu em algum campo agora, clica em <strong>Salvar dados</strong> antes — senão o cliente recebe o documento sem a sua alteração.')}
+      <div class="cc-cm-acoes">
+        <a class="cc-btn" href="/dashboard/leads/${leadId}/${doc}.pdf?tipo=${encodeURIComponent(def.tipo)}" target="_blank">${icone('file', 'sm')}Gerar PDF</a>
+        ${enviar('cliente', 'Mandar pro cliente')}
+        ${enviar('eu', 'Mandar pro meu zap')}
+        <form method="POST" action="/dashboard/leads/${leadId}/salvar-drive">
           ${hidden}
-          <button class="px-3 py-2 rounded-lg text-sm bg-sky-600 text-white hover:bg-sky-700">☁️ Salvar no Drive</button>
+          ${botao({ rotulo: 'Salvar no Drive', tipo: 'submit', icone: 'folder' })}
         </form>
-      </div>
-    </div>`;
+      </div>`,
+  });
 }
 
 export function renderContratoFormPage(page: ContratoFormInput): string {
   const { def, valores } = page;
   const sugestoes = page.sugestoes ?? {};
+  // O tenant não vê o nome da assistente da casa.
+  const assistente = ehCasa(page.user) ? 'Eva' : 'assistente';
 
   // Os grupos vêm da ordem dos campos do próprio tipo — tipo novo com um grupo
   // novo ("A locação", "O serviço") aparece sozinho, sem mexer nesta tela.
@@ -480,67 +457,61 @@ export function renderContratoFormPage(page: ContratoFormInput): string {
     ))
     .join('\n');
 
+  // (Comentários que moravam no HTML — iam pro navegador de todo mundo:)
+  // - LEITOR de conta de luz + CNH DENTRO do formulário (pedido de 15/07): sobe os
+  //   documentos, a IA extrai e preenche CPF/RG/estado civil/nascimento/endereço/UC
+  //   nas colunas do lead; next=form volta pra ESTA tela já preenchida. Form próprio
+  //   (multipart), fora do form-contrato — assim não some com o que já foi digitado.
+  // - Tudo dentro de UM formulário: os botões (IA, prévia, congelar) levam junto o
+  //   que acabou de ser digitado, em vez de apagar ou ignorar.
+  // - MANUAL EM 1º PLANO (15/07): contrato é receita, não pode depender da IA.
   const body = `
-  <div class="max-w-4xl mx-auto">
-    <div class="mb-4">
-      <a href="/dashboard/contratos?q=${encodeURIComponent(page.nome)}" class="text-sm text-slate-500 hover:text-slate-800">← voltar pra busca</a>
-      <h1 class="text-2xl font-bold text-slate-900 mt-1">${def.emoji} ${escapeHtml(def.nome)}</h1>
-      <p class="text-slate-500 mt-1">${escapeHtml(page.nome)} — ${escapeHtml(def.descricao)}</p>
-    </div>
+    ${cabecalhoPagina({
+      trilha: [TRILHA_COMERCIAL, { rotulo: 'Contratos & Procurações', href: `/dashboard/contratos?q=${encodeURIComponent(page.nome)}` }, { rotulo: page.nome }],
+      titulo: `${def.emoji} ${def.nome}`,
+      subtitulo: `${page.nome} — ${def.descricao}`,
+      acoesHtml: botao({ rotulo: '← voltar pra busca', href: `/dashboard/contratos?q=${encodeURIComponent(page.nome)}`, tom: 'fantasma' }),
+    })}
 
-    ${abas(page)}
-    ${page.congelou ? '<div class="mb-4 text-sm px-4 py-3 rounded-lg border bg-emerald-50 border-emerald-300 text-emerald-800">📌 Contrato congelado! Agora ele é <strong>o</strong> contrato desse cliente — e dá pra fazer aditivo.</div>' : ''}
+    ${abasTipos(page)}
+    ${page.congelou ? avisoHtml('ok', 'Contrato congelado! Agora ele é <strong>o</strong> contrato desse cliente — e dá pra fazer aditivo.') : ''}
     ${avisoAditivo(page)}
     ${avisos(page)}
-
-    <!-- LEITOR de conta de luz + CNH DENTRO do formulário (Junior 15/07: "no
-         preenchimento cadê os leitores?"). Sobe os documentos, a IA extrai e
-         preenche CPF/RG/estado civil/nascimento/endereço/UC nas colunas do lead;
-         next=form volta pra ESTA tela já preenchida. Form próprio (multipart),
-         fora do form-contrato — assim não some com o que já foi digitado. -->
-    <form method="POST" action="/dashboard/leads/${page.leadId}/ler-documentos" enctype="multipart/form-data"
-        class="mb-4 rounded-lg bg-violet-50 border border-violet-200 p-3">
-      <input type="hidden" name="next" value="form" />
-      <input type="hidden" name="tipo_contrato" value="${escapeHtml(def.tipo)}" />
-      <div class="text-sm text-slate-700 mb-2">🤖 <strong>Ler conta de luz + CNH</strong> — sobe os documentos e a IA preenche CPF, RG, estado civil, data de nascimento, endereço e UC pra você não digitar na mão.</div>
-      <div class="flex flex-wrap gap-2 items-center">
-        <input type="file" name="docs" accept="image/*,application/pdf" multiple id="cf_docs"
-          class="text-xs text-slate-600 file:mr-2 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-violet-100 file:text-violet-800 file:cursor-pointer" />
-        <button type="button" onclick="var i=document.getElementById('cf_docs');i.setAttribute('capture','environment');i.setAttribute('accept','image/*');i.removeAttribute('multiple');i.click();i.removeAttribute('capture');i.setAttribute('accept','image/*,application/pdf');i.setAttribute('multiple','')" class="px-3 py-2 rounded-lg text-sm bg-violet-100 text-violet-800 hover:bg-violet-200">📷 Tirar foto</button>
-        <button class="px-4 py-2 rounded-lg text-sm bg-violet-600 text-white hover:bg-violet-700 font-medium">Ler e preencher</button>
-      </div>
-    </form>
-
-    <!-- Tudo dentro de UM formulário: assim os botões (IA, prévia, congelar) levam
-         junto o que você acabou de digitar, em vez de apagar ou ignorar. -->
-    <form method="POST" action="/dashboard/leads/${page.leadId}/contrato-form" id="form-contrato">
+    ${cartaoSecao({
+      titulo: 'Ler conta de luz + CNH',
+      dica: 'a IA preenche CPF, RG, estado civil, nascimento, endereço e UC',
+      corpoHtml: `<form method="POST" action="/dashboard/leads/${page.leadId}/ler-documentos" enctype="multipart/form-data" class="cc-form cc-cm-acoes">
+        <input type="hidden" name="next" value="form" />
+        <input type="hidden" name="tipo_contrato" value="${escapeHtml(def.tipo)}" />
+        <input type="file" name="docs" accept="image/*,application/pdf" multiple id="cf_docs" />
+        <button type="button" class="cc-btn" onclick="var i=document.getElementById('cf_docs');i.setAttribute('capture','environment');i.setAttribute('accept','image/*');i.removeAttribute('multiple');i.click();i.removeAttribute('capture');i.setAttribute('accept','image/*,application/pdf');i.setAttribute('multiple','')">Tirar foto</button>
+        ${botao({ rotulo: 'Ler e preencher', tipo: 'submit', icone: 'spark' })}
+      </form>`,
+    })}
+    <form method="POST" action="/dashboard/leads/${page.leadId}/contrato-form" id="form-contrato" class="cc-form">
       <input type="hidden" name="tipo" value="${escapeHtml(def.tipo)}" />
       ${congelar(page)}
-
-      <!-- MANUAL EM 1º PLANO (Junior 15/07): contrato é receita, não pode depender
-           da IA. Preencher os campos + gerar é o caminho principal; a IA é ajuda
-           OPCIONAL (botão secundário, não o grandão do topo). -->
-      <div class="mb-4 rounded-lg bg-slate-50 border border-slate-200 p-3">
-        <div class="text-sm text-slate-700 mb-2">📝 <strong>Preencha os campos abaixo e gere o PDF.</strong> O contrato sai sempre — o que faltar fica em branco pra completar na mão.</div>
-        <button formaction="/dashboard/leads/${page.leadId}/contrato-ia"
-          class="px-4 py-2 rounded-lg text-sm font-medium bg-white border border-violet-300 text-violet-700 hover:bg-violet-50">
-          🤖 IA (opcional): procurar o que falta e revisar
-        </button>
-        <span class="block sm:inline sm:ml-2 text-xs text-slate-500 mt-1 sm:mt-0">Sugere (não preenche sozinha) e aponta erros. Se a IA cair, o contrato gera do mesmo jeito.</span>
-      </div>
+      ${cartaoSecao({
+        titulo: 'Preencha os campos abaixo e gere o PDF',
+        dica: 'o contrato sai sempre',
+        corpoHtml: `<p class="cc-cm-nota" style="margin:0 0 12px">O que faltar fica em branco pra completar na mão.</p>
+        <div class="cc-cm-acoes">
+          <button type="submit" formaction="/dashboard/leads/${page.leadId}/contrato-ia" class="cc-btn">${icone('spark', 'sm')}IA (opcional): procurar o que falta e revisar</button>
+          <span class="cc-cm-nota" style="margin:0">Sugere (não preenche sozinha) e aponta erros. Se a IA cair, o contrato gera do mesmo jeito.</span>
+        </div>`,
+      })}
 
       ${revisaoIa(page)}
       ${preview(page)}
       ${grupos}
 
-      <div class="flex items-center gap-3 mb-6">
-        <button class="bg-slate-900 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-slate-800">💾 Salvar dados</button>
-        <span class="text-sm text-slate-500">Os dados do cliente (CPF, RG, endereço, UC) vão pro cadastro dele — valem pra todo contrato, pra procuração e pra Eva. Você não digita duas vezes.</span>
+      <div class="cc-cf-salvar">
+        ${botao({ rotulo: 'Salvar dados', tipo: 'submit', tom: 'ouro', icone: 'check' })}
+        <span>Os dados do cliente (CPF, RG, endereço, UC) vão pro cadastro dele — valem pra todo contrato, pra procuração e pra ${assistente}. Você não digita duas vezes.</span>
       </div>
     </form>
 
-    ${acoes(page)}
-  </div>`;
+    ${acoes(page)}`;
 
   // "usar" põe a sugestão da IA no campo (só com o clique do Junior).
   // "ver como está agora" reposta o formulário pro quadro da prévia.
@@ -550,11 +521,11 @@ export function renderContratoFormPage(page: ContratoFormInput): string {
         var campo = document.getElementById('campo-' + b.dataset.usar);
         if (!campo) return;
         campo.value = b.dataset.valor;
-        campo.classList.remove('border-rose-400', 'bg-rose-50');
-        campo.classList.add('border-violet-400', 'bg-violet-50');
+        campo.classList.remove('cc-cf-vazio');
+        campo.classList.add('cc-cf-usado');
         b.textContent = 'usado ✓';
         b.disabled = true;
-        b.classList.add('opacity-60');
+        b.classList.add('cc-cf-usado-btn');
       });
     });
     var btnPreview = document.getElementById('btn-preview');
@@ -571,10 +542,10 @@ export function renderContratoFormPage(page: ContratoFormInput): string {
     }
   </script>`;
 
-  return renderLayout({ active: 'contratos', title: `${def.nome} — ${page.nome}`, body, scripts, user: page.user as any });
+  return renderComercial({ active: 'contratos', title: `${def.nome} — ${page.nome}`, body, scripts, user: page.user, largo: false });
 }
 
-// 🚫 O documento NÃO saiu (PDF, zap ou Drive) porque está incompleto/inválido.
+// O documento NÃO saiu (PDF, zap ou Drive) porque está incompleto/inválido.
 // Nunca um envio mudo com "___": o operador vê O QUE falta e volta pro formulário.
 export interface DocBloqueadoInput {
   leadId: string;
@@ -599,25 +570,29 @@ export function renderDocBloqueadoPage(page: DocBloqueadoInput): string {
   const blocos = page.blocos.map((b) => {
     const itens = b.problemas.map((p) => `<li>${escapeHtml(p)}</li>`).join('');
     const congelado = b.congeladoEm
-      ? `<p class="mt-2 text-xs text-slate-600">📌 Este documento sai da versão <strong>congelada em ${dataHoraBR(b.congeladoEm)}</strong>. Corrija no formulário e <strong>congele de novo</strong> — é a versão congelada que é impressa.</p>`
+      ? `<p class="cc-cm-nota">Este documento sai da versão <strong>congelada em ${dataHoraBR(b.congeladoEm)}</strong>. Corrija no formulário e <strong>congele de novo</strong> — é a versão congelada que é impressa.</p>`
       : '';
-    return `<div class="mb-4">
-        <div class="font-semibold text-slate-900">${escapeHtml(b.documento)}</div>
-        <ul class="list-disc ml-5 mt-1 text-sm text-red-800">${itens}</ul>
+    return `<div class="cc-cf-bloco">
+        <strong>${escapeHtml(b.documento)}</strong>
+        <ul>${itens}</ul>
         ${congelado}
       </div>`;
   }).join('');
-  const body = `<div class="max-w-2xl mx-auto">
-    <section class="rounded-xl border-2 border-red-300 bg-red-50 p-5 mb-4">
-      <h1 class="text-lg font-bold text-red-800 mb-1">🚫 ${escapeHtml(titulo)} — ${escapeHtml(page.nome)}</h1>
-      <p class="text-sm text-red-900 mb-4">
+  const body = `
+    ${cabecalhoPagina({
+      trilha: [TRILHA_COMERCIAL, { rotulo: 'Contratos & Procurações' }, { rotulo: page.nome }],
+      titulo: `${titulo} — ${page.nome}`,
+    })}
+    ${cartaoSecao({
+      titulo: 'O que falta',
+      acoesHtml: pilulaStatus('critico', 'travado'),
+      corpoHtml: `<p class="cc-cm-nota" style="margin:0 0 12px">
         O documento está incompleto ou com dado inválido. Pra não chegar no cliente com espaço em branco ou dado errado,
         ${page.acao === 'drive' ? 'o documento não foi salvo no Drive' : page.acao === 'enviar' ? 'ele não foi enviado' : page.acao === 'congelar' ? 'ele não foi congelado (o congelado é o que sai no PDF daqui pra frente)' : 'o PDF não foi gerado'}.
         Corrija o que está abaixo e tente de novo:
       </p>
       ${blocos}
-      <a href="${voltar}" class="inline-block px-4 py-2 rounded-lg text-sm font-semibold bg-slate-900 text-white hover:bg-slate-700">← Voltar pro formulário e completar</a>
-    </section>
-  </div>`;
-  return renderLayout({ active: 'contratos', title: `${titulo} — ${page.nome}`, body, user: page.user as any });
+      ${botao({ rotulo: '← Voltar pro formulário e completar', href: voltar, tom: 'ouro' })}`,
+    })}`;
+  return renderComercial({ active: 'contratos', title: `${titulo} — ${page.nome}`, body, user: page.user, largo: false });
 }

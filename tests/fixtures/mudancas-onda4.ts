@@ -54,5 +54,16 @@ export const MUDANCAS_R5: Record<string, MudancaContrato[]> = {
 // R21 — Comercial II (contratos, Fechou!, contrato do lead, recados, lojas, conhecimento)
 // ════════════════════════════════════════════════════════════════════════
 
-/** R21: trocas por caso de tests/fixtures/casos-comercial2.ts. */
-export const MUDANCAS_R21: Record<string, MudancaContrato[]> = {};
+/** R21 — o link "← voltar pra busca" do formulário do contrato é o MESMO
+ *  (/dashboard/contratos?q=<nome>). Antes ele ia sem escapar no atributo e o
+ *  leitor do contrato cortava no apóstrofo do nome ("Ana D'Ávila" → "Ana%20D");
+ *  agora o atributo vem escapado (&#39;) e o navegador (e o leitor) leem inteiro.
+ *  Mesmo destino — o que muda é só a leitura do teste. */
+const R21_VOLTAR_BUSCA_INTEIRO: MudancaContrato = {
+  motivo: 'R21: link de voltar pra busca escapado no atributo (o leitor via o nome cortado no apóstrofo)',
+  sai: { links: ['/dashboard/contratos?q=Ana%20D'] },
+  entra: { links: ["/dashboard/contratos?q=Ana%20D'%C3%81vila"] },
+};
+const R21_FORMS = ['form-faltando', 'form-cheio', 'form-ia', 'form-ia-falhou', 'form-ia-off', 'form-congelado', 'form-sem-proposta', 'form-aditivo', 'form-procuracao-tenant'];
+/** R21: trocas por caso de tests/fixtures/casos-comercial2.ts (além de TELAS_LEVES). */
+export const MUDANCAS_R21: Record<string, MudancaContrato[]> = Object.fromEntries(R21_FORMS.map((c) => [c, [R21_VOLTAR_BUSCA_INTEIRO]]));
