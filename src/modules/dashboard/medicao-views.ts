@@ -40,7 +40,7 @@ function w(n: number): string {
 }
 
 function card(rotulo: string, valor: string, nota = '', destaque = false): string {
-  return `<div class="cc-kpi${destaque ? ' cc-kpi-hl' : ''}"><div class="cc-lbl">${esc(rotulo)}</div><div class="cc-val">${esc(valor)}</div>${nota ? `<div class="cc-sub">${esc(nota)}</div>` : ''}</div>`;
+  return `<div class="cc-kpi${destaque ? ' cc-kpi-hl' : ''}"><div class="cc-lbl">${esc(rotulo)}</div><div class="cc-val">${esc(valor)}</div><div class="cc-dl">${nota ? esc(nota) : "&nbsp;"}</div></div>`;
 }
 
 /**
