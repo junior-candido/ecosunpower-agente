@@ -20,6 +20,8 @@ import { archiveInboundMedia } from './modules/inbound-media.js';
 import { Transcriber } from './modules/transcriber.js';
 import { VisionAnalyzer } from './modules/vision.js';
 import Anthropic from '@anthropic-ai/sdk';
+import { criarRotasLeitorIa } from './modules/leitor-ia/rotas.js';
+import { LimitesLeitor, limitesDoAmbiente } from './modules/leitor-ia/limites.js';
 import { LearningModule } from './modules/learning.js';
 import { FollowupModule } from './modules/followup.js';
 import { MaintenanceService } from './modules/maintenance.js';
@@ -7107,6 +7109,17 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
 
   // Express server
   const app = express();
+  // Leitor por IA do programa Gerador de Relatórios Solar (SunBright): rota pública autenticada pela
+  // licença GRS2 do programa. ANTES do express.json global (tem limite próprio) e do rewrite do host
+  // dashboard.* — responde nos dois hosts. A imagem é lida e descartada (nada gravado).
+  app.use(criarRotasLeitorIa({
+    claude: config.anthropicApiKey ? new Anthropic({ apiKey: config.anthropicApiKey }) : null,
+    desligado: process.env.LEITOR_IA_DESLIGADO === '1',
+    licencasBloqueadas: (process.env.LEITOR_IA_LICENCAS_BLOQUEADAS ?? '').split(','),
+    cabecalhoIp: process.env.LEITOR_IA_IP_HEADER || undefined,
+    limites: new LimitesLeitor(limitesDoAmbiente()),
+    medir: (a) => medirIa(a),
+  }));
   // Limit 50mb: webhooks da Evolution API chegam com imagem/video em base64
   // inline (PayloadTooLargeError no default de 100kb). 50mb cobre videos curtos
   // do zap (~25mb MP4 + overhead base64 ~33%).
