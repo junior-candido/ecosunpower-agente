@@ -174,7 +174,7 @@ export function telaConhecer(chave: string, empresaNome: string, user?: unknown)
     </div>
   </div>` : '';
   const lista = m.ganhos.length
-    ? `<ul style="margin:14px 0 0;padding-left:18px;line-height:2;list-style:disc">${m.ganhos.map((g) => `<li>${escapeHtml(g)}</li>`).join('')}</ul>`
+    ? `<ul style="margin:14px 0 0;padding-left:18px;line-height:2">${m.ganhos.map((g) => `<li>${escapeHtml(g)}</li>`).join('')}</ul>`
     : '';
   const body = `
 <style>

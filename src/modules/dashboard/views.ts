@@ -147,6 +147,7 @@ export function renderLayout(input: LayoutInput): string {
   // do painel e do `cabeca`). No fim do <body> o navegador pintava a tela sem
   // ele e depois "pulava" (a piscada do #337). O CSS de tela é constante do
   // código — dado de cliente chega escapado (&lt;style&gt;) e não casa aqui.
+  // (CSS de tela não pode ter o texto "</style>" dentro — o corte sairia errado.)
   // Tela antiga (com Tailwind do CDN) fica como está: o Tailwind injeta o CSS
   // dele no fim do <head> e mudaria quem ganha no desempate.
   const estilosDoCorpo: string[] = [];
