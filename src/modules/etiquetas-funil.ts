@@ -91,13 +91,27 @@ export async function lerMapeamento(servico: SupabaseClient, np: Pick<NumeroComE
   }
 }
 
-/** Troca o mapeamento inteiro do número (apaga e grava). false = banco recusou (ex.: sem a 144). */
+/**
+ * Grava o mapeamento do número mexendo SÓ no que mudou (tira as etapas que
+ * mudaram/saíram e grava as novas) — uma falha no meio não apaga o resto.
+ * false = banco recusou (ex.: sem a 144).
+ */
 export async function salvarMapeamento(servico: SupabaseClient, np: Pick<NumeroComEtiquetas, 'id' | 'company_id'>, pares: MapeamentoEtiqueta[]): Promise<boolean> {
   try {
-    const { error: e1 } = await servico.from('whatsapp_etiquetas_funil').delete().eq('company_id', np.company_id).eq('numero_pessoal_id', np.id);
-    if (e1) return false;
-    if (pares.length === 0) return true;
-    const { error: e2 } = await servico.from('whatsapp_etiquetas_funil').insert(pares.map((p) => ({
+    const { data, error } = await servico.from('whatsapp_etiquetas_funil').select('etapa, label_id')
+      .eq('company_id', np.company_id).eq('numero_pessoal_id', np.id);
+    if (error) return false;
+    const atuais = (data ?? []) as Array<{ etapa: string; label_id: string }>;
+    const igual = (a: { etapa: string; label_id: string }, b: { etapa: string; label_id: string }) => a.etapa === b.etapa && a.label_id === b.label_id;
+    for (const a of atuais) {
+      if (pares.some((p) => igual(p, a))) continue;
+      const { error: e1 } = await servico.from('whatsapp_etiquetas_funil').delete()
+        .eq('company_id', np.company_id).eq('numero_pessoal_id', np.id).eq('etapa', a.etapa);
+      if (e1) return false;
+    }
+    const novos = pares.filter((p) => !atuais.some((a) => igual(p, a)));
+    if (novos.length === 0) return true;
+    const { error: e2 } = await servico.from('whatsapp_etiquetas_funil').insert(novos.map((p) => ({
       company_id: np.company_id, numero_pessoal_id: np.id, etapa: p.etapa, label_id: p.label_id, label_nome: p.label_nome,
     })));
     return !e2;
@@ -105,6 +119,52 @@ export async function salvarMapeamento(servico: SupabaseClient, np: Pick<NumeroC
     return false;
   }
 }
+
+/** Etiqueta apagada no celular (labels.edit deleted): sai do mapeamento. */
+export async function esquecerEtiqueta(servico: SupabaseClient, np: Pick<NumeroComEtiquetas, 'id' | 'company_id'>, labelId: string): Promise<void> {
+  if (!LABEL_OK.test(labelId)) return;
+  try {
+    await servico.from('whatsapp_etiquetas_funil').delete().eq('company_id', np.company_id).eq('numero_pessoal_id', np.id).eq('label_id', labelId);
+  } catch { /* fica; o handleLabel só falha calado */ }
+}
+
+// ---------------------------------------------------------------------------
+// Eco e ordem: a etiqueta que o PAINEL pôs volta pelo webhook. Guardamos cada
+// "add" nosso por 60 s e ignoramos o eco dele (senão um clique rápido A→B
+// voltaria o lead para A). E as trocas de UM lead rodam uma de cada vez.
+// ---------------------------------------------------------------------------
+
+const ECO_MS = 60_000;
+const ecos = new Map<string, number>();
+const chaveEco = (instancia: string, telefone: string, labelId: string) => `${instancia}|${variantesTelefone(telefone)[0] ?? telefone}|${labelId}`;
+
+export function registrarEcoEtiqueta(instancia: string, telefone: string, labelId: string, agora = Date.now()): void {
+  ecos.set(chaveEco(instancia, telefone, labelId), agora + ECO_MS);
+  if (ecos.size > 5000) for (const [k, v] of ecos) if (v < agora) ecos.delete(k);
+}
+
+/** Este "add" que chegou é o eco de um que o painel pôs? (consome o registro). */
+export function ehEcoEtiqueta(instancia: string, telefone: string, labelId: string, agora = Date.now()): boolean {
+  for (const t of variantesTelefone(telefone)) {
+    const k = `${instancia}|${t}|${labelId}`;
+    const v = ecos.get(k);
+    if (v !== undefined) { ecos.delete(k); if (v > agora) return true; }
+  }
+  return false;
+}
+
+const filaDoLead = new Map<string, Promise<unknown>>();
+/** Roda `fn` depois da troca anterior do MESMO lead (ordem garantida). */
+export function emFilaDoLead<T>(leadId: string, fn: () => Promise<T>): Promise<T> {
+  const antes = filaDoLead.get(leadId) ?? Promise.resolve();
+  const agora = antes.catch(() => undefined).then(fn);
+  const fim = agora.catch(() => undefined);
+  filaDoLead.set(leadId, fim);
+  void fim.then(() => { if (filaDoLead.get(leadId) === fim) filaDoLead.delete(leadId); });
+  return agora;
+}
+
+export function limparEcosEtiqueta(): void { ecos.clear(); filaDoLead.clear(); }
 
 /** O lead já conversou no número pessoal deste dono? (sem conversa lá, a etiqueta não tem onde ficar). */
 async function conversouNoPessoal(servico: SupabaseClient, np: NumeroComEtiquetas, leadId: string): Promise<boolean> {
@@ -125,7 +185,7 @@ export interface ApiEtiquetas {
  */
 export async function etapaParaEtiqueta(
   servico: SupabaseClient,
-  p: { companyId: string; leadId: string; telefone: string; etapa: string },
+  p: { companyId: string; leadId: string; telefone: string; etapa: string; jaTem?: { instancia: string; labelId: string } },
   api: ApiEtiquetas,
 ): Promise<number> {
   if (!ETAPAS_OK.has(p.etapa) || !p.telefone) return 0;
@@ -134,16 +194,22 @@ export async function etapaParaEtiqueta(
     const { data } = await servico.from('whatsapp_numeros_pessoais').select('id, company_id, dono_user_id, instancia, ativo')
       .eq('company_id', p.companyId).eq('ativo', true);
     for (const np of (data ?? []) as NumeroComEtiquetas[]) {
-      const mapa = await lerMapeamento(servico, np);
-      if (mapa.length === 0 || !(await conversouNoPessoal(servico, np, p.leadId))) continue;
-      const alvo = mapa.find((m) => m.etapa === p.etapa);
-      for (const m of mapa) {
-        if (alvo && m.label_id === alvo.label_id) continue;
-        await api.aplicar(np.instancia, np.company_id, p.telefone, m.label_id, 'remove').catch(() => undefined);
-      }
-      if (alvo) {
-        await api.aplicar(np.instancia, np.company_id, p.telefone, alvo.label_id, 'add');
-        trocas++;
+      try {
+        const mapa = await lerMapeamento(servico, np);
+        if (mapa.length === 0 || !(await conversouNoPessoal(servico, np, p.leadId))) continue;
+        const alvo = mapa.find((m) => m.etapa === p.etapa);
+        for (const m of mapa) {
+          if (alvo && m.label_id === alvo.label_id) continue;
+          await api.aplicar(np.instancia, np.company_id, p.telefone, m.label_id, 'remove').catch(() => undefined);
+        }
+        // A etiqueta que o celular acabou de pôr já está lá.
+        if (alvo && !(p.jaTem && p.jaTem.instancia === np.instancia && p.jaTem.labelId === alvo.label_id)) {
+          registrarEcoEtiqueta(np.instancia, p.telefone, alvo.label_id);
+          await api.aplicar(np.instancia, np.company_id, p.telefone, alvo.label_id, 'add');
+          trocas++;
+        }
+      } catch (e) {
+        console.warn(`[etiquetas] painel → celular falhou num número: ${(e as Error).message}`);
       }
     }
   } catch (e) {
@@ -169,6 +235,7 @@ export async function etiquetaParaEtapa(
   deps: DepsEtapa,
 ): Promise<'mudou' | 'igual' | 'ignorada'> {
   if (a.tipo !== 'add' || !np.ativo) return 'ignorada';
+  if (ehEcoEtiqueta(np.instancia, a.telefone, a.labelId)) return 'igual';
   const mapa = await lerMapeamento(servico, np);
   const m = mapa.find((x) => x.label_id === a.labelId);
   if (!m) return 'ignorada';
@@ -180,6 +247,8 @@ export async function etiquetaParaEtapa(
   const { data } = await q.order('created_at', { ascending: true }).limit(1);
   const lead = (data as Array<{ id: string; status: string }> | null)?.[0];
   if (!lead) return 'ignorada';
+  // Só quem já conversou com o dono neste número (mesma regra do painel → celular).
+  if (!(await conversouNoPessoal(servico, np, lead.id))) return 'ignorada';
   if (lead.status === m.etapa) return 'igual';
   await deps.mudarEtapa(lead.id, lead.status, m.etapa);
   return 'mudou';

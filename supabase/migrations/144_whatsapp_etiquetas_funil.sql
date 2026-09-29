@@ -26,6 +26,19 @@ create table if not exists whatsapp_etiquetas_funil (
 comment on table whatsapp_etiquetas_funil is
   'W4: etapa do funil ↔ etiqueta do WhatsApp Business do número pessoal (uma etiqueta por etapa, uma etapa por etiqueta). RLS FORCE por company_id.';
 
+-- A empresa da linha tem que ser a do número (trava no banco).
+create or replace function trava_etiqueta_empresa() returns trigger language plpgsql as $$
+begin
+  if not exists (select 1 from whatsapp_numeros_pessoais w where w.id = new.numero_pessoal_id and w.company_id = new.company_id) then
+    raise exception 'numero pessoal % nao e da empresa %', new.numero_pessoal_id, new.company_id;
+  end if;
+  new.atualizado_em := now();
+  return new;
+end $$;
+drop trigger if exists trava_etiqueta_empresa on whatsapp_etiquetas_funil;
+create trigger trava_etiqueta_empresa before insert or update on whatsapp_etiquetas_funil
+  for each row execute function trava_etiqueta_empresa();
+
 create unique index if not exists whatsapp_etiquetas_funil_etapa on whatsapp_etiquetas_funil (numero_pessoal_id, etapa);
 create unique index if not exists whatsapp_etiquetas_funil_label on whatsapp_etiquetas_funil (numero_pessoal_id, label_id);
 create index if not exists whatsapp_etiquetas_funil_empresa on whatsapp_etiquetas_funil (company_id);

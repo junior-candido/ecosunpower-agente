@@ -2998,7 +2998,7 @@ b.onclick=async function(){
     res.redirect(`/dashboard/leads/${id}`);
   });
 
-  router.post('/leads/:id/unmark-lost', async (req: Request, res: Response) => {
+  router.post('/leads/:id/unmark-lost', exigir('leads', 'editar'), async (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
     const r = await supabaseService.desmarcarLeadPerdido(id);

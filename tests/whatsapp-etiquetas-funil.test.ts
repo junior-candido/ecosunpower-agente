@@ -3,13 +3,13 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   lerEtiquetasEvolution, lerAssociacaoEtiqueta, mapeamentoDoFormulario, salvarMapeamento, lerMapeamento,
-  etapaParaEtiqueta, etiquetaParaEtapa, ETAPAS_ETIQUETA,
+  etapaParaEtiqueta, etiquetaParaEtapa, ETAPAS_ETIQUETA, limparEcosEtiqueta, emFilaDoLead,
 } from '../src/modules/etiquetas-funil.js';
 import { EvolutionService } from '../src/modules/evolution.js';
 import { cartaoEtiquetas } from '../src/modules/dashboard/whatsapp-pessoal-views.js';
 import { bancoMemoria } from './helpers/supabase-memoria.js';
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); limparEcosEtiqueta(); });
 const CASA = '00000000-0000-0000-0000-000000000001';
 const TENANT = 'aaaa1111-2222-3333-4444-555566667777';
 const NP = { id: 'np1', company_id: CASA, dono_user_id: 'u-junior', instancia: 'pessoal-j', ativo: true };
@@ -84,6 +84,37 @@ describe('celular → painel', () => {
     expect(await etiquetaParaEtapa(b.client, { ...NP, ativo: false }, { labelId: '5', telefone: '5561999990001', tipo: 'add' }, { mudarEtapa })).toBe('ignorada');
     expect(mudarEtapa).not.toHaveBeenCalled();
   });
+  it('eco da etiqueta que o PAINEL pôs não volta a etapa (clique rápido A→B)', async () => {
+    const b = banco();
+    await salvarMapeamento(b.client, NP, [{ etapa: 'novo', label_id: '1', label_nome: 'Novo' }, { etapa: 'proposta_enviada', label_id: '2', label_nome: 'Proposta' }]);
+    const aplicar = vi.fn(async () => {});
+    await etapaParaEtiqueta(b.client, { companyId: CASA, leadId: 'L1', telefone: '5561999990001', etapa: 'novo' }, { aplicar });
+    await etapaParaEtiqueta(b.client, { companyId: CASA, leadId: 'L1', telefone: '5561999990001', etapa: 'proposta_enviada' }, { aplicar });
+    b.tabelas.leads[0].status = 'proposta_enviada';
+    const mudarEtapa = vi.fn(async () => {});
+    expect(await etiquetaParaEtapa(b.client, NP, { labelId: '1', telefone: '5561999990001', tipo: 'add' }, { mudarEtapa })).toBe('igual');
+    expect(mudarEtapa).not.toHaveBeenCalled();
+  });
+  it('lead que só falou com a Eva (nunca no número pessoal): etiqueta não muda a etapa', async () => {
+    const b = banco({ mensagens_whatsapp: [] });
+    await salvarMapeamento(b.client, NP, [{ etapa: 'ganho', label_id: '5', label_nome: 'Fechou' }]);
+    const mudarEtapa = vi.fn(async () => {});
+    expect(await etiquetaParaEtapa(b.client, NP, { labelId: '5', telefone: '5561999990001', tipo: 'add' }, { mudarEtapa })).toBe('ignorada');
+  });
+  it('fila por lead: as trocas rodam na ordem', async () => {
+    const ordem: string[] = [];
+    await Promise.all([
+      emFilaDoLead('L', async () => { await new Promise((r) => setTimeout(r, 20)); ordem.push('A'); }),
+      emFilaDoLead('L', async () => { ordem.push('B'); }),
+    ]);
+    expect(ordem).toEqual(['A', 'B']);
+  });
+  it('salvar mexe só no que mudou', async () => {
+    const b = banco();
+    await salvarMapeamento(b.client, NP, [{ etapa: 'novo', label_id: '1', label_nome: 'Novo' }, { etapa: 'ganho', label_id: '5', label_nome: 'Fechou' }]);
+    await salvarMapeamento(b.client, NP, [{ etapa: 'novo', label_id: '1', label_nome: 'Novo' }, { etapa: 'perdido', label_id: '5', label_nome: 'Fechou' }]);
+    expect(b.tabelas.whatsapp_etiquetas_funil.map((r) => `${r.etapa}=${r.label_id}`).sort()).toEqual(['novo=1', 'perdido=5']);
+  });
   it('mapeamento é do número (empresa + número): outro número não enxerga', async () => {
     const b = banco();
     await salvarMapeamento(b.client, NP, [{ etapa: 'ganho', label_id: '5', label_nome: 'Fechou' }]);
@@ -96,14 +127,16 @@ describe('Evolution: etiquetas', () => {
   it('findLabels e handleLabel pela instância em contexto', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ([{ id: '1', name: 'Novo' }]) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ([{ exists: true, jid: '556199990001@s.whatsapp.net' }]) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({}) });
     vi.stubGlobal('fetch', fetchMock);
     const s = new EvolutionService({ evolutionApiUrl: 'http://evo:8080', evolutionApiKey: 'k', evolutionInstance: 'eva', webhookToken: 't' });
     expect(await s.listarEtiquetas()).toEqual([{ id: '1', name: 'Novo' }]);
     await s.etiquetar('5561999990001', '1', 'add');
     expect(fetchMock.mock.calls[0][0]).toBe('http://evo:8080/label/findLabels/eva');
-    expect(fetchMock.mock.calls[1][0]).toBe('http://evo:8080/label/handleLabel/eva');
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ number: '5561999990001', labelId: '1', action: 'add' });
+    expect(fetchMock.mock.calls[2][0]).toBe('http://evo:8080/label/handleLabel/eva');
+    // o JID exato da conversa (o 9º dígito varia)
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({ number: '556199990001@s.whatsapp.net', labelId: '1', action: 'add' });
   });
 });
 

@@ -22,7 +22,7 @@ import { arquivarMidiaDaAssistente, TIPO_DA_ENTRADA, LIMITE_MIDIA_BYTES } from '
 import { leadDoTelefoneNaEmpresa } from './modules/numero-pessoal.js';
 import { registrarTextoDaAssistente, gravarReacao } from './modules/reacoes-citacoes.js';
 import { statusDaMeta, aplicarStatus, lerStatusEvolution, lerPresencaEvolution, marcarPresenca } from './modules/status-whatsapp.js';
-import { lerAssociacaoEtiqueta, lerEtiquetasEvolution, etiquetaParaEtapa, etapaParaEtiqueta } from './modules/etiquetas-funil.js';
+import { lerAssociacaoEtiqueta, lerEtiquetasEvolution, etiquetaParaEtapa, etapaParaEtiqueta, emFilaDoLead, esquecerEtiqueta } from './modules/etiquetas-funil.js';
 import { VisionAnalyzer } from './modules/vision.js';
 import Anthropic from '@anthropic-ai/sdk';
 import { LearningModule } from './modules/learning.js';
@@ -7837,19 +7837,30 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
    * (perdido = marcar perdido; sair de perdido = reabrir antes), com linha do
    * tempo e auditoria; depois as outras etiquetas mapeadas saem da conversa.
    */
-  async function mudarEtapaPelaEtiqueta(np: { id: string; company_id: string; dono_user_id: string; instancia: string; ativo: boolean }, leadId: string, atual: string, nova: string, telefone: string): Promise<void> {
+  async function mudarEtapaPelaEtiqueta(np: { id: string; company_id: string; dono_user_id: string; instancia: string; ativo: boolean }, leadId: string, atual: string, nova: string, telefone: string, labelId: string): Promise<void> {
     const db = supabase.getClient();
+    let ok: boolean;
     if (nova === 'perdido') {
-      await supabase.marcarLeadPerdido(leadId, 'outro', 'Marcado pela etiqueta do WhatsApp');
+      ok = (await supabase.marcarLeadPerdido(leadId, 'outro', 'Marcado pela etiqueta do WhatsApp')).ok;
     } else {
       if (atual === 'perdido') await supabase.desmarcarLeadPerdido(leadId);
-      await db.from('leads').update({ status: nova, updated_at: new Date().toISOString() }).eq('id', leadId).eq('company_id', np.company_id);
+      // Lead antigo sem empresa é da casa (mesma regra da trava de empresa).
+      const base = db.from('leads').update({ status: nova, updated_at: new Date().toISOString() }).eq('id', leadId);
+      const { error } = await (np.company_id === ECOSUN_COMPANY_ID ? base.or(`company_id.eq.${ECOSUN_COMPANY_ID},company_id.is.null`) : base.eq('company_id', np.company_id));
+      ok = !error;
+    }
+    if (!ok) return;
+    // Etapa final: as tarefas pendentes saem (mesmo efeito do painel — nada de alerta de SLA fantasma).
+    if (nova === 'ganho' || nova === 'perdido') {
+      const { cancelarTarefasPendentesDoLead } = await import('./modules/dashboard/tarefas.js');
+      await cancelarTarefasPendentesDoLead(db, leadId).catch(() => undefined);
     }
     const { registrarAtividade } = await import('./modules/dashboard/atividades.js');
     const { audit } = await import('./modules/dashboard/audit.js');
     await registrarAtividade(db, { company_id: np.company_id, lead_id: leadId, tipo: 'etapa_mudou', titulo: `Etapa movida pela etiqueta do WhatsApp: → ${nova}`, automatica: true, user_id: np.dono_user_id }).catch(() => undefined);
     await audit(db, { companyId: np.company_id, userId: np.dono_user_id, entidade: 'lead', entidadeId: leadId, acao: 'etapa_etiqueta', valorNovo: nova }).catch(() => undefined);
-    await etapaParaEtiqueta(db, { companyId: np.company_id, leadId, telefone, etapa: nova }, apiEtiquetas).catch(() => 0);
+    // Tirar as outras etiquetas mapeadas: por fora (não segura o webhook da Evolution).
+    void etapaParaEtiqueta(db, { companyId: np.company_id, leadId, telefone, etapa: nova, jaTem: { instancia: np.instancia, labelId } }, apiEtiquetas).catch(() => 0);
   }
 
   /** W4 — handleLabel pela instância do número pessoal (dentro da empresa/canal dela). */
@@ -7935,14 +7946,18 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
         if (pessoal === 'erro') { res.status(503).json({ status: 'numero_pessoal_indisponivel' }); return; }
         if (assoc && pessoal && pessoal.ativo && !(await evolutionTenant.companyDaInstancia(inst))) {
           const tel = normalizeBrazilianPhone(assoc.jid.replace(/@.*/, ''));
+          if (!assoc.jid.endsWith('@s.whatsapp.net')) console.log('[etiquetas] conversa com id escondido (@lid) — etiqueta não sincronizada');
           if (tel && assoc.jid.endsWith('@s.whatsapp.net')) {
             const r = await etiquetaParaEtapa(supabase.getClient(), pessoal, { labelId: assoc.labelId, telefone: tel, tipo: assoc.tipo }, {
-              mudarEtapa: (leadId, atual, nova) => mudarEtapaPelaEtiqueta(pessoal, leadId, atual, nova, tel),
+              mudarEtapa: (leadId, atual, nova) => emFilaDoLead(leadId, () => mudarEtapaPelaEtiqueta(pessoal, leadId, atual, nova, tel, assoc.labelId)),
             }).catch(() => 'ignorada' as const);
             res.status(200).json({ status: `etiqueta_${r}` });
             return;
           }
         }
+        // Etiqueta apagada no celular: sai do mapeamento.
+        const ed = (req.body as { data?: { id?: unknown; deleted?: unknown } })?.data;
+        if (evento === 'labels.edit' && pessoal && ed?.deleted === true && typeof ed.id === 'string') await esquecerEtiqueta(supabase.getClient(), pessoal, ed.id);
         res.status(200).json({ status: 'etiqueta_ignorada' });
         return;
       }
@@ -9434,12 +9449,14 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     // W4: etiquetas do WhatsApp Business do número pessoal ↔ etapa do funil.
     etiquetasDaInstancia: async (instancia) => lerEtiquetasEvolution(await comEmpresaDe(ECOSUN_COMPANY_ID, () => comCanal({ companyId: ECOSUN_COMPANY_ID, evolutionInstance: instancia }, () => evolution.listarEtiquetas()))),
     sincronizarEtiquetas: (companyId, leadId, etapa) => {
-      void (async () => {
-        const { data } = await supabase.getClient().from('leads').select('phone').eq('id', leadId).maybeSingle();
+      // Uma troca por vez por lead (clique rápido A→B chega na ordem).
+      void emFilaDoLead(leadId, async () => {
+        const base = supabase.getClient().from('leads').select('phone').eq('id', leadId);
+        const { data } = await (companyId === ECOSUN_COMPANY_ID ? base.or(`company_id.eq.${ECOSUN_COMPANY_ID},company_id.is.null`) : base.eq('company_id', companyId)).maybeSingle();
         const tel = normalizeBrazilianPhone(String((data as { phone?: string } | null)?.phone ?? ''));
         if (!tel) return;
         await etapaParaEtiqueta(supabase.getClient(), { companyId, leadId, telefone: tel, etapa }, apiEtiquetas);
-      })().catch((e) => console.warn(`[etiquetas] painel → celular falhou: ${(e as Error).message}`));
+      }).catch((e) => console.warn(`[etiquetas] painel → celular falhou: ${(e as Error).message}`));
     },
     // W3: marcar como lida (✓✓ azul) pela instância do dono.
     marcarLidasEvolution: (instancia, companyId, to, wamids) => comEmpresaDe(companyId, () => comCanal({ companyId, evolutionInstance: instancia }, () => evolution.marcarComoLidas(to, wamids))),

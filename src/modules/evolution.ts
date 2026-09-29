@@ -391,9 +391,12 @@ export class EvolutionService {
 
   /** W4 — põe/tira uma etiqueta da conversa deste número (handleLabel). */
   async etiquetar(to: string, labelId: string, acao: 'add' | 'remove'): Promise<void> {
+    // O JID exato da conversa (o 9º dígito varia) — senão a etiqueta cai numa conversa que não existe.
+    const jid = await this.jidDoNumero(to);
+    if (!jid) throw new Error('numero_sem_whatsapp');
     const res = await fetch(`${this.baseUrl}/label/handleLabel/${this.instanciaAtual()}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', apikey: this.apiKey },
-      body: JSON.stringify({ number: to, labelId, action: acao }), signal: AbortSignal.timeout(15_000),
+      body: JSON.stringify({ number: jid, labelId, action: acao }), signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) throw new Error(`Evolution handleLabel ${res.status}`);
   }
