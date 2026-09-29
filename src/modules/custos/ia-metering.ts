@@ -21,6 +21,8 @@ interface PrecoModelo {
 
 const PRECOS_USD_POR_MILHAO: Record<string, PrecoModelo> = {
   sonnet: { input: 3.0, output: 15.0 },
+  // Sonnet 5 (claude-sonnet-5): mais barato que o Sonnet 4.6.
+  sonnet5: { input: 2.0, output: 10.0 },
   haiku: { input: 1.0, output: 5.0 },
   opus: { input: 5.0, output: 25.0 },
 };
@@ -51,6 +53,7 @@ function precoDoModelo(modelo: string): PrecoModelo {
   const m = String(modelo ?? '').toLowerCase();
   if (m.startsWith('claude-haiku-4-5') || m.includes('haiku')) return PRECOS_USD_POR_MILHAO.haiku;
   if (m.startsWith('claude-opus-4-8') || m.includes('opus')) return PRECOS_USD_POR_MILHAO.opus;
+  if (m.startsWith('claude-sonnet-5')) return PRECOS_USD_POR_MILHAO.sonnet5;
   if (m.startsWith('claude-sonnet-4-6') || m.includes('sonnet')) return PRECOS_USD_POR_MILHAO.sonnet;
   return PRECO_FALLBACK;
 }

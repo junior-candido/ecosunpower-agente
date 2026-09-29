@@ -34,6 +34,7 @@ import {
 } from './atendimento-envio.js';
 import { parametroNome, type ModeloAtendimento } from './modelos-atendimento.js';
 import { respostasProntas } from './respostas-prontas.js';
+import { tamanhoLegivel, ACEITA_NO_SELETOR, LIMITE_IMAGEM_BYTES, LIMITE_MIDIA_BYTES, LIMITE_LEGENDA } from '../midia-whatsapp.js';
 
 const FUSO = 'America/Sao_Paulo';
 
@@ -116,6 +117,37 @@ export function corpoDaMensagem(conteudo: string, temArquivos: boolean): string 
   return `<div class="cc-at-msg-t">${escapeHtml(conteudo)}</div>`;
 }
 
+const ID_MIDIA_OK = /^[0-9a-zA-Z-]{1,64}$/;
+const ICONE_DOC: Array<[RegExp, string]> = [[/pdf/, '📕'], [/sheet|excel|csv/, '📗'], [/word|msword/, '📘'], [/presentation/, '📙']];
+
+/**
+ * W1 — balão com o ARQUIVO: foto (miniatura que amplia), vídeo curto e áudio
+ * com player (a transcrição embaixo), documento com ícone + abrir/baixar. O
+ * endereço é SEMPRE a rota protegida /dashboard/leads/midia/:id (confere quem
+ * vê e só então redireciona para uma URL assinada de 2 min) — nada de URL do
+ * storage no HTML (e a "assinatura" da conversa não muda a cada 8 s). PURA.
+ */
+export function corpoDaMidia(m: Pick<MensagemChat, 'content' | 'midia' | 'transcricao'>): string {
+  const md = m.midia!;
+  const legenda = m.content.replace(/^\[[^\]]*\]\s*/, '').trim();
+  const semNomeRepetido = md.tipo === 'documento' && md.nome && legenda === md.nome ? '' : legenda;
+  const txt = semNomeRepetido ? `<div class="cc-at-msg-t">${escapeHtml(semNomeRepetido)}</div>` : '';
+  const transc = m.transcricao ? `<div class="cc-at-transc"><span>Transcrição</span>${escapeHtml(m.transcricao)}</div>` : '';
+  if (!ID_MIDIA_OK.test(md.id)) return `<span class="cc-at-midia">📎 Arquivo</span>${txt}${transc}`;
+  const url = `/dashboard/leads/midia/${md.id}`;
+  if (md.tipo === 'imagem') {
+    return `<a class="cc-at-foto" href="${url}" target="_blank" rel="noopener" data-ampliar aria-label="Ampliar foto"><img src="${url}" alt="Foto enviada na conversa" loading="lazy" decoding="async"></a>${txt}`;
+  }
+  if (md.tipo === 'audio') return `<audio controls preload="none" src="${url}" class="cc-at-audio"></audio>${txt}${transc}`;
+  if (md.tipo === 'video') return `<video controls preload="none" src="${url}" class="cc-at-video" playsinline></video>${txt}${transc}`;
+  const mime = (md.mime ?? '').toLowerCase();
+  const ic = ICONE_DOC.find(([re]) => re.test(mime))?.[1] ?? '📄';
+  const nome = md.nome || 'Documento';
+  const tam = tamanhoLegivel(md.bytes);
+  return `<div class="cc-at-doc"><span class="cc-at-doc-ic" aria-hidden="true">${ic}</span><span class="cc-at-doc-txt"><strong>${escapeHtml(nome)}</strong>${tam ? `<small>${escapeHtml(tam)}</small>` : ''}</span>
+      <a class="cc-link" href="${url}" target="_blank" rel="noopener">Abrir</a><a class="cc-link" href="${url}?baixar=1">Baixar</a></div>${txt}`;
+}
+
 function qsFiltros(f: FiltrosConversa, extra: Partial<FiltrosConversa> = {}): string {
   const x = { ...f, ...extra };
   const p = new URLSearchParams();
@@ -194,17 +226,41 @@ function horaDe(iso: string | null): string {
 }
 
 /** Evento no meio da conversa: "✋ Junior assumiu às 14:32" / "↩ Devolvido para a Eva às 15:10". PURA. */
-export function textoDoEvento(m: Pick<MensagemChat, 'evento' | 'autorNome' | 'timestamp'>, assistente: string): string {
+export function textoDoEvento(m: Pick<MensagemChat, 'evento' | 'autorNome' | 'timestamp'> & { content?: string }, assistente: string): string {
   const quem = (m.autorNome ?? '').trim();
   const h = horaDe(m.timestamp);
   const as = h ? ` às ${h}` : '';
   if (m.evento === 'assumiu') return `✋ ${quem || 'Alguém da equipe'} assumiu${as}`;
+  if (m.evento === 'reagiu') return `${quem || 'O cliente'} reagiu ${m.content || ''} a uma mensagem${as}`;
   return `↩ Devolvido para a ${assistente}${as}${quem ? ` (por ${quem})` : ''}`;
 }
 
-function balao(m: MensagemChat, rotuloAssistente: string, nomeCliente: string, temArquivos: boolean, mostrarCanal: boolean, donoPessoal: string | null): string {
+const ID_MSG_OK = /^[0-9a-fA-F-]{36}$/;
+
+/** W3: ✓ enviada · ✓✓ entregue · ✓✓ azul lida (o que o WhatsApp avisou). PURA. */
+export function tique(status: string | null | undefined): string {
+  if (status === 'enviada') return ` <span class="cc-at-tick" title="Enviada">✓</span>`;
+  if (status === 'entregue') return ` <span class="cc-at-tick" title="Entregue">✓✓</span>`;
+  if (status === 'lida') return ` <span class="cc-at-tick cc-at-tick-lida" title="Lida">✓✓</span>`;
+  return '';
+}
+
+/** W2: a mensagem citada, dentro do balão (texto escapado; sem ela no chat, só "mensagem anterior"). PURA. */
+export function blocoCitacao(c: NonNullable<MensagemChat['citando']>): string {
+  const texto = (c.texto ?? '').replace(/^\[[^\]]*\]\s*/, (x) => x.trim() + ' ').trim();
+  return `<div class="cc-at-cita"><strong>${escapeHtml(c.autor || 'Mensagem anterior')}</strong><span>${escapeHtml(texto.slice(0, 160) || 'mensagem anterior')}</span></div>`;
+}
+
+/** W2: reações embaixo do balão ("👍 ❤️ 2"). PURA. */
+export function blocoReacoes(rs: NonNullable<MensagemChat['reacoes']>): string {
+  if (!rs.length) return '';
+  const titulo = rs.map((r) => `${r.nome || (r.de === 'cliente' ? 'Cliente' : 'Equipe')}: ${r.emoji}`).join(' · ');
+  return `<div class="cc-at-reacoes" title="${escapeHtml(titulo)}">${rs.map((r) => `<span>${escapeHtml(r.emoji)}</span>`).join('')}${rs.length > 1 ? `<small>${rs.length}</small>` : ''}</div>`;
+}
+
+function balao(m: MensagemChat, rotuloAssistente: string, nomeCliente: string, temArquivos: boolean, mostrarCanal: boolean, donoPessoal: string | null, acoes = false): string {
   if (m.role === 'evento' || m.autor === 'evento') {
-    return `<div class="cc-at-evento cc-at-evento-${m.evento === 'assumiu' ? 'assumiu' : 'devolveu'}" role="note">${escapeHtml(textoDoEvento(m, rotuloAssistente))}</div>`;
+    return `<div class="cc-at-evento cc-at-evento-${m.evento === 'assumiu' ? 'assumiu' : m.evento === 'reagiu' ? 'reagiu' : 'devolveu'}" role="note">${escapeHtml(textoDoEvento(m, rotuloAssistente))}</div>`;
   }
   const daAssistente = m.role === 'assistant';
   const humano = daAssistente && m.autor === 'humano';
@@ -215,11 +271,16 @@ function balao(m: MensagemChat, rotuloAssistente: string, nomeCliente: string, t
     : humano && m.status === 'sem_confirmacao' ? `<div class="cc-at-msg-falha">⚠ envio não confirmado — confira no WhatsApp</div>` : '';
   const enviando = humano && m.status === 'enviando' ? ' · enviando…' : '';
   const classe = humano ? 'cc-at-msg-eva cc-at-msg-hum' : daAssistente ? 'cc-at-msg-eva' : 'cc-at-msg-cli';
-  return `<div class="cc-at-msg ${classe}">
-      <div class="cc-at-msg-q">${escapeHtml(quem)}${canal}</div>
-      ${corpoDaMensagem(m.content, temArquivos)}
+  // W2: só dá para citar/reagir o que tem id do WhatsApp (e quem pode responder).
+  const podeAgir = acoes && !!m.wamid && !!m.painelId && ID_MSG_OK.test(m.painelId) && m.status !== 'falhou';
+  const reacoes = m.reacoes?.length ? blocoReacoes(m.reacoes) : '';
+  return `<div class="cc-at-msg ${classe}${reacoes ? ' cc-at-com-reacao' : ''}"${podeAgir ? ` data-msg="${m.painelId}"` : ''}>
+      <div class="cc-at-msg-q">${escapeHtml(quem)}${canal}${podeAgir ? `<button type="button" class="cc-at-acoes-btn" data-acoes aria-label="Responder ou reagir" title="Responder ou reagir">⋯</button>` : ''}</div>
+      ${m.citando ? blocoCitacao(m.citando) : ''}
+      ${m.midia ? corpoDaMidia(m) : corpoDaMensagem(m.content, temArquivos)}${!m.midia && m.transcricao ? `<div class="cc-at-transc"><span>Transcrição</span>${escapeHtml(m.transcricao)}</div>` : ''}
       ${falhou}
-      ${hora ? `<div class="cc-at-msg-h">${escapeHtml(hora + enviando)}</div>` : ''}
+      ${hora ? `<div class="cc-at-msg-h">${escapeHtml(hora + enviando)}${humano ? tique(m.status) : ''}</div>` : ''}
+      ${reacoes}
     </div>`;
 }
 
@@ -285,6 +346,28 @@ const TEXTO_BLOQUEIO: Record<MotivoBloqueio, string> = {
   janela_fechada: 'Janela de 24 h fechada — use um modelo aprovado.',
   modelo_so_no_oficial: 'Modelo só existe no número oficial.',
 };
+
+/**
+ * W1 — anexar foto, PDF/documento, áudio (arquivo ou gravado aqui) e vídeo
+ * curto. Sem JavaScript: escolher o arquivo + legenda + "Enviar arquivo" (POST
+ * multipart normal). Com JavaScript: 📎/arrastar/colar → prévia antes de
+ * enviar → sai sem recarregar. Os mesmos limites do servidor.
+ */
+/** W2: "Respondendo a …" em cima do campo (o script preenche; ✕ tira). */
+const CAIXA_CITANDO = `<div class="cc-at-citando" id="cc-at-citando" hidden><div class="cc-at-cita"><strong>Respondendo a</strong><span id="cc-at-citando-txt"></span></div><button type="button" class="cc-ibtn cc-at-citando-x" data-tirar-citacao aria-label="Não citar">×</button></div>`;
+
+function formAnexo(action: string, chave: string, ocultos: string): string {
+  return `<form class="cc-form cc-at-anexo" method="POST" action="${escapeHtml(action)}" enctype="multipart/form-data" data-envio-midia data-max-foto="${LIMITE_IMAGEM_BYTES}" data-max="${LIMITE_MIDIA_BYTES}">
+        <input type="hidden" name="chave" value="${escapeHtml(chave)}">${ocultos}<input type="hidden" name="citando" value="">
+        <div class="cc-at-anexo-prev" id="cc-at-anexo-prev" hidden></div>
+        <div class="cc-at-anexo-lin">
+          <label class="cc-btn cc-btn-sm cc-at-clipe" title="Foto até 5 MB · PDF, Word, Excel, áudio e vídeo até 16 MB">📎 Anexar<input type="file" name="arquivo" id="cc-at-arquivo" accept="${escapeHtml(ACEITA_NO_SELETOR)}"></label>
+          <button type="button" class="cc-btn cc-btn-sm cc-at-gravar" id="cc-at-gravar" hidden>🎤 Gravar áudio</button>
+          <input type="text" name="legenda" id="cc-at-legenda" class="cc-at-legenda" maxlength="${LIMITE_LEGENDA}" placeholder="Legenda (opcional)" aria-label="Legenda do arquivo">
+          <button type="submit" class="cc-btn cc-at-enviar cc-at-enviar-arq">Enviar arquivo</button>
+        </div>
+      </form>`;
+}
 
 function formModelo(leadId: string, c: CompositorInput, nomeCliente: string, aberto: boolean): string {
   if (c.via !== 'waba') return '';
@@ -362,11 +445,13 @@ function compositor(lead: LeadDetail, mensagens: MensagemChat[], c: CompositorIn
 
   const formTexto = !bloqueioTexto
     ? `<form class="cc-form cc-at-resp" method="POST" action="/dashboard/leads/${escapeHtml(lead.id)}/responder" data-envio>
-        <input type="hidden" name="chave" value="${escapeHtml(c.chave)}">${campoCanal}
+        <input type="hidden" name="chave" value="${escapeHtml(c.chave)}">${campoCanal}<input type="hidden" name="citando" value="">
         <textarea name="texto" id="cc-at-texto" rows="2" maxlength="${LIMITE_TEXTO}" required placeholder="Escreva sua resposta…" aria-label="Sua resposta"></textarea>
         <button type="submit" class="cc-btn cc-at-enviar">Enviar</button>
       </form>`
     : '';
+  // Arquivo: as mesmas regras do texto (no número da Eva, só dentro da janela de 24 h).
+  const anexo = !bloqueioTexto ? formAnexo(`/dashboard/leads/${lead.id}/responder-midia`, c.chave, campoCanal) : '';
   const modelo = bloqueioModelo ? '' : formModelo(lead.id, c, lead.name ?? '', !!bloqueioTexto);
   const prontas = !bloqueioTexto || !bloqueioModelo ? chipsProntas(c, lead.name, !!bloqueioTexto) : '';
 
@@ -375,7 +460,9 @@ function compositor(lead: LeadDetail, mensagens: MensagemChat[], c: CompositorIn
       ${trocaNumero}
       ${faixaJanela}
       ${prontas}
+      ${formTexto ? CAIXA_CITANDO : ''}
       ${formTexto}
+      ${anexo}
       ${modelo}
       ${rodape}
     </footer>`;
@@ -400,7 +487,10 @@ function faixaAssumir(lead: LeadDetail, mensagens: MensagemChat[], assistente: s
 }
 
 /** Os balões da conversa (com a divisória de cada dia). Usado na página E no "sem recarregar". */
-export function blocoMensagens(mensagens: MensagemChat[], assistente: string, nomeCliente: string, temArquivos: boolean, donoPessoal: string | null, soDono = false): string {
+export function blocoMensagens(mensagens: MensagemChat[], assistente: string, nomeCliente: string, temArquivos: boolean, donoPessoal: string | null, soDono = false, acoes = false, digitando: 'digitando' | 'gravando' | null = null): string {
+  // W3: "digitando…" / "gravando áudio…" no fim da conversa (quando o WhatsApp avisa).
+  const dig = digitando ? `<div class="cc-at-digitando" role="status" aria-live="polite"><span class="cc-at-dig-pts" aria-hidden="true"><i></i><i></i><i></i></span>${escapeHtml(nomeCliente)} está ${digitando === 'gravando' ? 'gravando áudio…' : 'digitando…'}</div>` : '';
+  if (mensagens.length === 0 && dig) return dig;
   if (mensagens.length === 0) {
     return soDono
       ? `<div class="cc-at-vazio">${estadoVazio({ tipo: 'vazio', titulo: 'Nenhuma mensagem ainda.', compacto: true })}</div>`
@@ -417,8 +507,8 @@ export function blocoMensagens(mensagens: MensagemChat[], assistente: string, no
     }
     // Conversa do número pessoal com quem não é lead: quem responde é o dono (nunca a assistente).
     const mm = soDono && m.role === 'assistant' && m.autor !== 'humano' ? { ...m, autor: 'humano' as const, autorNome: m.autorNome ?? donoPessoal } : m;
-    return sep + balao(mm, assistente, nomeCliente, temArquivos, mostrarCanal, donoPessoal);
-  }).join('');
+    return sep + balao(mm, assistente, nomeCliente, temArquivos, mostrarCanal, donoPessoal, acoes);
+  }).join('') + dig;
 }
 
 /**
@@ -447,6 +537,11 @@ function topoDoChat(lead: LeadDetail, mensagens: MensagemChat[], assistente: str
     </div>`;
 }
 
+/** W2: citar/reagir aparece para quem pode responder por algum número. */
+function podeAgirNoChat(envio: CompositorInput | undefined): boolean {
+  return !!envio && envio.via !== 'nenhum';
+}
+
 /** Nome da assistente na tela: "Eva" na casa, "Assistente" no tenant. */
 export function nomesDaAssistente(user: DashUser | undefined): { assistente: string; assistenteMin: string } {
   const ehTenant = !!user && user.companyId !== ECOSUN_COMPANY_ID;
@@ -461,12 +556,14 @@ export function nomesDaAssistente(user: DashUser | undefined): { assistente: str
  */
 export function pedacosDaConversa(p: {
   user: DashUser | undefined; lead: LeadDetail; mensagens: MensagemChat[]; envio?: CompositorInput; donoPessoal?: string | null;
+  /** W3: o cliente está digitando / gravando agora (aviso do WhatsApp). */
+  digitando?: 'digitando' | 'gravando' | null;
 }): { topo: string; msgs: string; compor: string; estado: string } {
   const { assistente, assistenteMin } = nomesDaAssistente(p.user);
   const temArquivos = (p.lead.anexos ?? []).length > 0;
   return {
     topo: topoDoChat(p.lead, p.mensagens, assistente, assistenteMin, p.envio, p.donoPessoal ?? null, can(p.user, 'leads', 'editar')),
-    msgs: blocoMensagens(p.mensagens, assistente, p.lead.name ?? 'Sem nome', temArquivos, p.donoPessoal ?? null),
+    msgs: blocoMensagens(p.mensagens, assistente, p.lead.name ?? 'Sem nome', temArquivos, p.donoPessoal ?? null, false, podeAgirNoChat(p.envio), p.digitando ?? null),
     compor: compositor(p.lead, p.mensagens, p.envio, assistente),
     estado: estadoDoCompositor(p.lead, p.mensagens, p.envio),
   };
@@ -495,12 +592,12 @@ export function estadoDoCompositor(lead: Pick<LeadDetail, 'opt_out' | 'phone'>, 
 function colunaChat(lead: LeadDetail, mensagens: MensagemChat[], assistente: string, assistenteMin: string, envio: CompositorInput | undefined, donoPessoal: string | null, podeEditar: boolean): string {
   const nome = lead.name ?? 'Sem nome';
   const temArquivos = (lead.anexos ?? []).length > 0;
-  const corpo = blocoMensagens(mensagens, assistente, nome, temArquivos, donoPessoal);
+  const corpo = blocoMensagens(mensagens, assistente, nome, temArquivos, donoPessoal, false, podeAgirNoChat(envio));
   const topo = topoDoChat(lead, mensagens, assistente, assistenteMin, envio, donoPessoal, podeEditar);
   // Sem recarregar: o script busca os pedaços desta conversa (mesmo número da resposta).
   const estado = envio ? estadoDoCompositor(lead, mensagens, envio) : '';
   const vivo = envio
-    ? ` data-conversa="/dashboard/leads/${escapeHtml(lead.id)}/conversa.json?canal=${escapeHtml(envio.canal)}" data-estado="${escapeHtml(estado)}" data-assinatura="${assinaturaDaConversa({ topo, msgs: corpo, estado })}"`
+    ? ` data-conversa="/dashboard/leads/${escapeHtml(lead.id)}/conversa.json?canal=${escapeHtml(envio.canal)}" data-estado="${escapeHtml(estado)}" data-assinatura="${assinaturaDaConversa({ topo, msgs: corpo, estado })}"${podeAgirNoChat(envio) ? ` data-reagir="/dashboard/leads/${escapeHtml(lead.id)}/reagir"` : ''}`
     : '';
   return `<section class="cc-at-col cc-at-chat" id="conversa" aria-label="Conversa"${vivo}>
     <nav class="cc-at-abas-cel" aria-label="Navegação do atendimento">
@@ -858,23 +955,25 @@ function compositorContato(ct: ContatoPessoalTela, donoPessoal: string | null, a
       ${banner}
       <div class="cc-at-janela"><span class="cc-at-via">sai pelo ${escapeHtml(rotuloCanal('whatsapp_business', assistente, donoPessoal))}</span>${linkZap}</div>
       ${prontas}
+      ${CAIXA_CITANDO}
       <form class="cc-form cc-at-resp" method="POST" action="/dashboard/leads/conversas/contato/responder" data-envio>
-        <input type="hidden" name="chave" value="${escapeHtml(c.chave)}">
+        <input type="hidden" name="chave" value="${escapeHtml(c.chave)}"><input type="hidden" name="citando" value="">
         <input type="hidden" name="telefone" value="${escapeHtml(ct.telefone)}">
         <textarea name="texto" id="cc-at-texto" rows="2" maxlength="${LIMITE_TEXTO}" required placeholder="Escreva sua resposta…" aria-label="Sua resposta"></textarea>
         <button type="submit" class="cc-btn cc-at-enviar">Enviar</button>
       </form>
+      ${formAnexo('/dashboard/leads/conversas/contato/responder-midia', c.chave, `<input type="hidden" name="telefone" value="${escapeHtml(ct.telefone)}">`)}
       <p class="cc-at-nota">Conversa do seu WhatsApp: só você vê. A ${escapeHtml(assistente)} não responde aqui.</p>
     </footer>`
     : `<footer class="cc-at-compor cc-at-compor-on" id="responder">${banner}<div class="cc-at-compor-campo cc-at-bloq" aria-disabled="true">${icone('alert', 'xs')}<span>Seu WhatsApp não está conectado agora. <a class="cc-link" href="/dashboard/whatsapp/pessoal">Conectar</a></span></div>${linkZap}</footer>`;
 }
 
 /** Pedaços da conversa com quem não é lead, pra trocar sem recarregar. */
-export function pedacosDoContato(p: { user: DashUser | undefined; contato: ContatoPessoalTela; donoPessoal?: string | null }): { msgs: string; compor: string; estado: string } {
+export function pedacosDoContato(p: { user: DashUser | undefined; contato: ContatoPessoalTela; donoPessoal?: string | null; digitando?: 'digitando' | 'gravando' | null }): { msgs: string; compor: string; estado: string } {
   const { assistente } = nomesDaAssistente(p.user);
   const nome = p.contato.nome || formatPhoneBR(p.contato.telefone);
   return {
-    msgs: blocoMensagens(p.contato.mensagens, assistente, nome, false, p.donoPessoal ?? null, true),
+    msgs: blocoMensagens(p.contato.mensagens, assistente, nome, false, p.donoPessoal ?? null, true, p.contato.envio?.via === 'evolution', p.digitando ?? null),
     compor: compositorContato(p.contato, p.donoPessoal ?? null, assistente),
     estado: p.contato.envio?.via === 'evolution' ? 'pessoal|livre' : 'pessoal|desconectado',
   };
@@ -882,9 +981,9 @@ export function pedacosDoContato(p: { user: DashUser | undefined; contato: Conta
 
 function colunaChatContato(ct: ContatoPessoalTela, donoPessoal: string | null, assistente: string): string {
   const nome = ct.nome || formatPhoneBR(ct.telefone);
-  const corpo = blocoMensagens(ct.mensagens, assistente, nome, false, donoPessoal, true);
+  const corpo = blocoMensagens(ct.mensagens, assistente, nome, false, donoPessoal, true, ct.envio?.via === 'evolution');
   const estado = ct.envio?.via === 'evolution' ? 'pessoal|livre' : 'pessoal|desconectado';
-  const vivo = ct.envio ? ` data-conversa="/dashboard/leads/conversas/contato.json?contato=${encodeURIComponent(ct.telefone)}" data-estado="${escapeHtml(estado)}" data-assinatura="${assinaturaDaConversa({ msgs: corpo, estado })}"` : '';
+  const vivo = ct.envio ? ` data-conversa="/dashboard/leads/conversas/contato.json?contato=${encodeURIComponent(ct.telefone)}" data-estado="${escapeHtml(estado)}" data-assinatura="${assinaturaDaConversa({ msgs: corpo, estado })}"${ct.envio.via === 'evolution' ? ` data-reagir="/dashboard/leads/conversas/contato/reagir" data-telefone="${escapeHtml(ct.telefone)}"` : ''}` : '';
   return `<section class="cc-at-col cc-at-chat" id="conversa" aria-label="Conversa"${vivo}>
     <nav class="cc-at-abas-cel" aria-label="Navegação do atendimento">
       <a class="cc-at-voltar" href="/dashboard/leads/conversas" aria-label="Voltar para a lista">${icone('chev', 'sm')}Conversas</a>
@@ -952,7 +1051,7 @@ export function renderAtendimentoPage(p: AtendimentoInput): string {
   </div>`;
 
   // Alças das colunas (sempre) + rolar o chat até a última mensagem (com lead).
-  const script = `<script>${SCRIPT_COLUNAS}</script>` + (lead || ct ? `<script>(function(){function fim(){var c=document.getElementById('cc-at-msgs');if(c){c.scrollTop=c.scrollHeight;}}fim();window.addEventListener('load',fim);})();</script>` : '')
+  const script = `<script>${SCRIPT_COLUNAS}</script>` + (lead || ct ? `<script>(function(){function fim(){var c=document.getElementById('cc-at-msgs');if(c){c.scrollTop=c.scrollHeight;}}fim();window.addEventListener('load',fim);})();</script><script>${SCRIPT_AMPLIAR}</script>` : '')
     + ((lead && p.envio) || ct?.envio ? `<script>${SCRIPT_RESPONDER}</script>` : '');
 
   const titulo = lead ? `Conversa: ${lead.name ?? 'Sem nome'}` : ct ? `Conversa: ${ct.nome || formatPhoneBR(ct.telefone)}` : 'Conversas';
@@ -1024,15 +1123,17 @@ function marcar(d,ok,motivo){if(!d)return;var h=d.querySelector('.cc-at-msg-h');
 var f=document.createElement('div');f.className='cc-at-msg-falha';f.textContent='⚠ não saiu — '+(motivo||'tente de novo.');d.insertBefore(f,h);h.textContent='';}
 function novaChave(k){if(!k)return;var f=document.getElementById('responder');if(f)f.querySelectorAll('input[name=chave]').forEach(function(i){i.value=k;});}
 function trocarRodape(html,estado){var f=document.getElementById('responder');if(!f||typeof html!=='string')return;var novo=pedaco(html).querySelector('#responder');if(!novo)return;
+var ia=document.getElementById('cc-at-arquivo');if(grav||(ia&&ia.files&&ia.files.length))estado=null;
 if(estado&&chat.getAttribute('data-estado')!==estado){var ta=document.getElementById('cc-at-texto'),txt=ta?ta.value:'',foco=document.activeElement===ta;f.parentNode.replaceChild(novo,f);chat.setAttribute('data-estado',estado);var nt=document.getElementById('cc-at-texto');if(nt&&txt){nt.value=txt;}if(nt&&foco)nt.focus();atualizarPrevia();return;}
 var jv=f.querySelector('.cc-at-janela'),jn=novo.querySelector('.cc-at-janela');if(jv&&jn)jv.parentNode.replaceChild(jn,jv);}
 function buscar(depoisDeEnviar){if(!URLC||buscando||!window.fetch)return;buscando=true;var g=geracao;
-var u=URLC+(URLC.indexOf('?')>=0?'&':'?')+'assinatura='+encodeURIComponent(assin||'');
+var u=URLC+(URLC.indexOf('?')>=0?'&':'?')+'assinatura='+encodeURIComponent(assin||'')+(document.hasFocus&&document.hasFocus()?'&foco=1':'');
 return fetch(u,{credentials:'same-origin',headers:{'Accept':'application/json'}}).then(function(r){return r.ok?r.json():null;}).then(function(j){
 if(!j||g!==geracao)return;if(j.irPara){location.href=j.irPara;return;}if(j.igual){parados++;return;}parados=0;assin=j.assinatura||null;
 var c=document.getElementById('cc-at-msgs');if(c&&typeof j.msgs==='string'){var fim=depoisDeEnviar||noFim(c);c.innerHTML=j.msgs;if(fim)rolar();}
 if(typeof j.topo==='string'){var t=document.getElementById('cc-at-topo'),n=pedaco(j.topo).querySelector('#cc-at-topo');if(t&&n)t.parentNode.replaceChild(n,t);}
 trocarRodape(j.compor,j.estado);
+if(typeof j.msgs==='string'&&j.msgs.indexOf('cc-at-digitando')>=0){setTimeout(function(){if(!document.hidden)buscar(false);},3000);}
 }).catch(function(){}).then(function(){buscando=false;});}
 document.addEventListener('submit',function(e){var f=e.target&&e.target.closest?e.target.closest('form[data-envio]'):null;if(!f)return;
 var b=f.querySelector('button[type=submit]');
@@ -1045,7 +1146,7 @@ var corpo=new URLSearchParams(new FormData(f)).toString();
 var d=balao(texto);aviso('');if(ta){ta.value='';ta.focus();}
 return fetch(f.getAttribute('action'),{method:'POST',credentials:'same-origin',headers:{'Accept':'application/json','Content-Type':'application/x-www-form-urlencoded'},body:corpo})
 .then(function(r){return r.json().catch(function(){return {ok:false,texto:'resposta inesperada do servidor. Recarregue a página.'};});})
-.then(function(j){novaChave(j.chave);var jaFoi=j.resultado==='duplicado';marcar(d,!!j.ok||jaFoi,j.texto);if(jaFoi){aviso(j.avisoHtml||'');}
+.then(function(j){novaChave(j.chave);var jaFoi=j.resultado==='duplicado';marcar(d,!!j.ok||jaFoi,j.texto);if(j.ok||jaFoi)tirarCitacao();if(jaFoi){aviso(j.avisoHtml||'');}
 else if(!j.ok){aviso(j.avisoHtml||'');if(ta&&!ta.value)ta.value=texto;}
 if(j.ok||jaFoi||j.resultado==='falhou'){assin=null;buscando=false;geracao++;buscar(true);}})
 .catch(function(){marcar(d,false,'sem conexão com o painel. Confira a internet e tente de novo.');if(ta&&!ta.value)ta.value=texto;})
@@ -1057,7 +1158,99 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
 var t=document.getElementById('cc-at-texto');if(t){t.value=b.getAttribute('data-texto')||'';t.focus();try{t.setSelectionRange(t.value.length,t.value.length);}catch(x){}return;}
 var m=b.getAttribute('data-modelo'),sel=document.getElementById('cc-at-modelo-sel');if(sel&&m){sel.value=m;atualizarPrevia();var d=sel.closest('details');if(d)d.open=true;sel.focus();}});
 document.addEventListener('keydown',function(e){var t=e.target;if(!t||t.id!=='cc-at-texto')return;if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();var f=t.form;if(f){if(f.requestSubmit)f.requestSubmit();else f.submit();}}});
+var grav=null,urlPrev=null;
+if(chat){chat.classList.add('cc-at-js');if(window.MediaRecorder&&navigator.mediaDevices&&navigator.mediaDevices.getUserMedia)chat.classList.add('cc-at-pode-gravar');}
+function formArq(){return document.querySelector('form[data-envio-midia]');}
+function inArq(){return document.getElementById('cc-at-arquivo');}
+function tamanho(b){return b<1024?b+' B':b<1048576?Math.round(b/1024)+' KB':(b/1048576).toFixed(1).replace('.',',')+' MB';}
+function limparPrev(){var p=document.getElementById('cc-at-anexo-prev');if(p){p.innerHTML='';p.hidden=true;}if(urlPrev){try{URL.revokeObjectURL(urlPrev);}catch(x){}urlPrev=null;}var f=formArq();if(f)f.classList.remove('cc-at-tem');}
+function mostrarPrev(file){var f=formArq(),p=document.getElementById('cc-at-anexo-prev');if(!f||!p)return;limparPrev();
+var ehFoto=/^image\\//.test(file.type),lim=Number(f.getAttribute(ehFoto?'data-max-foto':'data-max'))||0;
+var erro=lim&&file.size>lim?'Arquivo grande demais ('+tamanho(file.size)+'). '+(ehFoto?'Foto até 5 MB.':'Até 16 MB.'):'';
+var el;if(window.URL&&URL.createObjectURL&&/^(image|audio|video)\\//.test(file.type)){urlPrev=URL.createObjectURL(file);}
+if(ehFoto&&urlPrev){el=document.createElement('img');el.src=urlPrev;el.alt='Prévia da foto';}
+else if(/^audio\\//.test(file.type)&&urlPrev){el=document.createElement('audio');el.controls=true;el.src=urlPrev;}
+else if(/^video\\//.test(file.type)&&urlPrev){el=document.createElement('video');el.controls=true;el.muted=true;el.src=urlPrev;}
+else{el=document.createElement('span');el.className='cc-at-anexo-ic';el.textContent='📄';}
+var info=document.createElement('div');info.className='cc-at-anexo-info';var n=document.createElement('strong');n.textContent=file.name||'arquivo';var t=document.createElement('small');t.textContent=tamanho(file.size)+' · confira antes de enviar';info.appendChild(n);info.appendChild(t);
+if(erro){var e2=document.createElement('div');e2.className='cc-at-msg-falha';e2.textContent='⚠ '+erro;info.appendChild(e2);}
+var x=document.createElement('button');x.type='button';x.className='cc-ibtn cc-at-anexo-x';x.setAttribute('aria-label','Tirar o arquivo');x.textContent='×';x.addEventListener('click',function(){var i=inArq();if(i)i.value='';limparPrev();});
+p.appendChild(el);p.appendChild(info);p.appendChild(x);p.hidden=false;f.classList.add('cc-at-tem');
+if(/^audio\\//.test(file.type))f.classList.add('cc-at-sem-legenda');else f.classList.remove('cc-at-sem-legenda');
+var b=f.querySelector('button[type=submit]');if(b)b.disabled=!!erro;var lg=document.getElementById('cc-at-legenda');if(lg&&!erro)lg.focus();}
+function porArquivo(file){var i=inArq();if(!i||!file)return;try{var dt=new DataTransfer();dt.items.add(file);i.files=dt.files;}catch(x){aviso('<div class="cc-aviso cc-aviso-atencao">Este navegador não deixa colar/arrastar arquivo. Use o botão 📎 Anexar.</div>');return;}mostrarPrev(file);}
+document.addEventListener('change',function(e){if(e.target&&e.target.id==='cc-at-arquivo'){var fl=e.target.files&&e.target.files[0];if(fl)mostrarPrev(fl);else limparPrev();}});
+function noChat(e){return !!(chat&&e.target&&e.target.closest&&e.target.closest('#conversa'));}
+['dragenter','dragover'].forEach(function(ev){document.addEventListener(ev,function(e){if(!noChat(e)||!inArq()||!e.dataTransfer)return;var ts=e.dataTransfer.types||[];if(Array.prototype.indexOf.call(ts,'Files')<0)return;e.preventDefault();chat.classList.add('cc-at-soltar');});});
+document.addEventListener('dragleave',function(e){if(chat&&(!e.relatedTarget||!chat.contains(e.relatedTarget)))chat.classList.remove('cc-at-soltar');});
+document.addEventListener('drop',function(e){if(!noChat(e))return;chat.classList.remove('cc-at-soltar');var fs=e.dataTransfer&&e.dataTransfer.files;if(!inArq()||!fs||!fs[0])return;e.preventDefault();porArquivo(fs[0]);});
+document.addEventListener('paste',function(e){var t=e.target;if(!inArq()||!t||(t.id!=='cc-at-texto'&&t.id!=='cc-at-legenda'))return;var cd=e.clipboardData,fs=cd&&cd.files;if(!fs||!fs[0])return;if(cd.getData&&cd.getData('text'))return;e.preventDefault();porArquivo(fs[0]);});
+document.addEventListener('click',function(e){var g=e.target&&e.target.closest?e.target.closest('#cc-at-gravar'):null;if(!g)return;if(grav){if(grav.parar)grav.parar();return;}
+grav={pendente:true};
+navigator.mediaDevices.getUserMedia({audio:true}).then(function(st){
+var tipos=['audio/ogg;codecs=opus','audio/webm;codecs=opus','audio/webm','audio/mp4'],tipo='';for(var k=0;k<tipos.length;k++){if(MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(tipos[k])){tipo=tipos[k];break;}}
+var mr=tipo?new MediaRecorder(st,{mimeType:tipo}):new MediaRecorder(st),partes=[],ini=Date.now(),tm=null;
+mr.ondataavailable=function(ev){if(ev.data&&ev.data.size)partes.push(ev.data);};
+mr.onstop=function(){if(tm)clearInterval(tm);st.getTracks().forEach(function(x){x.stop();});grav=null;var bt=document.getElementById('cc-at-gravar');if(bt){bt.textContent='🎤 Gravar áudio';bt.classList.remove('cc-at-gravando');}
+var mt=(mr.mimeType||tipo||'audio/webm').split(';')[0],ext=mt.indexOf('ogg')>=0?'ogg':mt.indexOf('mp4')>=0?'m4a':'webm';if(partes.length)porArquivo(new File(partes,'gravacao.'+ext,{type:mt}));};
+function rel(){var s=Math.floor((Date.now()-ini)/1000),bt=document.getElementById('cc-at-gravar');if(bt)bt.textContent='⏹ Parar ('+Math.floor(s/60)+':'+('0'+(s%60)).slice(-2)+')';if(s>=300&&mr.state!=='inactive')mr.stop();}
+grav={parar:function(){if(mr.state!=='inactive')mr.stop();}};mr.start(1000);g.classList.add('cc-at-gravando');rel();tm=setInterval(rel,500);
+}).catch(function(){grav=null;aviso('<div class="cc-aviso cc-aviso-erro">Não consegui usar o microfone. Libere o microfone no navegador ou anexe um arquivo de áudio.</div>');});});
+document.addEventListener('submit',function(e){var f=e.target&&e.target.closest?e.target.closest('form[data-envio-midia]'):null;if(!f)return;
+var i=inArq();if(!i||!i.files||!i.files[0]){e.preventDefault();if(i)i.click();return;}
+if(!podeFetch)return;e.preventDefault();if(enviando)return;
+var b=f.querySelector('button[type=submit]'),file=i.files[0],lg=document.getElementById('cc-at-legenda'),leg=lg?lg.value.trim():'';
+enviando=true;geracao++;parados=0;var rot=b?b.textContent:'';if(b){b.disabled=true;b.textContent='Enviando…';}
+var fd=new FormData(f),ic=/^image\\//.test(file.type)?'📷 ':/^audio\\//.test(file.type)?'🎤 ':/^video\\//.test(file.type)?'🎬 ':'📄 ';
+var d=balao(ic+(file.name||'arquivo')+(leg?'\\n'+leg:''));aviso('');
+return fetch(f.getAttribute('action'),{method:'POST',credentials:'same-origin',headers:{'Accept':'application/json'},body:fd})
+.then(function(r){return r.json().catch(function(){return {ok:false,texto:'resposta inesperada do servidor. Recarregue a página.'};});})
+.then(function(j){novaChave(j.chave);var jaFoi=j.resultado==='duplicado';marcar(d,!!j.ok||jaFoi,j.texto);
+if(j.ok||jaFoi){i.value='';if(lg)lg.value='';limparPrev();tirarCitacao();}else{aviso(j.avisoHtml||'');}
+if(j.ok||jaFoi||j.resultado==='falhou'){assin=null;buscando=false;geracao++;buscar(true);}})
+.catch(function(){marcar(d,false,'sem conexão com o painel. Confira a internet e tente de novo.');})
+.then(function(){enviando=false;if(b&&document.body.contains(b)){b.disabled=false;b.textContent=rot||'Enviar arquivo';}});});
+var URLR=chat?chat.getAttribute('data-reagir'):null,TELR=chat?chat.getAttribute('data-telefone'):null,menuAc=null,EMOJIS=['👍','❤️','😂','😮','😢','🙏'];
+function fecharMenu(){if(menuAc){menuAc.remove();menuAc=null;}}
+function textoDoBalao(b){var t=b.querySelector('.cc-at-msg-t'),m=b.querySelector('.cc-at-midia,.cc-at-doc-txt strong');var s=(t&&t.textContent)||(b.querySelector('.cc-at-foto')?'📷 Foto':b.querySelector('audio')?'🎤 Áudio':b.querySelector('video')?'🎬 Vídeo':(m&&m.textContent)||'mensagem');return s.trim().slice(0,160);}
+function citar(b){var id=b.getAttribute('data-msg');if(!id)return;var f=document.getElementById('responder');if(!f)return;f.querySelectorAll('input[name=citando]').forEach(function(i){i.value=id;});
+var cx=document.getElementById('cc-at-citando'),tx=document.getElementById('cc-at-citando-txt');if(cx&&tx){var q=b.querySelector('.cc-at-msg-q');var quem=q?(q.firstChild&&q.firstChild.textContent||'').trim():'';tx.textContent=(quem?quem+': ':'')+textoDoBalao(b);cx.hidden=false;}
+var ta=document.getElementById('cc-at-texto');if(ta)ta.focus();}
+function tirarCitacao(){var f=document.getElementById('responder');if(f)f.querySelectorAll('input[name=citando]').forEach(function(i){i.value='';});var cx=document.getElementById('cc-at-citando');if(cx)cx.hidden=true;}
+function reagir(b,emoji){if(!URLR||!window.fetch)return;var id=b.getAttribute('data-msg');if(!id)return;var p=new URLSearchParams();p.set('alvo',id);p.set('emoji',emoji);if(TELR)p.set('telefone',TELR);
+fetch(URLR,{method:'POST',credentials:'same-origin',headers:{'Accept':'application/json','Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
+.then(function(r){return r.json().catch(function(){return {ok:false};});}).then(function(j){if(j&&j.ok){assin=null;buscando=false;geracao++;buscar(true);}else{aviso((j&&j.avisoHtml)||'<div class="cc-aviso cc-aviso-erro">A reação não saiu. Tente de novo.</div>');}})
+.catch(function(){aviso('<div class="cc-aviso cc-aviso-erro">Sem conexão com o painel.</div>');});}
+function abrirMenu(b,ancora){fecharMenu();var m=document.createElement('div');m.className='cc-at-menu-msg';m.setAttribute('role','menu');
+var r=document.createElement('button');r.type='button';r.className='cc-at-menu-resp';r.setAttribute('role','menuitem');r.textContent='↩ Responder';r.addEventListener('click',function(){fecharMenu();citar(b);});m.appendChild(r);
+var linha=document.createElement('div');linha.className='cc-at-menu-emojis';EMOJIS.forEach(function(em){var e=document.createElement('button');e.type='button';e.setAttribute('role','menuitem');e.setAttribute('aria-label','Reagir '+em);e.textContent=em;e.addEventListener('click',function(){fecharMenu();reagir(b,em);});linha.appendChild(e);});
+m.appendChild(linha);
+if(b.querySelector('.cc-at-reacoes')){var t=document.createElement('button');t.type='button';t.className='cc-at-menu-tirar';t.textContent='Tirar minha reação';t.addEventListener('click',function(){fecharMenu();reagir(b,'');});m.appendChild(t);}
+document.body.appendChild(m);var rr=(ancora||b).getBoundingClientRect(),w=m.offsetWidth||240,h=m.offsetHeight||90;
+var x=Math.max(8,Math.min(window.innerWidth-w-8,rr.right-w)),y=rr.bottom+6;if(y+h>window.innerHeight-8)y=Math.max(8,rr.top-h-6);m.style.left=x+'px';m.style.top=y+'px';menuAc=m;var pb=m.querySelector('button');if(pb)pb.focus();}
+document.addEventListener('click',function(e){var t=e.target;if(!t||!t.closest)return;
+if(t.closest('[data-tirar-citacao]')){tirarCitacao();return;}
+var bt=t.closest('[data-acoes]');if(bt){e.preventDefault();var b=bt.closest('[data-msg]');if(b)abrirMenu(b,bt);return;}
+if(menuAc&&!t.closest('.cc-at-menu-msg'))fecharMenu();});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')fecharMenu();});
 if(URLC&&window.fetch){setInterval(function(){tiques++;if(document.hidden||enviando)return;if(parados>=4&&tiques%3!==0)return;buscar(false);},8000);document.addEventListener('visibilitychange',function(){if(!document.hidden)buscar(false);});}
+})();`;
+
+/**
+ * W1 — foto do chat: tocar amplia na própria tela (janelinha escura; Esc,
+ * toque fora ou ✕ fecha). Sem JavaScript o link abre a foto numa aba nova.
+ * A janelinha é criada pelo script (nada novo no HTML da página).
+ */
+export const SCRIPT_AMPLIAR = `(function(){
+var dlg=null;
+function fechar(){if(dlg){dlg.classList.remove('cc-on');var i=dlg.querySelector('img');if(i)i.removeAttribute('src');}}
+function abrir(src){if(!dlg){dlg=document.createElement('div');dlg.className='cc-at-luz';dlg.setAttribute('role','dialog');dlg.setAttribute('aria-modal','true');dlg.setAttribute('aria-label','Foto ampliada');
+var b=document.createElement('button');b.type='button';b.className='cc-ibtn cc-at-luz-x';b.setAttribute('aria-label','Fechar');b.textContent='×';
+var im=document.createElement('img');im.alt='Foto ampliada';dlg.appendChild(b);dlg.appendChild(im);document.body.appendChild(dlg);
+dlg.addEventListener('click',function(e){if(e.target!==im)fechar();});}
+dlg.querySelector('img').setAttribute('src',src);dlg.classList.add('cc-on');dlg.querySelector('button').focus();}
+document.addEventListener('click',function(e){var a=e.target&&e.target.closest?e.target.closest('[data-ampliar]'):null;if(!a)return;if(e.ctrlKey||e.metaKey||e.shiftKey)return;e.preventDefault();abrir(a.getAttribute('href'));});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')fechar();});
 })();`;
 
 /** CSS só do Atendimento — mora em ui/css-atendimento.ts (vai por arquivo, no <head>). */

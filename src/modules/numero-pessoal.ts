@@ -22,8 +22,9 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { IncomingMessage } from './evolution.js';
 import { normalizeBrazilianPhone } from './meta-leadgen.js';
 import { variantesTelefone } from './phone.js';
-import { gravarMensagem, type LinhaMensagemWhatsapp } from './mensagens-whatsapp.js';
+import { gravarMensagem, type LinhaMensagemWhatsapp, type NovaMensagem } from './mensagens-whatsapp.js';
 import { assumirAtendimento } from './assumir-atendimento.js';
+import { completarMidiaRecebida, TIPO_DA_ENTRADA } from './midia-whatsapp.js';
 
 export const CASA = '00000000-0000-0000-0000-000000000001';
 const TTL_MS = 60_000;
@@ -39,9 +40,14 @@ export interface NumeroPessoal {
   instancia: string;
   numero: string | null;
   ativo: boolean;
+  /** W3 (migration 143): abrir a conversa marca como lida no WhatsApp. Sem a 143 = ligado. */
+  marcar_lida_ao_abrir?: boolean | null;
 }
 
-const COLUNAS = 'id, company_id, dono_user_id, dono_nome, instancia, numero, ativo';
+const COLUNAS_139 = 'id, company_id, dono_user_id, dono_nome, instancia, numero, ativo';
+/** Com a coluna da 143; sem a migration, a leitura cai nas da 139 (ver `lerNumero`). */
+const COLUNAS = `${COLUNAS_139}, marcar_lida_ao_abrir`;
+const colunaFaltou = (e: { code?: string; message?: string } | null) => !!e && (e.code === '42703' || e.code === 'PGRST204' || /column .* does not exist|could not find/i.test(e.message ?? ''));
 
 /**
  * Instância → número pessoal (cache de 1 min). Devolve também o DESLIGADO
@@ -58,8 +64,10 @@ export function criarResolverNumeroPessoal(client: SupabaseClient) {
       const c = cache.get(chave);
       if (c && Date.now() - c.at < TTL_MS) return c.valor;
       try {
-        const { data, error } = await client.from('whatsapp_numeros_pessoais')
+        let { data, error } = await client.from('whatsapp_numeros_pessoais')
           .select(COLUNAS).ilike('instancia', semCuringa(chave)).maybeSingle();
+        if (colunaFaltou(error)) ({ data, error } = await client.from('whatsapp_numeros_pessoais')
+          .select(COLUNAS_139).ilike('instancia', semCuringa(chave)).maybeSingle());
         if (error) {
           if (error.code === '42P01' || /does not exist/i.test(error.message ?? '')) { cache.set(chave, { at: Date.now(), valor: null }); return null; }
           return 'erro';
@@ -79,8 +87,10 @@ export function criarResolverNumeroPessoal(client: SupabaseClient) {
 export async function numeroPessoalDoDono(client: SupabaseClient, companyId: string, userId: string): Promise<NumeroPessoal | null> {
   if (!companyId || !userId) return null;
   try {
-    const { data, error } = await client.from('whatsapp_numeros_pessoais')
+    let { data, error } = await client.from('whatsapp_numeros_pessoais')
       .select(COLUNAS).eq('company_id', companyId).eq('dono_user_id', userId).maybeSingle();
+    if (colunaFaltou(error)) ({ data, error } = await client.from('whatsapp_numeros_pessoais')
+      .select(COLUNAS_139).eq('company_id', companyId).eq('dono_user_id', userId).maybeSingle());
     if (error) return null;
     return (data as NumeroPessoal | null) ?? null;
   } catch {
@@ -113,10 +123,11 @@ const MARCADOR: Partial<Record<IncomingMessage['type'], string>> = {
 };
 
 /** O que fica escrito no histórico. Mídia vira marcador (+ legenda). PURA. */
-export function textoDaEntrada(msg: Pick<IncomingMessage, 'type' | 'content' | 'caption'>): string {
+export function textoDaEntrada(msg: Pick<IncomingMessage, 'type' | 'content' | 'caption'> & { nomeArquivo?: string }): string {
   if (msg.type === 'text') return (msg.content ?? '').trim();
   const marcador = MARCADOR[msg.type] ?? '';
-  const legenda = (msg.caption ?? '').trim();
+  // Documento sem legenda: o nome do arquivo (igual ao que o painel grava ao enviar).
+  const legenda = (msg.caption ?? '').trim() || (msg.type === 'document' ? (msg.nomeArquivo ?? '').trim() : '');
   return legenda ? `${marcador} ${legenda}` : marcador;
 }
 
@@ -128,6 +139,22 @@ export function horaDaMensagem(ts: Date | undefined, agora = Date.now()): string
 }
 
 export type ResultadoPessoal = 'gravada' | 'eco' | 'duplicada' | 'ignorada' | 'falhou';
+
+/** W1: só baixa mídia recente (ao reconectar, a Evolution reentrega dias de mensagens). */
+export const JANELA_BAIXAR_MIDIA_MS = 24 * 60 * 60 * 1000;
+
+export interface OpcoesPessoal {
+  /** Baixa a mídia desta mensagem pela instância do dono (Evolution). Ausente = só o marcador. */
+  baixarMidia?: (msg: IncomingMessage) => Promise<{ base64: string; mimetype: string } | null>;
+  /** Transcreve o áudio (fica embaixo do player). */
+  transcrever?: (base64: string, mime: string) => Promise<string | null>;
+  /**
+   * Webhook: a mensagem é gravada NA HORA (com o marcador) e o arquivo
+   * (download + bucket + transcrição) completa depois, sem segurar a Evolution.
+   * Ausente = completa antes de devolver (testes / importação).
+   */
+  emSegundoPlano?: (tarefa: Promise<unknown>) => void;
+}
 
 /**
  * Mensagem que chegou (ou saiu do celular) no número pessoal: GRAVA e pronto.
@@ -141,6 +168,7 @@ export async function receberNoNumeroPessoal(
   np: NumeroPessoal,
   msg: IncomingMessage,
   agora = Date.now(),
+  opcoes: OpcoesPessoal = {},
 ): Promise<ResultadoPessoal> {
   if (msg.deGrupo) return 'ignorada';
   const telefone = normalizeBrazilianPhone(msg.from ?? '');
@@ -173,7 +201,7 @@ export async function receberNoNumeroPessoal(
     }
 
     const lead = await leadDoTelefoneNaEmpresa(client, np.company_id, telefone).catch(() => null);
-    const r = await gravarMensagem(client, {
+    const linha: NovaMensagem & { criado_em?: string } = {
       company_id: np.company_id,
       lead_id: lead?.id ?? null,
       contato_telefone: telefone,
@@ -188,13 +216,35 @@ export async function receberNoNumeroPessoal(
       texto: texto.slice(0, 4096),
       origem: msg.fromMe ? 'celular' : 'webhook',
       wamid: msg.messageId || null,
+      // W2: resposta citando outra mensagem.
+      ...(msg.citandoId ? { citando_wamid: msg.citandoId, ...(msg.citandoTexto ? { citando_texto: msg.citandoTexto.slice(0, 300) } : {}) } : {}),
       status: msg.fromMe ? 'enviada' : 'recebida',
       visivel_so_para: np.dono_user_id,
       enviada_em: msg.fromMe ? new Date(msg.timestamp ?? agora).toISOString() : null,
       // Hora da MENSAGEM (não a da gravação): ao reconectar, o WhatsApp reentrega
       // mensagens antigas pelo tempo real — elas ficam na ordem certa.
       ...(horaDaMensagem(msg.timestamp, agora) ? { criado_em: horaDaMensagem(msg.timestamp, agora)! } : {}),
-    });
+    };
+    // W1: foto/áudio/vídeo/documento RECENTE → o arquivo vai para o bucket (só o dono vê).
+    const tipoMidia = TIPO_DA_ENTRADA[msg.type];
+    const recente = agora - new Date(msg.timestamp ?? agora).getTime() < JANELA_BAIXAR_MIDIA_MS;
+    let r: { ok: boolean; duplicada?: boolean };
+    if (tipoMidia && recente && opcoes.baixarMidia && msg.messageId) {
+      // 1) a mensagem entra já (marcador + legenda); 2) o arquivo completa a linha pelo wamid.
+      r = await gravarMensagem(client, linha);
+      if (r.ok && !r.duplicada) {
+        const tarefa = completarMidiaRecebida(client, {
+          companyId: np.company_id, wamid: msg.messageId, tipo: tipoMidia,
+          baixar: () => opcoes.baixarMidia!(msg), nomeArquivo: msg.nomeArquivo ?? null,
+          // LGPD: áudio de amigo/família (quem não é lead) não vai para a IA de transcrição.
+          transcrever: lead ? opcoes.transcrever : undefined,
+          tamanhoBytes: msg.tamanhoBytes ?? null,
+        });
+        if (opcoes.emSegundoPlano) opcoes.emSegundoPlano(tarefa); else await tarefa;
+      }
+    } else {
+      r = await gravarMensagem(client, linha);
+    }
     if (!r.ok) return 'falhou';
     if (r.duplicada) return 'duplicada';
     // Mensagens antigas deste contato (de antes de ele virar lead) passam pro lead.

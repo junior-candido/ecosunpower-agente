@@ -134,7 +134,9 @@ export async function criarInstancia(
 }
 
 /** Eventos que o número pessoal assina: mensagem nova + o HISTÓRICO que chega ao ler o QR. */
-export const EVENTOS_PESSOAL = ['MESSAGES_UPSERT', 'MESSAGES_SET'] as const;
+// W3: MESSAGES_UPDATE (✓✓ entregue/lida) e PRESENCE_UPDATE ("digitando…").
+// W4: LABELS_ASSOCIATION / LABELS_EDIT (etiqueta ↔ etapa do funil).
+export const EVENTOS_PESSOAL = ['MESSAGES_UPSERT', 'MESSAGES_SET', 'MESSAGES_UPDATE', 'PRESENCE_UPDATE', 'LABELS_ASSOCIATION', 'LABELS_EDIT'] as const;
 
 /** POST /webhook/set — token no CABEÇALHO (nunca na URL: log do proxy, tela da Evolution). */
 export async function apontarWebhook(deps: ConexaoEvolutionDeps, instancia: string, webhookUrl: string, webhookToken?: string): Promise<'ok' | 'falhou'> {

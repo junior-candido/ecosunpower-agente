@@ -29,6 +29,10 @@ describe('custoCentsBRL', () => {
     expect(cents).toBe(9720);
   });
 
+  it('sonnet 5: 1M input + 1M output = (2+10) USD × 5.40 × 100 = 6480 cents', () => {
+    expect(custoCentsBRL('claude-sonnet-5', { input_tokens: 1_000_000, output_tokens: 1_000_000 })).toBe(6480);
+  });
+
   it('haiku: 1M input + 1M output = (1+5) USD × 5.40 × 100 = 3240 cents', () => {
     const cents = custoCentsBRL('claude-haiku-4-5', {
       input_tokens: 1_000_000,
