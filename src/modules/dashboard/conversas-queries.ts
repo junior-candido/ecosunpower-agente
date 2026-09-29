@@ -293,16 +293,21 @@ export function resumosPessoais(rows: LinhaMensagemWhatsapp[], leads: LinhaLead[
 }
 
 async function lerLeadsDaLista(db: SupabaseClient, viewer: DashUser, companyId: string, ids: string[]): Promise<LinhaLead[]> {
-  const leads: LinhaLead[] = [];
-  for (let i = 0; i < ids.length; i += LOTE_IDS) {
+  // Lotes de 100 ids (URL curta), todos na MESMA rodada (antes: um depois do outro).
+  const lotes: string[][] = [];
+  for (let i = 0; i < ids.length; i += LOTE_IDS) lotes.push(ids.slice(i, i + LOTE_IDS));
+  const respostas = await Promise.all(lotes.map((lote) => {
     let q = db
       .from('leads')
       .select('id, name, phone, status, city, eva_active, opt_out, claimed_by')
       .eq('company_id', companyId)
       .is('archived_at', null)
-      .in('id', ids.slice(i, i + LOTE_IDS));
+      .in('id', lote);
     if (!viewer.isAdmin) q = q.or(`claimed_by.is.null,claimed_by.eq.${viewer.id}`);
-    const { data, error: e2 } = await q;
+    return q;
+  }));
+  const leads: LinhaLead[] = [];
+  for (const { data, error: e2 } of respostas) {
     if (e2) throw new Error(`Falha ao ler leads das conversas: ${e2.message}`);
     leads.push(...((data ?? []) as LinhaLead[]));
   }
@@ -314,22 +319,28 @@ export async function listarConversas(db: SupabaseClient, viewer: DashUser, filt
   const companyId = viewer?.companyId;
   if (!companyId) return vazio;
 
+  // Tudo o que NÃO depende de outra consulta vai ao banco na MESMA rodada
+  // (28/09: eram ~6 rodadas em fila — pessoal → dono → internos → conversas →
+  // lotes de leads, um por um — e a tela demorava).
   // Parte 2b: conversas do número PESSOAL de quem está vendo (só a casa; só o dono).
-  const pessoaisTodas = servico && companyId === CASA_ID ? await linhasPessoaisDaLista(servico, companyId, viewer.id) : [];
-  // Avisos da Eva, o próprio dono e a equipe não são conversa (nem as que já estavam gravadas).
-  const ocultos = pessoaisTodas.length > 0 && servico
-    ? await telefonesOcultosDoPessoal(servico, companyId, await numeroPessoalDoDono(servico, companyId, viewer.id))
-    : new Set<string>();
-  const pessoaisRows = pessoaisTodas.filter((r) => !ehTelefoneOculto(ocultos, r.contato_telefone));
-
-  const { data: convs, error } = await db
-    .from('conversations')
-    .select('lead_id, messages, last_message_at, created_at')
-    .eq('company_id', companyId)
-    .not('lead_id', 'is', null)
-    .order('last_message_at', { ascending: false })
-    .limit(LIMITE_CONVERSAS);
+  const comPessoal = !!servico && companyId === CASA_ID;
+  const [pessoaisTodas, ocultosDoDono, { data: convs, error }] = await Promise.all([
+    comPessoal ? linhasPessoaisDaLista(servico!, companyId, viewer.id) : Promise.resolve([] as LinhaMensagemWhatsapp[]),
+    // Avisos da Eva, o próprio dono e a equipe não são conversa (nem as que já estavam gravadas).
+    comPessoal
+      ? numeroPessoalDoDono(servico!, companyId, viewer.id).then((np) => telefonesOcultosDoPessoal(servico!, companyId, np))
+      : Promise.resolve(new Set<string>()),
+    db
+      .from('conversations')
+      .select('lead_id, messages, last_message_at, created_at')
+      .eq('company_id', companyId)
+      .not('lead_id', 'is', null)
+      .order('last_message_at', { ascending: false })
+      .limit(LIMITE_CONVERSAS),
+  ]);
   if (error) throw new Error(`Falha ao listar conversas: ${error.message}`);
+  const ocultos = pessoaisTodas.length > 0 ? ocultosDoDono : new Set<string>();
+  const pessoaisRows = pessoaisTodas.filter((r) => !ehTelefoneOculto(ocultos, r.contato_telefone));
   const linhas = (convs ?? []) as Array<Record<string, unknown>>;
   const ids = [...new Set([
     ...linhas.map((c) => String(c.lead_id ?? '')),
