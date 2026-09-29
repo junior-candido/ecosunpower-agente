@@ -141,6 +141,15 @@ describe('executarEnvioRelatorio', () => {
     expect(d.sendDocument).not.toHaveBeenCalled();
   });
 
+  it('EcoSun (casa): modelo escolhido na configuração (v2) chega no envio; sem escolha = v1', async () => {
+    const d2 = deps({ modeloRelatorio: 'relatorio_usina_v2' });
+    await executarEnvioRelatorio(d2, entrada({ canal: 'casa', empresa: ecosunCfg }));
+    expect((d2.sendTemplate.mock.calls[0] as any)[1]).toBe('relatorio_usina_v2');
+    const d1 = deps();
+    await executarEnvioRelatorio(d1, entrada({ canal: 'casa', empresa: ecosunCfg }));
+    expect((d1.sendTemplate.mock.calls[0] as any)[1]).toBe('relatorio_usina_v1');
+  });
+
   it('todos os canais falham → marcarEnvio com algumOk=false (enviado_em fica nulo) e sem link na tela', async () => {
     const d = deps({
       sendText: vi.fn(async () => { throw new Error('evolution fora'); }),

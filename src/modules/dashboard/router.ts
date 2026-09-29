@@ -5522,10 +5522,22 @@ export function createDashboardRouter(
     };
   }
 
+  /** Modelo Meta do relatório da usina: linha 'relatorio_usina_modelo' em app_flags
+   *  (vazia = relatorio_usina_v1). Troca SEM deploy — ver docs/whatsapp-templates/relatorio_usina_v2.md. */
+  async function modeloRelatorioDaCasa(): Promise<string> {
+    const T = await import('../gd/relatorio-envio-textos.js');
+    const { modeloRelatorioAtual } = await import('../gd/relatorio-envio.js');
+    return modeloRelatorioAtual(async () => {
+      const { data } = await supabase.from('app_flags').select('value').eq('key', T.CHAVE_MODELO_RELATORIO).maybeSingle();
+      return (data as { value?: string } | null)?.value ?? null;
+    });
+  }
+
   /** Tela de confirmação (mensal ou período): o que vai sair, pra quem, e a prévia do e-mail. */
   async function telaConfirmarEnvio(req: AuthedRequest, res: Response, c: CtxEnvioGd) {
     const T = await import('../gd/relatorio-envio-textos.js');
     const { montarEmailRelatorio } = await import('../gd/relatorio-envio.js');
+    const modelo = c.canal === 'casa' ? await modeloRelatorioDaCasa() : T.TEMPLATE_RELATORIO;
     const nome = T.primeiroNome(c.lead.nome);
     const linkExemplo = T.linkPublicoRelatorio(T.basePublica(), '…');
     const arquivo = c.periodo
@@ -5533,7 +5545,7 @@ export function createDashboardRouter(
       : T.nomeArquivoRelatorio(c.inst, c.referencia);
     const textoZap = c.canal === 'evolution'
       ? `${T.textoLivreRelatorio(nome, c.rotulo, linkExemplo)}\n\n📎 ${arquivo}`
-      : `${T.textoTemplateRelatorio(nome, c.rotulo)}\n\n[ botão: Ver meu relatório ]`;
+      : `${T.textoTemplateRelatorio(nome, c.rotulo, modelo)}\n\n[ botão: ${modelo === T.TEMPLATE_RELATORIO_V2 ? 'Ver relatório' : 'Ver meu relatório'} ]`;
     const previa = montarEmailRelatorio({ nome, mesExtenso: c.rotulo, link: linkExemplo, periodo: Boolean(c.periodo) }, c.cfg);
     res.type('html').send(renderConfirmarEnvioRelatorio({
       instalacao: c.inst, mes: c.referencia, mesExtenso: c.rotulo, clienteNome: c.lead.nome ?? c.clienteRelatorio,
@@ -5571,6 +5583,7 @@ export function createDashboardRouter(
       noCanal: (fn) => noCanalDaEmpresa(c.companyId, c.instancia, fn),
       sendText: options.sendText,
       sendTemplate: options.sendTemplate,
+      modeloRelatorio: c.canal === 'casa' ? await modeloRelatorioDaCasa() : undefined,
       sendDocument: options.sendDocumentEvolution,
       enviarEmail: sender ? (e) => sender.enviar(e) : undefined,
       registrarEmailEnviado: (d) => supabaseService.registrarEmailEnviado(d),

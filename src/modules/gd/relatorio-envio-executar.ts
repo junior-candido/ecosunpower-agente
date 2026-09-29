@@ -62,6 +62,8 @@ export interface DepsExecutarEnvio {
   sendText?: DepsZapRelatorio['sendText'];
   /** WABA da casa — só é repassado quando canal === 'casa'. */
   sendTemplate?: DepsZapRelatorio['sendTemplate'];
+  /** Modelo Meta da casa (relatorio_usina_v1 | v2), lido de app_flags pela rota. Sem valor = v1. */
+  modeloRelatorio?: string;
   /** Evolution do tenant — só é repassado quando canal === 'evolution'. */
   sendDocument?: DepsZapRelatorio['sendDocument'];
   /** undefined = e-mail não configurado neste ambiente (sem RESEND_API_KEY). */
@@ -151,6 +153,7 @@ export async function executarEnvioRelatorio(
             sendText,
             // Modelo (WABA) é só da EcoSun; tenant NUNCA passa pela WABA da casa.
             sendTemplate: e.canal === 'casa' ? d.sendTemplate : undefined,
+            modelo: d.modeloRelatorio,
             sendDocument: e.canal === 'evolution' ? d.sendDocument : undefined,
           })
         : { ok: false, reason: 'falha_envio', detalhe: SEM_ZAP_NO_AMBIENTE };

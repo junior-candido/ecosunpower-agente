@@ -431,7 +431,7 @@ export function renderConfirmarEnvioRelatorio(c: ConfirmarEnvioRelatorio, user?:
   const previaHref = `/dashboard/demonstrativos/${esc(c.instalacao)}/${c.periodo ? 'periodo.html' : 'relatorio.html'}${qs}`;
   const comoVai = c.canal === 'evolution'
     ? 'Vai pelo WhatsApp da sua empresa: a mensagem com o link e o PDF anexo.'
-    : 'Vai pelo modelo aprovado da Meta ("relatorio_usina_v1"), com o botão "Ver meu relatório". Se o modelo ainda não estiver aprovado, tento como mensagem comum (só chega se o cliente falou com a gente nas últimas 24 horas).';
+    : 'Vai pelo modelo aprovado da Meta (relatorio_usina_v1, ou o v2 se estiver escolhido na configuração), com o botão para abrir o relatório. Se o modelo ainda não estiver aprovado, tento como mensagem comum (só chega se o cliente falou com a gente nas últimas 24 horas).';
   const blocoZap = c.zap.para
     ? `<p class="cc-gd-para">Para: <b>${esc(telefoneBonito(c.zap.para))}</b></p>
 <p class="cc-gd-nota">${esc(comoVai)}</p>

@@ -7,6 +7,24 @@ import { randomBytes } from 'node:crypto';
 import { nomeTituloCase } from '../empresa-config.js';
 
 export const TEMPLATE_RELATORIO = 'relatorio_usina_v1';
+/** Versão de UTILIDADE (29/09/2026): a Meta classificou o v1 como Marketing.
+ *  Aviso de conta sobre a usina do próprio cliente, sem emoji nem tom de venda.
+ *  Ver docs/whatsapp-templates/relatorio_usina_v2.md. */
+export const TEMPLATE_RELATORIO_V2 = 'relatorio_usina_v2';
+/** Linha em app_flags que escolhe o modelo (muda SEM deploy). Vazia = v1. */
+export const CHAVE_MODELO_RELATORIO = 'relatorio_usina_modelo';
+
+const MODELOS_RELATORIO: ReadonlySet<string> = new Set([TEMPLATE_RELATORIO, TEMPLATE_RELATORIO_V2]);
+
+/** Banco (app_flags) manda; sem valor, a variável RELATORIO_USINA_MODELO; senão v1.
+ *  Nome desconhecido/errado cai no v1 (nunca manda um modelo que não existe). */
+export function escolherModeloRelatorio(doBanco: string | null | undefined, env: string | undefined): string {
+  for (const v of [doBanco, env]) {
+    const s = String(v ?? '').trim();
+    if (s) return MODELOS_RELATORIO.has(s) ? s : TEMPLATE_RELATORIO;
+  }
+  return TEMPLATE_RELATORIO;
+}
 
 /** 24 bytes aleatórios em base64url = 32 caracteres. Impossível de adivinhar. */
 const RE_TOKEN = /^[A-Za-z0-9_-]{32}$/;
@@ -37,13 +55,23 @@ export function primeiroNome(nome: string | null | undefined): string {
   return p ? nomeTituloCase(p) : 'cliente';
 }
 
+const FRASE_BOTAO_V2 = ' Para consultar, toque no botão abaixo.';
+
 /** O corpo do modelo aprovado na Meta, com {{1}} = nome e {{2}} = mês por extenso. */
-export function textoTemplateRelatorio(nome: string, mesExtenso: string): string {
+export function textoTemplateRelatorio(nome: string, mesExtenso: string, modelo: string = TEMPLATE_RELATORIO): string {
+  if (modelo === TEMPLATE_RELATORIO_V2) {
+    return `Olá, ${nome}. O relatório da sua usina solar referente a ${mesExtenso} está disponível. ` +
+      'Ele mostra a energia gerada, a energia compensada na sua conta de luz e o saldo de créditos.' + FRASE_BOTAO_V2;
+  }
   return `Olá, ${nome}! ☀️ O relatório de ${mesExtenso} da sua usina solar está pronto: quanto ela gerou, quanto você economizou e seus créditos.`;
 }
 
 /** Mensagem comum (sem modelo): mesmo texto + o link escrito. */
-export function textoLivreRelatorio(nome: string, mesExtenso: string, link: string): string {
+export function textoLivreRelatorio(nome: string, mesExtenso: string, link: string, modelo: string = TEMPLATE_RELATORIO): string {
+  if (modelo === TEMPLATE_RELATORIO_V2) {
+    // Mensagem comum não tem botão: sai a frase do botão, entra o link escrito.
+    return `${textoTemplateRelatorio(nome, mesExtenso, modelo).replace(FRASE_BOTAO_V2, '')}\n\nVer relatório: ${link}`;
+  }
   return `${textoTemplateRelatorio(nome, mesExtenso)}\n\nVer meu relatório: ${link}`;
 }
 
