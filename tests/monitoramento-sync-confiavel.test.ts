@@ -109,7 +109,9 @@ describe('syncAll — calendário de Brasília', () => {
     adapters.deye = { fetchGeneration };
     const e = estado([sis('s1', 'deye')], { s1: '2026-09-30' });
     await new MonitoringService(fakeSupabase(e)).syncAll();
-    expect(fetchGeneration.mock.calls[0][1]).toBe('2026-09-23');
+    // 1ª rodada do dia depois das 05:00 → refresh do mês (anterior + corrente),
+    // ainda no calendário de Brasília: começa em 01/08 e termina em 30/09.
+    expect(fetchGeneration.mock.calls[0][1]).toBe('2026-08-01');
     expect(fetchGeneration.mock.calls[0][2]).toBe('2026-09-30');
     expect(e.upserts.map((r) => r.data)).toEqual(['2026-09-29', '2026-09-30']);
   });

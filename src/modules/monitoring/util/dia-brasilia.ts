@@ -54,3 +54,19 @@ export function janelaSync(agora: Date, dias: number): { dataInicio: string; dat
 export function limitarAoHoje<T extends { data: string }>(geracoes: T[], hoje: string): T[] {
   return geracoes.filter((g) => g.data <= hoje);
 }
+
+/** Hora do dia (0–23) em Brasília. */
+export function horaBrasilia(agora: Date = new Date()): number {
+  return new Date(agora.getTime() - OFFSET_MS).getUTCHours();
+}
+
+/** YYYY-MM-01 do mês ANTERIOR ao corrente em Brasília (jan → dez do ano anterior). */
+export function inicioMesAnteriorBrasilia(agora: Date = new Date()): string {
+  const [a, m] = hojeBrasilia(agora).split('-').map(Number);
+  return new Date(Date.UTC(a, m - 2, 1)).toISOString().slice(0, 10);
+}
+
+/** Janela do refresh diário do mês: [1º dia do mês anterior, hoje] (Brasília). */
+export function janelaRefreshMes(agora: Date): { dataInicio: string; dataFim: string } {
+  return { dataInicio: inicioMesAnteriorBrasilia(agora), dataFim: hojeBrasilia(agora) };
+}

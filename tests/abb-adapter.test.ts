@@ -1,9 +1,9 @@
 // Testa o adapter ABB (Aurora Vision). Cobre auth (Basic + ApiKey → token),
-// hierarquia portfolioGroup → portfolios → plants, parse do dailyProduction
-// em formatos variados, mapeamento de status pro enum unificado.
+// hierarquia portfolioGroup → portfolios → plants, energia diária com a
+// unidade informada pela API, mapeamento de status pro enum unificado.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { abbAdapter, parseDailyProduction, mapearStatus } from '../src/modules/monitoring/adapters/abb.js';
+import { abbAdapter, parseEnergiaDiaria, mapearStatus } from '../src/modules/monitoring/adapters/abb.js';
 import { clearAllTokens } from '../src/modules/monitoring/util/token-cache.js';
 
 afterEach(() => {
@@ -26,62 +26,64 @@ function res(status: number, jsonBody: unknown) {
 const CREDS = { userId: 'inst@ecosun.com', password: 'pw123', apiKey: 'API_KEY_XYZ' };
 
 // ============================================================================
-// parseDailyProduction — normaliza variações da API
+// parseEnergiaDiaria — unidade vem da API (nunca adivinhada pelo tamanho)
 // ============================================================================
 
-describe('parseDailyProduction', () => {
-  it('aceita timestamp YYYY-MM-DD com valor em kWh pequeno', () => {
-    expect(parseDailyProduction([
-      { timestamp: '2026-05-27', value: 28.5 },
-      { timestamp: '2026-05-28', value: 12.3 },
-    ])).toEqual([
+describe('parseEnergiaDiaria', () => {
+  it('kWh informado (units "kilowatt-hours") → valor direto', () => {
+    expect(parseEnergiaDiaria([
+      { timestamp: '2026-05-27', value: 28.5, units: 'kilowatt-hours' },
+      { timestamp: '2026-05-28', value: 12.3, units: 'kWh' },
+    ])).toEqual({ geracoes: [
       { data: '2026-05-27', geracao_kwh: 28.5 },
       { data: '2026-05-28', geracao_kwh: 12.3 },
+    ], semUnidade: 0 });
+  });
+
+  it('Wh informado → divide por 1000 (mesmo valor pequeno)', () => {
+    expect(parseEnergiaDiaria([
+      { timestamp: '20260527', value: 8500, units: 'watt-hours' },
+      { timestamp: '20260528', value: 900, unit: 'Wh' },
+    ]).geracoes).toEqual([
+      { data: '2026-05-27', geracao_kwh: 8.5 },
+      { data: '2026-05-28', geracao_kwh: 0.9 },
     ]);
   });
 
-  it('aceita timestamp YYYYMMDD (formato compacto da API)', () => {
-    expect(parseDailyProduction([
-      { timestamp: '20260527', value: 28.5 },
-    ])).toEqual([
-      { data: '2026-05-27', geracao_kwh: 28.5 },
-    ]);
+  it('kWh grande NÃO vira Wh (antes, > 10.000 era tratado como Wh e dividia por 1000)', () => {
+    expect(parseEnergiaDiaria([{ timestamp: '2026-05-27', value: 12000, units: 'kilowatt-hours' }]).geracoes)
+      .toEqual([{ data: '2026-05-27', geracao_kwh: 12000 }]);
   });
 
-  it('aceita epoch (ms) e converte', () => {
-    // 2026-05-27 00:00:00 UTC = 1779897600000
-    expect(parseDailyProduction([
-      { timestamp: 1779897600000, value: 28.5 },
-    ])).toEqual([
-      { data: '2026-05-27', geracao_kwh: 28.5 },
-    ]);
+  it('unidade padrão do corpo vale pros itens sem unidade própria', () => {
+    expect(parseEnergiaDiaria([{ timestamp: '2026-05-27', value: 28500 }], 'Wh').geracoes)
+      .toEqual([{ data: '2026-05-27', geracao_kwh: 28.5 }]);
   });
 
-  it('converte Wh pra kWh quando valor é grande (heurística > 10000)', () => {
-    expect(parseDailyProduction([
-      { timestamp: '2026-05-27', value: 28500 },   // 28.5 kWh em Wh
-    ])).toEqual([
-      { data: '2026-05-27', geracao_kwh: 28.5 },
-    ]);
+  it('sem unidade nenhuma → NÃO grava (conta em semUnidade), nada de adivinhar', () => {
+    expect(parseEnergiaDiaria([
+      { timestamp: '2026-05-27', value: 28500 },
+      { timestamp: '2026-05-28', value: 12, units: 'furlongs' },
+    ])).toEqual({ geracoes: [], semUnidade: 2 });
   });
 
-  it('descarta itens com value não-numérico ou null', () => {
-    expect(parseDailyProduction([
-      { timestamp: '2026-05-27', value: 10 },
-      { timestamp: '2026-05-28', value: undefined },
-      { timestamp: '2026-05-29' },
-    ])).toEqual([
-      { data: '2026-05-27', geracao_kwh: 10 },
-    ]);
+  it('start em epoch (segundos) da meia-noite de Brasília → dia de Brasília', () => {
+    // 2026-05-27 00:00 BRT = 2026-05-27T03:00:00Z
+    expect(parseEnergiaDiaria([{ start: 1779850800, value: 5, units: 'kilowatt-hours' }]).geracoes)
+      .toEqual([{ data: '2026-05-27', geracao_kwh: 5 }]);
   });
 
-  it('descarta timestamp inválido (sem corromper os válidos)', () => {
-    expect(parseDailyProduction([
-      { timestamp: 'lixo', value: 10 },
-      { timestamp: '2026-05-28', value: 12 },
-    ])).toEqual([
-      { data: '2026-05-28', geracao_kwh: 12 },
-    ]);
+  it('startLabel "YYYYMMDD..." tem prioridade', () => {
+    expect(parseEnergiaDiaria([{ start: 1, startLabel: '20260527', value: 5, units: 'kilowatt-hours' }]).geracoes)
+      .toEqual([{ data: '2026-05-27', geracao_kwh: 5 }]);
+  });
+
+  it('descarta itens com value não-numérico e timestamp inválido', () => {
+    expect(parseEnergiaDiaria([
+      { timestamp: '2026-05-27', value: 10, units: 'kWh' },
+      { timestamp: '2026-05-28', value: undefined, units: 'kWh' },
+      { timestamp: 'lixo', value: 10, units: 'kWh' },
+    ])).toEqual({ geracoes: [{ data: '2026-05-27', geracao_kwh: 10 }], semUnidade: 0 });
   });
 });
 
@@ -222,24 +224,23 @@ describe('abbAdapter.fetchGeneration', () => {
     expect(r.reason).toMatch(/plantEntityID/i);
   });
 
-  it('agrega geração e status num único fluxo (auth + dailyProduction + status)', async () => {
+  it('agrega geração e status num único fluxo (auth + timeseries diária + status)', async () => {
     let stage = 0;
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       stage++;
       if (stage === 1) return res(200, { result: 'TOKEN' });
       if (stage === 2) {
-        expect(url).toContain('/v1/plant/1001/dailyProduction');
+        expect(url).toContain('/v1/stats/energy/timeseries/1001/GenerationEnergy/delta');
+        expect(url).toContain('sampleSize=Day');
         expect(url).toContain('startDate=20260501');
-        expect(url).toContain('endDate=20260531');
-        return res(200, { result: {
-          plantEntityID: 1001,
-          dailyProduction: [
-            { timestamp: '2026-05-27', value: 28.5 },
-            { timestamp: '2026-05-28', value: 12.3 },
-          ],
-        }});
+        expect(url).toContain('endDate=20260601'); // fim exclusivo = dia seguinte
+        expect(url).toContain('timeZone=America%2FSao_Paulo');
+        return res(200, { result: [
+          { start: 1779850800, startLabel: '20260527', value: 28.5, units: 'kilowatt-hours' },
+          { start: 1779937200, startLabel: '20260528', value: 12300, units: 'watt-hours' },
+          { start: 1780282800, startLabel: '20260601', value: 3, units: 'kilowatt-hours' }, // fora do pedido
+        ] });
       }
-      // status
       expect(url).toContain('/v1/plant/1001/status');
       return res(200, { result: { plantState: 'ACTIVE', plantStatus: 'NORM' } });
     }));
@@ -254,7 +255,41 @@ describe('abbAdapter.fetchGeneration', () => {
       { data: '2026-05-27', geracao_kwh: 28.5 },
       { data: '2026-05-28', geracao_kwh: 12.3 },
     ]);
+    expect(r.falhaParcial).toBeUndefined();
     expect(r.statusInversor).toBe('ok');
+  });
+
+  it('timeseries indisponível (404) → cai no dailyProduction, mas só aceita com unidade', async () => {
+    let stage = 0;
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      stage++;
+      if (stage === 1) return res(200, { result: 'TOKEN' });
+      if (stage === 2) return res(404, { error: 'not found' });
+      if (stage === 3) {
+        expect(url).toContain('/v1/plant/1001/dailyProduction');
+        return res(200, { result: { plantEntityID: 1001, units: 'watt-hours', dailyProduction: [{ timestamp: '2026-05-28', value: 10500 }] } });
+      }
+      return res(200, { result: { plantState: 'ACTIVE', plantStatus: 'NORM' } });
+    }));
+    const r = await abbAdapter.fetchGeneration({ ...CREDS, plantEntityID: '1001' }, '2026-05-28', '2026-05-28');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.geracoes).toEqual([{ data: '2026-05-28', geracao_kwh: 10.5 }]);
+  });
+
+  it('unidade desconhecida → não grava e avisa falhaParcial (nunca adivinha Wh/kWh)', async () => {
+    let stage = 0;
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      stage++;
+      if (stage === 1) return res(200, { result: 'TOKEN' });
+      if (stage === 2) return res(200, { result: [{ startLabel: '20260528', value: 28500 }] });
+      return res(200, { result: { plantState: 'ACTIVE', plantStatus: 'NORM' } });
+    }));
+    const r = await abbAdapter.fetchGeneration({ ...CREDS, plantEntityID: '1001' }, '2026-05-28', '2026-05-28');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.geracoes).toEqual([]);
+    expect(r.falhaParcial).toMatch(/unidade/i);
   });
 
   it('falha de status nao bloqueia geracao — statusInversor=desconhecido', async () => {
@@ -263,10 +298,7 @@ describe('abbAdapter.fetchGeneration', () => {
       stage++;
       if (stage === 1) return res(200, { result: 'TOKEN' });
       if (stage === 2) {
-        return res(200, { result: {
-          plantEntityID: 1001,
-          dailyProduction: [{ timestamp: '2026-05-28', value: 10 }],
-        }});
+        return res(200, { result: [{ startLabel: '20260528', value: 10, units: 'kilowatt-hours' }] });
       }
       // status falhou (500)
       return res(500, { error: 'oops' });
