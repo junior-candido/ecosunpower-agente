@@ -103,8 +103,11 @@ CREATE INDEX IF NOT EXISTS idx_assinaturas_pausada ON assinaturas(company_id) WH
 -- a cada lote de disparos automáticos: "quais empresas estão com a 2ª trava?"
 CREATE INDEX IF NOT EXISTS idx_assinaturas_disparos_pausados ON assinaturas(company_id) WHERE disparos_pausados_em IS NOT NULL;
 
--- Produto genérico pra cliente avulso (ex.: contrato mensal de O&M).
+-- Produtos novos: "Assistente virtual" (é o que a Conquista paga hoje —
+-- SÓ a assinatura deste produto pausa a assistente) e um genérico pra cliente
+-- avulso. "Monitoramento de Usinas" (090) continua separado, pro futuro.
 INSERT INTO assinatura_produtos (id, nome, valor_centavos_padrao) VALUES
+  ('assistente_virtual', 'Assistente virtual', 29700),
   ('outro', 'Outro serviço mensal', 10000)
 ON CONFLICT (id) DO NOTHING;
 

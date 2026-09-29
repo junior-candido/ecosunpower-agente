@@ -11,10 +11,10 @@ export const HOJE_COBRANCA = '2026-10-14';
 const TENANT = USER_TENANT.companyId;
 
 const assinatura = (o: Partial<AssinaturaRow>): AssinaturaRow => ({
-  id: '11111111-1111-4111-8111-000000000001', produtoId: 'monitoramento', produtoNome: 'Monitoramento de Usinas',
+  id: '11111111-1111-4111-8111-000000000001', produtoId: 'assistente_virtual', produtoNome: 'Assistente virtual',
   nome: 'Solar Aurora Teste', email: 'financeiro@aurora.exemplo.invalid', telefone: '5561988887777', zapConfirmado: false,
   valorCentavos: 29700, limite: 110, venceEm: '2026-10-10', status: 'ativa', companyId: TENANT,
-  descricao: 'Plataforma de monitoramento', documento: '11222333000181', diaVencimento: 10, inicioEm: '2026-10-01',
+  descricao: 'Assistente virtual', documento: '11222333000181', diaVencimento: 10, inicioEm: '2026-10-01',
   observacao: 'Paga às vezes pelo CPF, às vezes pelo CNPJ.', leadId: null, donaCompanyId: USER_CASA.companyId,
   pausaAutomatica: true, diasPausa: 3, pausaAdiadaAte: null, assistentePausadaEm: '2026-10-13T12:05:00Z', ...o,
 });
@@ -23,7 +23,7 @@ let n = 0;
 export const fatura = (o: Partial<FaturaRow>): FaturaRow => ({
   id: `22222222-2222-4222-8222-${String(++n).padStart(12, '0')}`, assinaturaId: '11111111-1111-4111-8111-000000000001',
   companyId: TENANT, donaCompanyId: USER_CASA.companyId, competencia: '2026-10-01', venceEm: '2026-10-10', valorCentavos: 29700,
-  descricao: 'Plataforma de monitoramento', status: 'aberta', cobrancaId: 'cob-1', linkUrl: 'https://checkout.exemplo.invalid/pagar/aurora-out',
+  descricao: 'Assistente virtual', status: 'aberta', cobrancaId: 'cob-1', linkUrl: 'https://checkout.exemplo.invalid/pagar/aurora-out',
   pagoEm: null, pagoCentavos: null, taxaCentavos: null, metodo: null, formaBaixa: null, baixadoPor: null, lancamentoId: null,
   avisoFaturaEm: '2026-10-07T12:05:00Z', avisoVesperaEm: '2026-10-09T12:05:00Z', avisoVenceuEm: '2026-10-11T12:05:00Z', avisoUltimoEm: '2026-10-12T12:05:00Z',
   reciboEm: null, canalUltimoAviso: 'email+junior', criadoEm: '2026-10-07T12:05:00Z', ...o,
@@ -51,6 +51,7 @@ export const HISTORICO_AURORA: FaturaRow[] = [
 
 const EMPRESAS = [{ id: TENANT, nome: 'Solar Aurora Teste' }];
 const PRODUTOS = [
+  { id: 'assistente_virtual', nome: 'Assistente virtual', valorCentavosPadrao: 29700 },
   { id: 'monitoramento', nome: 'Monitoramento de Usinas', valorCentavosPadrao: 29700 },
   { id: 'calculadora', nome: 'Calculadora Solar', valorCentavosPadrao: 5700 },
   { id: 'outro', nome: 'Outro serviço mensal', valorCentavosPadrao: 10000 },

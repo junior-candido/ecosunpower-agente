@@ -17,7 +17,7 @@ import {
   dataBr, reais, competenciaDe, somarMeses, DIAS_ANTES, DIAS_PAUSA_PADRAO, diasEntre, type Situacao,
 } from '../cobranca-recorrente/ciclo.js';
 import { MODELO_COBRANCA } from '../cobranca-recorrente/mensagens.js';
-import { dataDaPausa, dataDaTravaDisparos, diasTravaDisparosValidos } from '../cobranca-recorrente/pausa.js';
+import { dataDaPausa, dataDaTravaDisparos, diasTravaDisparosValidos, podePausar } from '../cobranca-recorrente/pausa.js';
 import { formatPhoneBR } from '../meta-leadgen.js';
 import {
   cabecalhoPagina, cartaoSecao, faixaKpis, tabela, pilulaStatus, botao, celulaDupla, menuAcoes,
@@ -147,7 +147,7 @@ function opcoesDia(atual: number | null | undefined): string {
 }
 
 function formNova(d: DadosAssinaturas): string {
-  const produtos = d.produtos.map((p) => `<option value="${escapeHtml(p.id)}"${p.id === 'monitoramento' ? ' selected' : ''}>${escapeHtml(p.nome)}</option>`).join('');
+  const produtos = d.produtos.map((p) => `<option value="${escapeHtml(p.id)}"${p.id === 'assistente_virtual' ? ' selected' : ''}>${escapeHtml(p.nome)}</option>`).join('');
   const empresas = d.empresas.map((e) => `<option value="${escapeHtml(e.id)}">${escapeHtml(e.nome)}</option>`).join('');
   const mesQueVem = somarMeses(competenciaDe(d.hoje), 1).slice(0, 7);
   return `<p class="cc-asr-nota">A 1ª fatura sai sozinha 3 dias antes do vencimento, já com o link de Pix/cartão. Quer mandar antes? Depois de criar, use <b>Gerar cobrança agora</b>.</p>
@@ -318,7 +318,9 @@ export function renderAssinaturaDetalhePage(d: DadosAssinatura, user: DashUser |
   }
   if (a.status === 'ativa') acoesTopo.push(formBotao(`${base}/status`, 'Pausar cobrança', { campos: { status: 'pausada' }, sm: false, confirmar: CONFIRMA_PAUSAR }));
   if (a.status === 'pausada' || a.status === 'cancelada') acoesTopo.push(formBotao(`${base}/status`, 'Reativar cobrança', { campos: { status: 'ativa' }, sm: false }));
-  const temAcesso = !!a.companyId || a.produtoId === 'calculadora';
+  // "Suspender acesso" só onde existe acesso pra suspender (monitoramento do tenant / calculadora).
+  // O assistente virtual NUNCA bloqueia o painel — ali a alavanca é pausar a assistente.
+  const temAcesso = (!!a.companyId && a.produtoId === 'monitoramento') || a.produtoId === 'calculadora';
   if (temAcesso && a.status === 'ativa') mais.push(formBotao(`${base}/status`, 'Suspender acesso', { campos: { status: 'travada' }, tom: 'critico', confirmar: CONFIRMA_SUSPENDER }));
   if (a.status === 'travada') mais.push(formBotao(`${base}/status`, 'Liberar acesso', { campos: { status: 'ativa' } }));
   if (a.status !== 'cancelada') mais.push(formBotao(`${base}/status`, 'Cancelar assinatura', { campos: { status: 'cancelada' }, tom: 'critico', confirmar: CONFIRMA_CANCELAR }));
@@ -393,7 +395,7 @@ export function renderAssinaturaDetalhePage(d: DadosAssinatura, user: DashUser |
   })}
 ${avisosDaTela(d, aviso)}
 ${cartaoSecao({ titulo: 'Faturas', dica: `${d.faturas.length} no histórico`, corpoHtml: faturasHtml })}
-${a.companyId ? cartaoSecao({ titulo: 'Assistente do cliente', dica: 'se não pagar, a assistente para — o painel continua', corpoHtml: blocoAssistente(a, d.faturas, d.hoje) }) : ''}
+${podePausar(a, a.donaCompanyId ?? '00000000-0000-0000-0000-000000000001') ? cartaoSecao({ titulo: 'Assistente do cliente', dica: 'se não pagar, a assistente para — o painel continua', corpoHtml: blocoAssistente(a, d.faturas, d.hoje) }) : ''}
 <div class="cc-asr-duas">
   ${cartaoSecao({ titulo: 'Dados da cobrança', corpoHtml: dados })}
   ${cartaoSecao({ titulo: 'Editar', dica: 'mudar o valor vale a partir da próxima fatura', corpoHtml: formEditar(a) })}

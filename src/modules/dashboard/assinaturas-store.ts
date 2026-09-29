@@ -274,6 +274,8 @@ export async function registrarPagamentoNaAssinatura(client: SupabaseClient, id:
 }
 
 // ---- Pausa da assistente do tenant por fatura em aberto (146) ----
+// Só a assinatura da ASSISTENTE VIRTUAL (PRODUTOS_COM_ASSISTENTE) pausa a assistente.
+import { PRODUTOS_COM_ASSISTENTE } from '../cobranca-recorrente/pausa.js';
 // O campo é da ASSINATURA; quem pergunta "está pausada?" a cada mensagem é o
 // consumer da fila (index.ts) via pausa.ts (cache de 60 s). A casa nunca.
 
@@ -283,6 +285,7 @@ export async function pausarAssistenteNoBanco(client: SupabaseClient, id: string
   const { data, error } = await client.from('assinaturas')
     .update({ assistente_pausada_em: agora, atualizado_em: agora })
     .eq('id', id).is('assistente_pausada_em', null).neq('company_id', casaId).not('company_id', 'is', null)
+    .in('produto_id', [...PRODUTOS_COM_ASSISTENTE])
     .select('id');
   if (error) throw new Error(`pausarAssistenteNoBanco: ${error.message}`);
   return (data?.length ?? 0) > 0;
@@ -305,6 +308,7 @@ export async function pausarDisparosNoBanco(client: SupabaseClient, id: string, 
     .update({ disparos_pausados_em: agora, atualizado_em: agora })
     .eq('id', id).is('disparos_pausados_em', null).not('assistente_pausada_em', 'is', null)
     .neq('company_id', casaId).not('company_id', 'is', null)
+    .in('produto_id', [...PRODUTOS_COM_ASSISTENTE])
     .select('id');
   if (error) throw new Error(`pausarDisparosNoBanco: ${error.message}`);
   return (data?.length ?? 0) > 0;

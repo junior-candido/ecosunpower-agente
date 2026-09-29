@@ -18,10 +18,20 @@
 import { diasEntre, DIAS_PAUSA_MIN, DIAS_PAUSA_MAX, DIAS_PAUSA_PADRAO, type StatusAssinatura, type StatusFatura } from './ciclo.js';
 
 export const DIAS_TRAVA_DISPAROS_PADRAO = 7;
+
+/**
+ * Produtos cuja mensalidade SEGURA a assistente virtual. Uma empresa pode ter
+ * várias assinaturas (assistente virtual agora, monitoramento depois): só a
+ * fatura da assinatura da ASSISTENTE VIRTUAL pausa a assistente — atraso de
+ * outro produto (ex.: monitoramento) nunca mexe nela.
+ */
+export const PRODUTOS_COM_ASSISTENTE: readonly string[] = ['assistente_virtual'];
 export const DIAS_TRAVA_DISPAROS_MAX = 60;
 
 export interface EstadoPausa {
   companyId: string | null;
+  /** Produto da assinatura — só os de PRODUTOS_COM_ASSISTENTE pausam a assistente. */
+  produtoId?: string;
   status: StatusAssinatura;
   pausaAutomatica: boolean;
   diasPausa: number;
@@ -34,8 +44,9 @@ export interface EstadoPausa {
 
 export type DecisaoPausa = 'pausar' | 'pausar_disparos' | 'reativar';
 
-/** Só tenant (empresa que não é a casa) tem assistente que pode pausar. */
-export function podePausar(a: { companyId: string | null }, casaId: string): boolean {
+/** Só tenant (empresa que não é a casa), e só a assinatura da Assistente virtual. */
+export function podePausar(a: { companyId: string | null; produtoId?: string }, casaId: string): boolean {
+  if (a.produtoId !== undefined && !PRODUTOS_COM_ASSISTENTE.includes(a.produtoId)) return false;
   return !!a.companyId && a.companyId !== casaId;
 }
 

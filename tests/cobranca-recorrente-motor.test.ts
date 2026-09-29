@@ -366,3 +366,26 @@ describe('destinatários — só o contato de cobrança (proprietária) e o Juni
     expect(Object.keys(d.deps).filter((k) => /enviar|avisar|send/i.test(k)).sort()).toEqual(['avisarJunior', 'enviarEmail', 'enviarModelo']);
   });
 });
+
+describe('empresa com MAIS de uma assinatura — só a da Assistente virtual pausa a assistente', () => {
+  const ASSIST = { ...JIMENA, produtoId: 'assistente_virtual', descricao: 'Assistente virtual' };
+  const MONIT = { ...JIMENA, id: 'a2', produtoId: 'monitoramento', descricao: 'Monitoramento de Usinas', valorCentavos: 50000, diaVencimento: 5 };
+  it('monitoramento atrasado NUNCA pausa a assistente (nem aviso de pausa); a da assistente sim', async () => {
+    const d = fakeDeps({ aprovado: true, assinaturas: [MONIT] });
+    for (const dia of ['2026-10-02', '2026-10-04', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-12', '2026-10-13']) await d.rodar(dia);
+    expect(d.assinaturas[0]).toMatchObject({ assistentePausadaEm: null, disparosPausadosEm: null });
+    expect(d.zap.map((z) => z.modelo)).not.toContain('aviso_pausa_assistente_v1');
+    const e = fakeDeps({ aprovado: true, assinaturas: [ASSIST] });
+    for (const dia of ['2026-10-07', '2026-10-09', '2026-10-11', '2026-10-12', '2026-10-13']) await e.rodar(dia);
+    expect(e.assinaturas[0]!.assistentePausadaEm).not.toBeNull();
+  });
+  it('as duas na mesma empresa: assistente em dia + monitoramento atrasado → assistente segue atendendo', async () => {
+    const d = fakeDeps({ aprovado: true, assinaturas: [ASSIST, MONIT] });
+    await d.rodar('2026-10-02'); await d.rodar('2026-10-07');
+    d.faturas.filter((f) => f.assinaturaId === 'a1').forEach((f) => { f.status = 'paga'; });
+    for (const dia of ['2026-10-09', '2026-10-11', '2026-10-12', '2026-10-13', '2026-10-20']) await d.rodar(dia);
+    expect(d.assinaturas.find((a) => a.id === 'a1')!.assistentePausadaEm).toBeNull();
+    expect(d.assinaturas.find((a) => a.id === 'a2')!.assistentePausadaEm).toBeNull();
+    expect(d.faturas.some((f) => f.assinaturaId === 'a2' && f.status === 'aberta')).toBe(true);
+  });
+});

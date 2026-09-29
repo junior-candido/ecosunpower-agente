@@ -28,6 +28,8 @@ import type { FaturaRow, NovaFatura, TipoAviso } from './faturas-repo.js';
 
 export interface AssinaturaMotor {
   id: string;
+  /** Produto (ex.: 'assistente_virtual', 'monitoramento') — só a assinatura da Assistente virtual pausa a assistente. */
+  produtoId?: string;
   nome: string;
   email: string | null;
   telefone: string | null;

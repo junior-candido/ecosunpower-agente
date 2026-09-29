@@ -32,6 +32,8 @@ Todos (faturas, lembretes, último aviso, 1ª e 2ª trava, reativação, recibo)
 
 ## "Se não pagar, a assistente para" — as duas travas
 
+- Uma empresa pode ter **mais de uma assinatura** (ex.: Assistente virtual agora, Monitoramento de Usinas depois). **Só a fatura da assinatura "Assistente virtual" pausa a assistente** — atraso de outro produto nunca mexe nela.
+
 - Só vale para **cliente do painel** (tenant, ex.: Conquista Solar / Clara). **A EcoSun e a Eva nunca pausam.** Cliente avulso não tem assistente.
 - **1ª trava (D+3)**: a assistente **para de responder os clientes dele**; as mensagens **continuam chegando e ficam no painel dele** (Leads › Conversas), pra ele atender na mão.
 - **2ª trava (D+7)**: param também os **disparos automáticos** pros clientes dele (cadência, follow-ups de proposta, reativação, lembretes de manutenção, pós-instalação, e-mails da jornada). Eles **ficam na fila** — não se perdem.
@@ -53,18 +55,18 @@ Todos (faturas, lembretes, último aviso, 1ª e 2ª trava, reativação, recibo)
 ## Quais modelos estão APROVADOS (e como marcar um novo — sem deploy)
 
 Situação em 28/09/2026:
-- ✅ **aprovados** (saem pelo WhatsApp): `cobranca_mensalidade_v1`, `aviso_pausa_assistente_v1`, `assistente_pausada_v1`
-- ⏳ **ainda não**: `recibo_mensalidade_v1` (submetido), `aviso_pausa_disparos_v1` e `disparos_pausados_v1` (não submetidos) → esses saem por **e-mail + texto pronto no seu WhatsApp** pra encaminhar.
+- ✅ **ativos na Meta** (saem pelo WhatsApp): `cobranca_mensalidade_v1`, `aviso_pausa_assistente_v1`, `assistente_pausada_v1`, `recibo_mensalidade_v1`
+- ⏳ **ainda não criados**: `aviso_pausa_disparos_v1` e `disparos_pausados_v1` (2ª trava) → saem por **e-mail + texto pronto no seu WhatsApp** pra encaminhar, até você cadastrar, a Meta aprovar e você pôr na lista (SQL abaixo).
 
 O robô só usa o WhatsApp pra modelo que está na **lista de aprovados**. A lista vem, nesta ordem:
 1. linha `cobranca_modelos_aprovados` na tabela `app_flags` (muda **sem deploy**; o robô relê a cada 5 min);
 2. variável de ambiente `COBRANCA_MODELOS_APROVADOS` no EasyPanel (precisa reiniciar);
-3. padrão do código = os 3 aprovados acima.
+3. padrão do código = os 4 ativos acima.
 
 **Quando a Meta aprovar outro modelo**, cole no SQL Editor do Supabase (a lista inteira, separada por vírgula):
 ```sql
 INSERT INTO app_flags (key, value) VALUES
-  ('cobranca_modelos_aprovados', 'cobranca_mensalidade_v1, aviso_pausa_assistente_v1, assistente_pausada_v1, recibo_mensalidade_v1')
+  ('cobranca_modelos_aprovados', 'cobranca_mensalidade_v1, aviso_pausa_assistente_v1, assistente_pausada_v1, aviso_pausa_disparos_v1, disparos_pausados_v1, recibo_mensalidade_v1')
 ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = now();
 ```
 (Pra tirar um da lista, rode de novo sem ele. Apagar a linha volta pro padrão.)
@@ -88,7 +90,7 @@ Você pode pagar por Pix ou cartão de crédito neste link seguro: {{5}}
 
 Se você já pagou, pode desconsiderar esta mensagem. Qualquer dúvida, é só responder por aqui.
 ```
-Exemplos: {{1}} `Jimena` · {{2}} `Monitoramento de Usinas — outubro/2026` · {{3}} `R$ 297,00` · {{4}} `10/10/2026` · {{5}} `https://checkout.infinitepay.io/ecosunpower/exemplo`
+Exemplos: {{1}} `Jimena` · {{2}} `Assistente virtual — outubro/2026` · {{3}} `R$ 297,00` · {{4}} `10/10/2026` · {{5}} `https://checkout.infinitepay.io/ecosunpower/exemplo`
 
 ### 2) `aviso_pausa_assistente_v1` (D+2 — último aviso antes da 1ª trava)
 ```
@@ -98,7 +100,7 @@ Pague por Pix ou cartão de crédito neste link seguro: {{5}}
 
 Seu painel continua funcionando normalmente. Se você já pagou, pode desconsiderar.
 ```
-Exemplos: {{1}} `Jimena` · {{2}} `Monitoramento de Usinas — outubro/2026` · {{3}} `R$ 297,00` · {{4}} `12/10/2026` · {{5}} `https://checkout.infinitepay.io/ecosunpower/exemplo`
+Exemplos: {{1}} `Jimena` · {{2}} `Assistente virtual — outubro/2026` · {{3}} `R$ 297,00` · {{4}} `12/10/2026` · {{5}} `https://checkout.infinitepay.io/ecosunpower/exemplo`
 
 ### 3) `assistente_pausada_v1` (D+3 — 1ª trava)
 ```
@@ -108,7 +110,7 @@ Pague por Pix ou cartão de crédito neste link seguro: {{4}}
 
 Assim que o pagamento for confirmado, ela volta a atender sozinha.
 ```
-Exemplos: {{1}} `Jimena` · {{2}} `Monitoramento de Usinas — outubro/2026` · {{3}} `R$ 297,00` · {{4}} `https://checkout.infinitepay.io/ecosunpower/exemplo`
+Exemplos: {{1}} `Jimena` · {{2}} `Assistente virtual — outubro/2026` · {{3}} `R$ 297,00` · {{4}} `https://checkout.infinitepay.io/ecosunpower/exemplo`
 
 ### 4) `aviso_pausa_disparos_v1` (D+6 — véspera da 2ª trava)
 ```
@@ -118,7 +120,7 @@ Pague por Pix ou cartão de crédito neste link seguro: {{5}}
 
 Seu painel continua funcionando normalmente. Se você já pagou, pode desconsiderar.
 ```
-Exemplos: {{1}} `Jimena` · {{2}} `Monitoramento de Usinas — outubro/2026` · {{3}} `R$ 297,00` · {{4}} `16/10/2026` · {{5}} `https://checkout.infinitepay.io/ecosunpower/exemplo`
+Exemplos: {{1}} `Jimena` · {{2}} `Assistente virtual — outubro/2026` · {{3}} `R$ 297,00` · {{4}} `16/10/2026` · {{5}} `https://checkout.infinitepay.io/ecosunpower/exemplo`
 
 ### 5) `disparos_pausados_v1` (D+7 — 2ª trava)
 ```
@@ -128,13 +130,13 @@ Pague por Pix ou cartão de crédito neste link seguro: {{4}}
 
 Assim que o pagamento for confirmado, tudo volta sozinho, aos poucos.
 ```
-Exemplos: {{1}} `Jimena` · {{2}} `Monitoramento de Usinas — outubro/2026` · {{3}} `R$ 297,00` · {{4}} `https://checkout.infinitepay.io/ecosunpower/exemplo`
+Exemplos: {{1}} `Jimena` · {{2}} `Assistente virtual — outubro/2026` · {{3}} `R$ 297,00` · {{4}} `https://checkout.infinitepay.io/ecosunpower/exemplo`
 
 ### 6) `recibo_mensalidade_v1` (pagou)
 ```
 Olá, {{1}}! Recebemos o seu pagamento de {{2}} referente a {{3}}, em {{4}}. Obrigado pela confiança! Guarde esta mensagem como comprovante.
 ```
-Exemplos: {{1}} `Jimena` · {{2}} `R$ 297,00` · {{3}} `Monitoramento de Usinas — outubro/2026` · {{4}} `09/10/2026`
+Exemplos: {{1}} `Jimena` · {{2}} `R$ 297,00` · {{3}} `Assistente virtual — outubro/2026` · {{4}} `09/10/2026`
 
 Cliente sem painel (avulso) ou com "nunca pausar": no D+2 recebe o modelo 1 (lembrete comum, sem falar de assistente) e não tem aviso de D+6.
 
@@ -146,7 +148,7 @@ Cliente sem painel (avulso) ou com "nunca pausar": no D+2 recebe o modelo 1 (lem
    - Nome de quem paga: **Jimena Pereira Fonseca** · CPF ou CNPJ: **04.520.636/0001-15**
    - WhatsApp de cobrança: **o dela, proprietária** — (77) 99961-0035 (confirmar o número; **não** o da assistente Clara)
    - E-mail de cobrança: o e-mail financeiro dela
-   - Produto: Monitoramento de Usinas · Descrição: *Plataforma de monitoramento*
+   - Produto: **Assistente virtual** · Descrição: *Assistente virtual* (é o que ela paga hoje; o monitoramento ainda não foi fechado e, quando for, vira **outra assinatura**, com outro valor)
    - Valor: **297,00** · Dia de vencimento: **o que vocês combinarem (sugestão: dia 10)**
    - Primeira mensalidade: **outubro/2026** (setembro foi pago junto com a implantação)
    - Observação: *Setembro pago junto da implantação (R$ 1.097 = ≈800 + 297). Paga às vezes pelo CPF, às vezes pelo CNPJ.*

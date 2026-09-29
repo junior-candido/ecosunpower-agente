@@ -283,11 +283,11 @@ describe('logs sem dado pessoal', () => {
 });
 
 describe('modelos APROVADOS — lista configurável (sem deploy)', () => {
-  it('padrão (nada configurado): os 3 aprovados em 28/09; recibo e os da 2ª trava NÃO', async () => {
+  it('padrão (nada configurado): os 4 ativos na Meta em 28/09; os 2 da 2ª trava NÃO (ainda não existem)', async () => {
     const { criarListaDeModelosAprovados } = await import('../src/modules/cobranca-recorrente/servico.js');
     const ok = criarListaDeModelosAprovados(async () => null, undefined);
-    for (const m of ['cobranca_mensalidade_v1', 'aviso_pausa_assistente_v1', 'assistente_pausada_v1']) expect(await ok(m), m).toBe(true);
-    for (const m of ['recibo_mensalidade_v1', 'aviso_pausa_disparos_v1', 'disparos_pausados_v1']) expect(await ok(m), m).toBe(false);
+    for (const m of ['cobranca_mensalidade_v1', 'aviso_pausa_assistente_v1', 'assistente_pausada_v1', 'recibo_mensalidade_v1']) expect(await ok(m), m).toBe(true);
+    for (const m of ['aviso_pausa_disparos_v1', 'disparos_pausados_v1']) expect(await ok(m), m).toBe(false);
   });
   it('app_flags manda (e é relida a cada 5 min); sem ela, a variável de ambiente', async () => {
     const { criarListaDeModelosAprovados } = await import('../src/modules/cobranca-recorrente/servico.js');

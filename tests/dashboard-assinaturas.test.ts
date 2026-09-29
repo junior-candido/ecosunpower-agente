@@ -110,8 +110,12 @@ describe('Assinaturas (casa) — detalhe com histórico de faturas', () => {
     expect(k.confirms).toEqual(expect.arrayContaining([
       expect.stringContaining('PAGA por Pix direto'),
       expect.stringContaining('Cancelar esta assinatura'),
-      expect.stringContaining('Suspender o acesso'),
     ]));
+    // Assistente virtual nunca bloqueia o painel (a alavanca é pausar a assistente);
+    // "Suspender acesso" só existe pra monitoramento do tenant / calculadora.
+    expect(h).not.toContain('Suspender acesso');
+    expect(contratoDaTela(telaAssinaturaDetalhe({ a: { produtoId: 'monitoramento', produtoNome: 'Monitoramento de Usinas' } })).confirms)
+      .toEqual(expect.arrayContaining([expect.stringContaining('Suspender o acesso')]));
     expect(k.idsAusentes).toEqual([]);
   });
 

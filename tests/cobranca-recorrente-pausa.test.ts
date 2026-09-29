@@ -190,3 +190,12 @@ describe('ponto ÚNICO dos disparos automáticos', () => {
     expect(ler('src/index.ts')).toContain('configurarTravaDisparos(');
   });
 });
+
+describe('podePausar — produto da assinatura', () => {
+  it('só a Assistente virtual (produto) pausa; monitoramento/outro nunca', () => {
+    expect(podePausar({ companyId: TENANT, produtoId: 'assistente_virtual' }, CASA)).toBe(true);
+    expect(podePausar({ companyId: TENANT, produtoId: 'monitoramento' }, CASA)).toBe(false);
+    expect(podePausar({ companyId: TENANT, produtoId: 'outro' }, CASA)).toBe(false);
+    expect(decidirPausa({ ...base, produtoId: 'monitoramento' }, [aberta('2026-10-10')], '2026-10-20', CASA)).toBeNull();
+  });
+});

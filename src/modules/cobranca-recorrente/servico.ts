@@ -35,7 +35,7 @@ const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export function paraMotor(a: AssinaturaRow, empresaNome: string | null = null): AssinaturaMotor {
   return {
-    id: a.id, nome: a.nome, email: a.email, telefone: a.telefone, valorCentavos: a.valorCentavos,
+    id: a.id, produtoId: a.produtoId, nome: a.nome, email: a.email, telefone: a.telefone, valorCentavos: a.valorCentavos,
     status: a.status, diaVencimento: a.diaVencimento ?? null, inicioEm: a.inicioEm ?? null,
     companyId: a.companyId, descricao: descricaoDaAssinatura(a), leadId: a.leadId ?? null,
     pausaAutomatica: a.pausaAutomatica ?? true, diasPausa: diasPausaValidos(a.diasPausa),
@@ -190,8 +190,14 @@ export function criarVerificadorDeModelo(listar: ListarModelos | null, agora: ()
 // Modelos APROVADOS — configuração (sem deploy)
 // ---------------------------------------------------------------------------
 
-/** Aprovados pela Meta em 28/09/2026 (informado pelo Junior). */
-export const MODELOS_APROVADOS_PADRAO: readonly string[] = ['cobranca_mensalidade_v1', 'aviso_pausa_assistente_v1', 'assistente_pausada_v1'];
+/**
+ * ATIVOS na Meta em 28/09/2026 (print do Junior). Os 2 da 2ª trava
+ * (aviso_pausa_disparos_v1, disparos_pausados_v1) ainda não foram criados →
+ * ficam fora (e-mail + texto pronto pro Junior) até entrarem na lista.
+ */
+export const MODELOS_APROVADOS_PADRAO: readonly string[] = [
+  'cobranca_mensalidade_v1', 'aviso_pausa_assistente_v1', 'assistente_pausada_v1', 'recibo_mensalidade_v1',
+];
 export const CHAVE_MODELOS_APROVADOS = 'cobranca_modelos_aprovados';
 
 /** "a, b ,c" → ['a','b','c'] (vazio/nulo → null = não configurado). */
