@@ -5,9 +5,8 @@
 // Como a piscada aparece no mundo real: o HTML chega em pedaços pela internet
 // e o Chrome pinta o que já chegou. Aqui o servidor manda a página em pedaços
 // de 16 KB com uma pausa entre eles (simula a rede), e o Chrome grava cada
-// quadro pintado (CDP screencast). Para cada quadro medimos se a tela já está
-// no layout FINAL (posição/tamanho dos blocos principais) — quadro "fora do
-// lugar" = piscada.
+// quadro pintado (CDP screencast, PNGs na pasta de saída) e mede o quanto a
+// tela PULOU até ficar pronta (Cumulative Layout Shift) — pulo alto = piscada.
 //
 // Uso:  npx tsx scripts/medir-leads-piscada.ts [pasta-de-saida]
 //   PEDACO_MS (padrão 40) · PEDACO_KB (padrão 16) · N (itens, padrão 200)
@@ -44,7 +43,7 @@ async function main(): Promise<void> {
   await new Promise((ok) => srv.once('listening', ok));
   const porta = (srv.address() as AddressInfo).port;
   const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
-  const linhas = ['tela;html_kb;quadros;quadros_fora_do_lugar;primeira_pintura_ms;layout_final_ms'];
+  const linhas = ['tela;html_kb;quadros_pintados;pulo_da_tela_cls'];
   try {
     for (const tela of TELAS) {
       const page = await browser.newPage();
@@ -58,20 +57,6 @@ async function main(): Promise<void> {
         quadros.push({ t: Date.now(), png: f.data });
         cdp.send('Page.screencastFrameAck', { sessionId: f.sessionId }).catch(() => {});
       });
-      // Assinatura do layout (caixas dos blocos principais) a cada quadro de animação.
-      await page.evaluateOnNewDocument(() => {
-        const w = window as any;
-        w.__lay = [];
-        const sel = ['.cc-sb', '.cc-main', '.cc-at-grade', '.cc-at-col', '.cc-tbl', '.cc-kb', '.cc-top', 'h1'];
-        const snap = () => {
-          const caixas = sel.map((s) => { const e = document.querySelector(s); if (!e) return '-'; const r = e.getBoundingClientRect(); return `${Math.round(r.x)},${Math.round(r.y)},${Math.round(r.width)},${Math.round(Math.min(r.height, 900))}`; });
-          const fonte = document.body ? getComputedStyle(document.body).fontFamily.split(',')[0] : '-';
-          const fundo = document.body ? getComputedStyle(document.body).backgroundColor : '-';
-          w.__lay.push({ t: performance.now(), k: caixas.join('|') + '|' + fonte + '|' + fundo });
-          if (performance.now() < 8000) requestAnimationFrame(snap);
-        };
-        requestAnimationFrame(snap);
-      });
       await cdp.send('Page.enable');
       await page.bringToFront();
       await cdp.send('Page.startScreencast', { format: 'png', everyNthFrame: 1 });
@@ -79,18 +64,18 @@ async function main(): Promise<void> {
       await page.goto(`http://127.0.0.1:${porta}/p/${tela}`, { waitUntil: 'load' });
       await new Promise((ok) => setTimeout(ok, 800));
       await cdp.send('Page.stopScreencast');
-      const lay: Array<{ t: number; k: string }> = await page.evaluate(() => (window as any).__lay ?? []);
-      if (process.env.DETALHE) console.log('quadros', quadros.length, 'lay', lay.length);
-      const final = lay[lay.length - 1]?.k;
-      const fora = lay.filter((l) => l.k !== final);
-      const primeira = lay[0]?.t ?? 0;
-      const ultimaFora = fora.length ? fora[fora.length - 1].t : primeira;
+      // Quanto a tela PULOU enquanto carregava (Cumulative Layout Shift do Chrome):
+      // 0 = nasceu no lugar; a grade montando depois do texto corrido dá número alto.
+      const cls: number = await page.evaluate(() => new Promise<number>((ok) => {
+        let soma = 0;
+        new PerformanceObserver((l) => { for (const e of l.getEntries() as any[]) soma += e.value; }).observe({ type: 'layout-shift', buffered: true });
+        setTimeout(() => ok(soma), 100);
+      }));
       const pasta = join(SAIDA, tela);
       mkdirSync(pasta, { recursive: true });
       quadros.forEach((q, i) => writeFileSync(join(pasta, `${String(i).padStart(3, '0')}-${q.t - t0}ms.png`), Buffer.from(q.png, 'base64')));
-      linhas.push([tela, (Buffer.byteLength(todas[tela]) / 1024).toFixed(0), lay.length, fora.length, primeira.toFixed(0), ultimaFora.toFixed(0)].join(';'));
+      linhas.push([tela, (Buffer.byteLength(todas[tela]) / 1024).toFixed(0), quadros.length, cls.toFixed(3)].join(';'));
       console.log(linhas[linhas.length - 1]);
-      if (process.env.DETALHE) for (const l of lay) console.log('  ', l.t.toFixed(0), l.k === final ? 'FINAL' : l.k);
       await page.close();
     }
   } finally {

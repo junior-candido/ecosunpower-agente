@@ -221,7 +221,8 @@ describe('Lista de Leads, Quadro e insights — só a empresa da sessão', () =>
   it('insights da Eva: company_id da sessão em leads e cadência', async () => {
     const { client, estado } = clienteFalso(() => ({ data: [{ id: 'x' }], count: 0 }));
     await buildLeadsInsights(client, USER_TENANT.companyId);
-    for (const c of estado.consultas.filter((x) => x.tabela === 'leads' || x.tabela === 'eva_cadence')) {
+    // Cadência: a contagem geral leva a empresa; a busca por ids de leads silentes já vem presa à empresa.
+    for (const c of estado.consultas.filter((x) => x.tabela === 'leads' || (x.tabela === 'eva_cadence' && !x.chamadas.some(([m]) => m === 'in')))) {
       expect(chamou(c, 'or', DO_TENANT), `${c.tabela} ${selectDe(c)}`).toBe(true);
     }
   });

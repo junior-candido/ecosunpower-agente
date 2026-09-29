@@ -176,11 +176,13 @@ export async function buildLeadsInsights(supabase: SupabaseClient, companyId?: s
         .limit(500);
       if (!silentes || silentes.length === 0) return 0;
       const silenteIds = silentes.map((l: any) => l.id);
-      const { data: pendingCads } = await daEmpresa(supabase
+      // Os ids já são SÓ da empresa (consulta acima) — sem filtro extra aqui:
+      // cadência antiga de tenant pode ter nascido com o company_id padrão (casa).
+      const { data: pendingCads } = await supabase
         .from('eva_cadence')
         .select('lead_id')
         .in('lead_id', silenteIds)
-        .eq('status', 'pending'));
+        .eq('status', 'pending');
       const comCadenciaSet = new Set((pendingCads ?? []).map((c: any) => c.lead_id));
       return silenteIds.filter((id: string) => !comCadenciaSet.has(id)).length;
     })(),
