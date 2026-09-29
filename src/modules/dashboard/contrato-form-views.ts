@@ -295,7 +295,7 @@ function revisaoIa(page: ContratoFormInput): string {
     return cartaoSecao({
       titulo: 'Não consegui revisar',
       acoesHtml: pilulaStatus('atencao', 'IA não respondeu'),
-      corpoHtml: `<p class="cc-cm-nota" style="margin:0">A IA não respondeu agora (pode ser crédito da Anthropic, ou ela demorou demais). <strong>Ninguém conferiu este contrato.</strong> Tenta de novo daqui a pouco, ou confere na mão antes de mandar.</p>`,
+      corpoHtml: `<p class="cc-cm-nota" style="margin:0">A IA não respondeu agora (pode ser crédito da IA, ou ela demorou demais). <strong>Ninguém conferiu este contrato.</strong> Tenta de novo daqui a pouco, ou confere na mão antes de mandar.</p>`,
     });
   }
 

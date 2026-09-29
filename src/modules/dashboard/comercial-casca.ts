@@ -61,6 +61,7 @@ const CSS_COMERCIAL = `
 .cc-cm-melhor{border-color:rgba(61,187,110,.55);box-shadow:0 0 0 1px rgba(61,187,110,.25) inset}
 .cc-cm-placar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:16px}
 .cc-cm-placar .cc-kpi{min-width:120px;flex:0 1 150px}
+.cc-cm input:disabled,.cc-cm select:disabled,.cc-cm textarea:disabled{opacity:.6;cursor:not-allowed}
 .cc-cm-num{font-family:'Space Grotesk',system-ui,sans-serif}
 .cc-cm-check{display:inline-flex;align-items:center;gap:8px;min-height:44px;font-size:13.5px;color:var(--cc-text-2)}
 .cc-cm-textarea{width:100%}
@@ -103,6 +104,7 @@ const CSS_COMERCIAL = `
   .cc-cm-acoes form .cc-btn{flex:1 1 auto;justify-content:center}
   .cc-cm-acoes input[type=file]{flex:1 1 100%}
   .cc-cf-prev{height:420px}
+  .cc-cm-kv strong{white-space:normal}
   .cc-cf-salvar .cc-btn{width:100%;justify-content:center}
 }
 `;
