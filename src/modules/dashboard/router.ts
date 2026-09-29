@@ -1868,6 +1868,12 @@ b.onclick=async function(){
     res.type('html').send(renderEmpresasPage(empresas, req.dashUser, aviso));
   });
 
+  // ----- CUSTO DE IA por empresa (28/09/2026): SÓ admin da casa (portão na rota).
+  router.get('/custo-ia', async (req: AuthedRequest, res) => {
+    const { criarRotaCustoIa } = await import('./custo-ia-rota.js');
+    await criarRotaCustoIa(supabase)(req, res);
+  });
+
   router.post('/empresas/nova', async (req: AuthedRequest, res) => {
     if (!ehAdminEcosun(req.dashUser)) { res.status(403).send('Sem permissão'); return; }
     const { nome, admin_nome, admin_login, admin_senha, admin_email } = req.body ?? {};

@@ -77,6 +77,12 @@ function precoDoModelo(modelo: string): PrecoModelo {
  * onde pCacheRead = 0.10 × pIn e pCacheWrite = 1.25 × pIn.
  */
 export function custoCentsBRL(modelo: string, usage: IaUsage): number {
+  return Math.round(custoCentavosExato(modelo, usage));
+}
+
+/** Mesma conta, SEM arredondar (centavos com fração). A coluna custo_cents é
+ *  inteira: chamada pequena (corretor, resumo) gravava 0 — a tela soma por aqui. */
+export function custoCentavosExato(modelo: string, usage: IaUsage): number {
   const preco = precoDoModelo(modelo);
   const precoCacheRead = preco.input * MULT_CACHE_READ;
   const precoCacheWrite = preco.input * MULT_CACHE_WRITE;
@@ -97,7 +103,7 @@ export function custoCentsBRL(modelo: string, usage: IaUsage): number {
       write1h * preco.input * MULT_CACHE_WRITE_1H) /
     1_000_000;
 
-  return Math.round(usd * USD_BRL * 100);
+  return usd * USD_BRL * 100;
 }
 
 // ---------------------------------------------------------------------------
