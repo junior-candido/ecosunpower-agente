@@ -4631,8 +4631,11 @@ b.onclick=async function(){
   //    devolve { mensagem, waBase }. Não grava nada.
   //  - CONFIRMAR (`enviado=1` + `mensagem`): grava na timeline + (tipos mapeados)
   //    abre abordagem encerrada pra Eva não re-mandar. Devolve { ok:true }.
-  router.post('/pos-venda/:leadId/acao', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+  // R22 (segurança): a fase CONFIRMAR grava atividade/abordagem — pede editar
+  // (antes bastava visualizar) e o id tem que ser UUID (senão virava 500).
+  router.post('/pos-venda/:leadId/acao', exigir('usinas', 'editar'), async (req: AuthedRequest, res: Response) => {
     const leadId = String(req.params.leadId);
+    if (!UUID_RE.test(leadId)) { res.status(400).json({ error: 'id inválido' }); return; }
     const tipo = String(req.body.tipo ?? '') as 'parabens' | 'relatorio' | 'limpeza' | 'depoimento' | 'upgrade' | 'contato';
     const enviado = req.body.enviado === '1' || req.body.enviado === 'true';
     const TIPOS_OK = ['parabens', 'relatorio', 'limpeza', 'depoimento', 'upgrade', 'contato'];

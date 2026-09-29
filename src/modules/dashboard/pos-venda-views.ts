@@ -125,7 +125,7 @@ function renderLinha(l: PosVendaLinha, assist: string): string {
         <button type="button" class="pv-nota-salvar cc-btn cc-btn-sm">Salvar nota</button>
         <span class="pv-nota-status cc-pv-st"></span>
       </div>
-      <div class="cc-pv-caixa-t" style="margin-top:10px">Histórico</div>
+      <div class="cc-pv-caixa-t cc-pv-hist-t">Histórico</div>
       <div class="pv-historico cc-pv-hist">Carregando…</div>
     </div>
   </article>`;
@@ -194,6 +194,7 @@ const CSS_POS_VENDA = `
 .cc-pv-st{font-size:12.5px;color:var(--cc-muted)}
 .cc-pv-ok{color:var(--cc-ok)}
 .cc-pv-erro{color:var(--cc-crit)}
+.cc-pv-hist-t{margin-top:10px}
 .cc-pv-hist{font-size:12.5px;color:var(--cc-text-2)}
 .cc-pv-hist-l{padding:4px 0;border-bottom:1px solid var(--cc-line)}
 .cc-pv-grupo{margin-bottom:12px}
@@ -203,12 +204,16 @@ const CSS_POS_VENDA = `
 .cc-pv-tarefa-txt a{color:var(--cc-text);font-weight:600}
 .cc-pv-tarefa-txt small{display:block;color:var(--cc-muted);font-size:12px;overflow-wrap:anywhere}
 @media (max-width:1100px){.cc-pv-grade{grid-template-columns:minmax(0,1fr)}.cc-pv-agenda{position:static}.cc-pv-lado{order:-1}}
-@media (max-width:760px){.cc-pv-botoes .cc-btn{flex:1 1 calc(50% - 6px);justify-content:center}}
+@media (max-width:760px){.cc-pv-botoes .cc-btn{flex:1 1 calc(50% - 6px);justify-content:center;white-space:normal;text-align:center}}
 `;
 
 export function renderPosVendaPage(linhas: PosVendaLinha[], user?: DashUser, agenda?: AgendaAgrupada): string {
   const casa = !user || user.companyId === ECOSUN_COMPANY_ID;
   const ASSIST = casa ? 'Eva' : 'assistente';
+  // Prévia dos modelos da casa (WABA da EcoSun): o tenant não envia (403 no
+  // servidor), mas também não lê "a Eva da EcoSunPower" na tela.
+  const textosPrevia: Record<string, string> = casa ? TEXTOS_PREVIA
+    : Object.fromEntries(Object.entries(TEXTOS_PREVIA).map(([k, v]) => [k, v.replace(/a Eva da EcoSunPower/g, 'a assistente da empresa')]));
   const lista = linhas.length
     ? linhas.map((l) => renderLinha(l, ASSIST)).join('')
     : estadoVazio({ tipo: 'vazio', titulo: 'Nenhum cliente com usina ainda', texto: 'Quando houver usinas vinculadas, eles aparecem aqui.' });
@@ -299,7 +304,7 @@ export function renderPosVendaPage(linhas: PosVendaLinha[], user?: DashUser, age
   </script>
   <script>
 (function () {
-  var PV_TEXTOS = ${JSON.stringify(TEXTOS_PREVIA)};
+  var PV_TEXTOS = ${JSON.stringify(textosPrevia).replace(/</g, '\\u003c')};
   // Botão de ação -> mostra PRÉVIA (não envia direto)
   document.querySelectorAll('.pv-tpl-btn').forEach(function (btn) {
     btn.addEventListener('click', function () {

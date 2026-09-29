@@ -94,3 +94,24 @@ describe('/pos-venda/sugestao/dispensar — só lead da empresa da sessão (segu
     expect(trecho).toContain('status(404)');
   });
 });
+
+describe('R22 — revisão', () => {
+  it('tenant: a prévia dos modelos (script) não diz "Eva da EcoSunPower"', () => {
+    const h = CASOS_OPERACAO2['pos-venda-tenant']();
+    expect(h).not.toContain('Eva da EcoSunPower');
+    expect(h).toContain('a assistente da empresa');
+    expect(CASOS_OPERACAO2['pos-venda']()).toContain('Eva da EcoSunPower'); // casa: igual antes
+  });
+  it('Medição: faixa de KPIs com o número certo de colunas (--n)', () => {
+    const m = miolo(CASOS_OPERACAO2['medicao']());
+    expect(m).toContain('class="cc-kstrip" style="--n:5"');
+    expect(m).toContain('class="cc-kstrip" style="--n:4"');
+    expect(miolo(CASOS_OPERACAO2['medicao-sem-aparelho']())).not.toContain('docs/kit-medicao');
+  });
+  it('/pos-venda/:leadId/acao grava → pede editar e id UUID', () => {
+    const fonte = readFileSync(join(process.cwd(), 'src', 'modules', 'dashboard', 'router.ts'), 'utf-8');
+    const i = fonte.indexOf("router.post('/pos-venda/:leadId/acao'");
+    expect(fonte.slice(i, i + 120)).toContain("exigir('usinas', 'editar')");
+    expect(fonte.slice(i, i + 400)).toContain('UUID_RE.test(leadId)');
+  });
+});

@@ -173,7 +173,7 @@ export function renderMedicaoPage(
   if (aparelhos.length === 0) {
     return `<div class="cc-root cc-md">
       ${cab('O que o medidor mostra: a demanda de 15 minutos que a distribuidora cobra.')}
-      ${estadoVazio({ tipo: 'sem_dado', titulo: 'Nenhum medidor mandou leitura ainda.', texto: 'O aparelho precisa do script de envio rodando, com o token do servidor. O procedimento está em docs/kit-medicao.' })}
+      ${estadoVazio({ tipo: 'sem_dado', titulo: 'Nenhum medidor mandou leitura ainda.', texto: 'O aparelho precisa do script de envio rodando, com o token do servidor (passo a passo do kit de medição).' })}
     </div>`;
   }
 
@@ -194,7 +194,7 @@ export function renderMedicaoPage(
   const selo = pilulaStatus(r.minutosSemReceber === null ? 'sem_dado' : atrasado ? 'critico' : 'normal', statusTexto);
 
   const cards = r.agora
-    ? `<div class="cc-kstrip">
+    ? `<div class="cc-kstrip" style="--n:${2 + (r.demanda ? 2 : 0) + (r.consumoDiaKwh !== null ? 1 : 0) + (r.injecaoDiaKwh ? 1 : 0) - 1}">
          ${card('Agora', w(r.agora.potenciaW), `às ${hora(r.agora.medidoEm)}`)}
          ${r.demanda ? card('Demanda de 15 min', w(r.demanda.demandaW), `maior janela · ${hora(r.demanda.janelaInicio)}`, true) : ''}
          ${r.demanda ? card('Pico instantâneo', w(r.demanda.picoInstantaneoW), 'que a conta de luz não mostra') : ''}
@@ -204,7 +204,7 @@ export function renderMedicaoPage(
     : '';
 
   const eletrico = r.agora
-    ? `<div class="cc-kstrip">
+    ? `<div class="cc-kstrip" style="--n:4">
          ${card('Tensão', r.agora.tensao !== null ? r.agora.tensao.toFixed(1).replace('.', ',') + ' V' : '—')}
          ${card('Corrente', r.agora.corrente !== null ? r.agora.corrente.toFixed(2).replace('.', ',') + ' A' : '—')}
          ${card('Fator de potência', r.agora.fatorPotencia !== null ? r.agora.fatorPotencia.toFixed(2).replace('.', ',') : '—')}
