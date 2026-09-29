@@ -120,6 +120,19 @@ export const RESULTADO_ENVIO: Record<string, { tom: 'ok' | 'erro' | 'aviso'; tex
   modelo_so_no_oficial: { tom: 'erro', texto: 'Modelo só existe no número oficial.' },
   telefone_de_outra_empresa: { tom: 'erro', texto: 'Este telefone já é lead de outra empresa na plataforma. Não dá para criar aqui.' },
   assumiu: { tom: 'ok', texto: 'Você assumiu a conversa. A assistente fica pausada até você devolver.' },
+  // W1 — mídia
+  sem_arquivo: { tom: 'erro', texto: 'Escolha um arquivo antes de enviar.' },
+  arquivo_invalido: { tom: 'erro', texto: 'Esse tipo de arquivo não pode ser enviado. Use foto (JPG/PNG), PDF, Word, Excel, áudio ou vídeo MP4.' },
+  arquivo_grande: { tom: 'erro', texto: 'Arquivo grande demais: foto até 5 MB; áudio, vídeo e documento até 16 MB.' },
+  erro_arquivo: { tom: 'erro', texto: 'Não consegui guardar o arquivo, então não enviei. Tente de novo em instantes.' },
+  audio_invalido: { tom: 'erro', texto: 'Não consegui preparar a gravação para o WhatsApp. Grave de novo ou envie um arquivo de áudio.' },
+  legenda_longa: { tom: 'erro', texto: 'Legenda longa demais (máximo 1024 letras).' },
+  // W2 — citar e reagir
+  citacao_invalida: { tom: 'erro', texto: 'Não achei a mensagem que você quis responder. Recarregue e tente de novo.' },
+  citacao_outro_numero: { tom: 'erro', texto: 'A mensagem citada chegou pelo outro número. Troque o "Responder como" ou envie sem citar.' },
+  reacao_enviada: { tom: 'ok', texto: 'Reação enviada.' },
+  reacao_invalida: { tom: 'erro', texto: 'Escolha um dos emojis da lista.' },
+  reacao_nao_gravada: { tom: 'aviso', texto: 'A reação saiu no WhatsApp, mas não ficou registrada no painel.' },
   devolveu: { tom: 'ok', texto: 'Conversa devolvida para a assistente.' },
 };
 

@@ -32,17 +32,79 @@ export interface LinhaMensagemWhatsapp {
   evento: 'assumiu' | 'devolveu' | null;
   origem: string | null;
   wamid: string | null;
-  status: 'enviando' | 'enviada' | 'falhou' | 'recebida' | 'registrada';
+  status: 'enviando' | 'enviada' | 'entregue' | 'lida' | 'falhou' | 'recebida' | 'registrada';
   erro: string | null;
   visivel_so_para: string | null;
   criado_em: string;
   enviada_em: string | null;
+  // ---- W1 (migration 141): arquivo da mensagem no bucket privado whatsapp-midia ----
+  midia_caminho?: string | null;
+  midia_mime?: string | null;
+  midia_nome?: string | null;
+  midia_bytes?: number | null;
+  /** Áudio: o que a IA entendeu (fica embaixo do player). */
+  transcricao?: string | null;
+  // ---- W2 (migration 142): resposta citando / reação ----
+  citando_wamid?: string | null;
+  citando_texto?: string | null;
+  // ---- W3 (migration 143): entregue / lida ----
+  entregue_em?: string | null;
+  lida_em?: string | null;
 }
 
 export type NovaMensagem = Partial<Omit<LinhaMensagemWhatsapp, 'id' | 'criado_em'>> &
   Pick<LinhaMensagemWhatsapp, 'company_id' | 'direcao' | 'autor'>;
 
-const COLUNAS = 'id, company_id, lead_id, contato_telefone, contato_nome, direcao, autor, user_id, autor_nome, canal, numero, tipo, texto, modelo, evento, origem, wamid, status, erro, visivel_so_para, criado_em, enviada_em';
+const COLUNAS_138 = 'id, company_id, lead_id, contato_telefone, contato_nome, direcao, autor, user_id, autor_nome, canal, numero, tipo, texto, modelo, evento, origem, wamid, status, erro, visivel_so_para, criado_em, enviada_em';
+/** Colunas novas da 141 (W1 mídia). Sem a migration aplicada, o painel segue com as da 138. */
+export const COLUNAS_MIDIA = ['midia_caminho', 'midia_mime', 'midia_nome', 'midia_bytes', 'transcricao'] as const;
+const COLUNAS = `${COLUNAS_138}, ${COLUNAS_MIDIA.join(', ')}`;
+
+/** Erro de "coluna não existe" (migration nova ainda não aplicada no banco). */
+export function ehColunaFaltando(error: { code?: string; message?: string } | null | undefined): boolean {
+  if (!error) return false;
+  return error.code === '42703' || error.code === 'PGRST204' || /column .* does not exist|could not find the .* column/i.test(error.message ?? '');
+}
+
+/** Tira as colunas das migrations novas (141+) de uma linha — para gravar mesmo sem elas. PURA. */
+export function semColunasNovas<T extends Record<string, unknown>>(linha: T): T {
+  const c = { ...linha } as Record<string, unknown>;
+  for (const k of [...COLUNAS_MIDIA, ...COLUNAS_EXTRAS]) delete c[k];
+  return c as T;
+}
+/** Outras colunas de migrations posteriores (W2/W3) registradas aqui para o mesmo recuo. */
+export const COLUNAS_EXTRAS: string[] = ['citando_wamid', 'citando_texto', 'entregue_em', 'lida_em'];
+
+/** Qual coluna faltou, pela mensagem do banco/PostgREST (null = não deu para saber). PURA. */
+export function colunaQueFaltou(error: { message?: string } | null | undefined): string | null {
+  const m = String(error?.message ?? '');
+  const a = /could not find the '([a-z_]+)' column/i.exec(m) ?? /column "?([a-z_]+)"? (?:of relation "?[a-z_]+"? )?does not exist/i.exec(m);
+  return a ? a[1] : null;
+}
+
+/**
+ * INSERT que sobrevive a migration nova ainda não aplicada: tira SÓ a coluna
+ * que faltou (sem perder as das migrations que já estão no banco) e tenta de
+ * novo; sem saber qual, tira todas as novas.
+ */
+async function inserirComRecuo(
+  client: SupabaseClient,
+  linha: Record<string, unknown>,
+  comId: boolean,
+): Promise<{ data: unknown; error: { code?: string; message: string } | null }> {
+  let atual = { ...linha };
+  for (let i = 0; i < 8; i++) {
+    const q = client.from('mensagens_whatsapp').insert(atual);
+    const { data, error } = comId ? await q.select('id').single() : await q;
+    if (!error || !ehColunaFaltando(error)) return { data, error };
+    const col = colunaQueFaltou(error);
+    if (col && col in atual) { const c = { ...atual }; delete c[col]; atual = c; continue; }
+    const semNovas = semColunasNovas(atual);
+    if (Object.keys(semNovas).length === Object.keys(atual).length) return { data, error };
+    atual = semNovas;
+  }
+  return { data: null, error: { message: 'colunas faltando' } };
+}
 
 /**
  * Reserva o envio ANTES de chamar o WhatsApp. A `chave_envio` é única por
@@ -53,10 +115,8 @@ export async function reservarEnvio(
   linha: NovaMensagem & { chave_envio: string },
 ): Promise<{ ok: true; id: string } | { ok: false; motivo: 'duplicado' | 'ja_falhou' | 'erro'; erro?: string }> {
   try {
-    const { data, error } = await client.from('mensagens_whatsapp')
-      .insert({ ...linha, status: 'enviando' })
-      .select('id')
-      .single();
+    // Migration nova ainda não aplicada: grava sem a coluna que falta (a mensagem não se perde).
+    const { data, error } = await inserirComRecuo(client, { ...linha, status: 'enviando' }, true);
     if (error) {
       if (error.code === '23505') {
         // Mesmo clique de novo. Se o 1º tinha falhado, diz isso (não "já enviada").
@@ -120,7 +180,7 @@ export async function concluirEnvio(
 /** Grava uma mensagem/evento que já aconteceu (ex.: recebida no número pessoal). */
 export async function gravarMensagem(client: SupabaseClient, linha: NovaMensagem): Promise<{ ok: boolean; duplicada?: boolean }> {
   try {
-    const { error } = await client.from('mensagens_whatsapp').insert(linha);
+    const { error } = await inserirComRecuo(client, linha as Record<string, unknown>, false);
     if (error) {
       if (error.code === '23505') return { ok: true, duplicada: true };
       console.warn(`[mensagens-whatsapp] gravar falhou: ${error.message}`);
@@ -131,6 +191,11 @@ export async function gravarMensagem(client: SupabaseClient, linha: NovaMensagem
     console.warn(`[mensagens-whatsapp] gravar falhou: ${(err as Error).message}`);
     return { ok: false };
   }
+}
+
+/** Colunas lidas pelo painel (138 + as das migrations novas). */
+export function colunasAtuais(): string {
+  return COLUNAS_EXTRAS.length ? `${COLUNAS}, ${COLUNAS_EXTRAS.join(', ')}` : COLUNAS;
 }
 
 /** Pode o `viewerId` ver esta linha? Conversa pessoal só o dono do número vê. PURA. */
@@ -156,14 +221,21 @@ export async function mensagensDoPainel(
 ): Promise<LinhaMensagemWhatsapp[]> {
   if (!companyId || !leadId) return [];
   const ler = async (c: SupabaseClient, dono: string | null): Promise<LinhaMensagemWhatsapp[]> => {
-    try {
-      let q = c.from('mensagens_whatsapp').select(COLUNAS)
+    const consulta = (colunas: string) => {
+      let q = c.from('mensagens_whatsapp').select(colunas)
         .eq('company_id', companyId)
         .eq('lead_id', leadId);
       q = dono ? q.eq('visivel_so_para', dono) : q.is('visivel_so_para', null);
-      const { data, error } = await q.order('criado_em', { ascending: false }).limit(limite);
+      return q.order('criado_em', { ascending: false }).limit(limite);
+    };
+    try {
+      // Migration nova ainda não aplicada: tenta sem as colunas dela (143 → 142 → 141 → 138).
+      let { data, error } = await consulta(colunasAtuais());
+      if (error && ehColunaFaltando(error)) ({ data, error } = await consulta(`${COLUNAS}, citando_wamid, citando_texto`));
+      if (error && ehColunaFaltando(error)) ({ data, error } = await consulta(COLUNAS));
+      if (error && ehColunaFaltando(error)) ({ data, error } = await consulta(COLUNAS_138));
       if (error) return [];
-      return (data ?? []) as LinhaMensagemWhatsapp[];
+      return (data ?? []) as unknown as LinhaMensagemWhatsapp[];
     } catch {
       return [];
     }
