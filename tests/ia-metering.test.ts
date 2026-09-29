@@ -49,6 +49,30 @@ describe('custoCentsBRL', () => {
     expect(cents).toBe(16200);
   });
 
+  // 29/09/2026: o Opus 5.5 custa US$ 4 / 20 por milhão (tabela oficial da
+  // Anthropic) — o medidor cobrava como Opus antigo (5 / 25), 25% a mais.
+  it('opus 5.5: 1M input + 1M output = (4+20) USD × 5.40 × 100 = 12960 cents', () => {
+    expect(custoCentsBRL('claude-opus-5-5', { input_tokens: 1_000_000, output_tokens: 1_000_000 })).toBe(12960);
+  });
+
+  it('opus 5.5: leitura de cache = 0,05 × 4 = US$ 0,20 por milhão (não 0,1×)', () => {
+    expect(custoCentsBRL('claude-opus-5-5', { cache_read_input_tokens: 1_000_000 })).toBe(108);
+  });
+
+  it('opus 5.5: escrita de cache segue 1,25× (5 min) e 2× (1 h)', () => {
+    expect(custoCentsBRL('claude-opus-5-5', { cache_creation_input_tokens: 1_000_000 })).toBe(2700);
+    expect(custoCentsBRL('claude-opus-5-5', {
+      cache_creation_input_tokens: 1_000_000,
+      cache_creation: { ephemeral_1h_input_tokens: 1_000_000 },
+    })).toBe(4320);
+  });
+
+  it('opus 4.7 / 4.8 / 5 continuam a US$ 5 / 25', () => {
+    for (const m of ['claude-opus-4-7', 'claude-opus-4-8', 'claude-opus-5']) {
+      expect(custoCentsBRL(m, { input_tokens: 1_000_000, output_tokens: 1_000_000 })).toBe(16200);
+    }
+  });
+
   it('normaliza o modelo com sufixo de data (haiku-...-20251001 → haiku)', () => {
     const cents = custoCentsBRL('claude-haiku-4-5-20251001', {
       input_tokens: 1_000_000,

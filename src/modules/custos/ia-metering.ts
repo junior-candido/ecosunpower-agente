@@ -20,6 +20,9 @@ import { empresa, temContextoDeEmpresa } from '../empresa-config.js';
 interface PrecoModelo {
   input: number; // USD / 1M tokens
   output: number; // USD / 1M tokens
+  /** Leitura de cache como fração do input. Padrão 0,1×; o Opus 5.5 é 0,05×
+   *  (US$ 0,20 por milhão). */
+  cacheRead?: number;
 }
 
 const PRECOS_USD_POR_MILHAO: Record<string, PrecoModelo> = {
@@ -28,6 +31,10 @@ const PRECOS_USD_POR_MILHAO: Record<string, PrecoModelo> = {
   sonnet5: { input: 2.0, output: 10.0 },
   haiku: { input: 1.0, output: 5.0 },
   opus: { input: 5.0, output: 25.0 },
+  // Opus 5.5 (claude-opus-5-5): US$ 4 / 20, leitura de cache US$ 0,20
+  // (tabela oficial da Anthropic, conferida 29/09/2026). Antes caía no "opus"
+  // genérico e o custo saía 25% acima do real.
+  opus55: { input: 4.0, output: 20.0, cacheRead: 0.05 },
 };
 
 // Fallback razoável quando o modelo não é reconhecido: preços do Sonnet (o
@@ -62,6 +69,7 @@ export interface IaUsage {
 function precoDoModelo(modelo: string): PrecoModelo {
   const m = String(modelo ?? '').toLowerCase();
   if (m.startsWith('claude-haiku-4-5') || m.includes('haiku')) return PRECOS_USD_POR_MILHAO.haiku;
+  if (m.startsWith('claude-opus-5-5')) return PRECOS_USD_POR_MILHAO.opus55;
   if (m.startsWith('claude-opus-4-8') || m.includes('opus')) return PRECOS_USD_POR_MILHAO.opus;
   if (m.startsWith('claude-sonnet-5')) return PRECOS_USD_POR_MILHAO.sonnet5;
   if (m.startsWith('claude-sonnet-4-6') || m.includes('sonnet')) return PRECOS_USD_POR_MILHAO.sonnet;
@@ -74,7 +82,7 @@ function precoDoModelo(modelo: string): PrecoModelo {
  * Fórmula:
  *   usd   = (input*pIn + output*pOut + cacheRead*pCacheRead + cacheWrite*pCacheWrite) / 1_000_000
  *   cents = round(usd × USD_BRL × 100)
- * onde pCacheRead = 0.10 × pIn e pCacheWrite = 1.25 × pIn.
+ * onde pCacheRead = 0.10 × pIn (Opus 5.5: 0.05×) e pCacheWrite = 1.25 × pIn (1 h: 2×).
  */
 export function custoCentsBRL(modelo: string, usage: IaUsage): number {
   return Math.round(custoCentavosExato(modelo, usage));
@@ -84,7 +92,7 @@ export function custoCentsBRL(modelo: string, usage: IaUsage): number {
  *  inteira: chamada pequena (corretor, resumo) gravava 0 — a tela soma por aqui. */
 export function custoCentavosExato(modelo: string, usage: IaUsage): number {
   const preco = precoDoModelo(modelo);
-  const precoCacheRead = preco.input * MULT_CACHE_READ;
+  const precoCacheRead = preco.input * (preco.cacheRead ?? MULT_CACHE_READ);
   const precoCacheWrite = preco.input * MULT_CACHE_WRITE;
 
   const input = usage.input_tokens ?? 0;
