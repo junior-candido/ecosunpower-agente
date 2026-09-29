@@ -1,0 +1,226 @@
+{
+  "tv-casa": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/estatico/sem-tailwind.708ae6c2cb.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": []
+  },
+  "tv-sem-dado": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/estatico/sem-tailwind.708ae6c2cb.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": []
+  },
+  "tv-papel-tv": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/atencao",
+      "/dashboard/clientes",
+      "/dashboard/command-center",
+      "/dashboard/contratos",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/estatico/sem-tailwind.708ae6c2cb.css",
+      "/dashboard/home",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/predio",
+      "/dashboard/tv",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": []
+  },
+  "tv-papel-tv-tenant": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/atencao",
+      "/dashboard/command-center",
+      "/dashboard/conhecer/assinaturas",
+      "/dashboard/conhecer/blog",
+      "/dashboard/conhecer/cadencia",
+      "/dashboard/conhecer/cobrar",
+      "/dashboard/conhecer/conhecimento",
+      "/dashboard/conhecer/conversas",
+      "/dashboard/conhecer/demonstrativos",
+      "/dashboard/conhecer/email",
+      "/dashboard/conhecer/energia",
+      "/dashboard/conhecer/financeiro",
+      "/dashboard/conhecer/fiscal",
+      "/dashboard/conhecer/kanban",
+      "/dashboard/conhecer/leads",
+      "/dashboard/conhecer/marketing",
+      "/dashboard/conhecer/medicao",
+      "/dashboard/conhecer/minha_assinatura",
+      "/dashboard/conhecer/monitoramento",
+      "/dashboard/conhecer/pastas",
+      "/dashboard/conhecer/pos_venda",
+      "/dashboard/conhecer/propostas",
+      "/dashboard/conhecer/recados",
+      "/dashboard/conhecer/rh_busca",
+      "/dashboard/conhecer/rh_candidatos",
+      "/dashboard/conhecer/rh_vagas",
+      "/dashboard/conhecer/servicos",
+      "/dashboard/conhecer/usinas_kanban",
+      "/dashboard/conhecer/usuarios",
+      "/dashboard/conhecer/whatsapp",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/estatico/sem-tailwind.708ae6c2cb.css"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": []
+  }
+}

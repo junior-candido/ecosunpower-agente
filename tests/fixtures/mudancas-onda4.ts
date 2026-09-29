@@ -131,3 +131,11 @@ export const MUDANCAS_R23: Record<string, MudancaContrato[]> = {
 export const MUDANCAS_R24: Record<string, MudancaContrato[]> = Object.fromEntries(
   ['home', 'home-mes-passado', 'home-vazio'].map((c) => [c, [TELAS_LEVES, TEMA_GRAFICOS]]),
 );
+
+
+// ════════════════════════════════════════════════════════════════════════
+// R26 — Modo TV
+// ════════════════════════════════════════════════════════════════════════
+
+/** R26: trocas por caso de tests/fixtures/casos-tv.ts. */
+export const MUDANCAS_R26: Record<string, MudancaContrato[]> = {};
