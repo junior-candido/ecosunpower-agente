@@ -187,6 +187,48 @@ export function criarVerificadorDeModelo(listar: ListarModelos | null, agora: ()
 }
 
 // ---------------------------------------------------------------------------
+// Modelos APROVADOS — configuração (sem deploy)
+// ---------------------------------------------------------------------------
+
+/** Aprovados pela Meta em 28/09/2026 (informado pelo Junior). */
+export const MODELOS_APROVADOS_PADRAO: readonly string[] = ['cobranca_mensalidade_v1', 'aviso_pausa_assistente_v1', 'assistente_pausada_v1'];
+export const CHAVE_MODELOS_APROVADOS = 'cobranca_modelos_aprovados';
+
+/** "a, b ,c" → ['a','b','c'] (vazio/nulo → null = não configurado). */
+export function lerListaDeModelos(v: string | null | undefined): string[] | null {
+  if (v === null || v === undefined || !v.trim()) return null;
+  return v.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
+}
+
+export async function lerModelosAprovadosDoBanco(client: SupabaseClient): Promise<string | null> {
+  const { data } = await client.from('app_flags').select('value').eq('key', CHAVE_MODELOS_APROVADOS).maybeSingle();
+  return (data as { value?: string } | null)?.value ?? null;
+}
+
+/**
+ * Um modelo só vai pelo WhatsApp se estiver na lista de APROVADOS. Fonte, em
+ * ordem: linha 'cobranca_modelos_aprovados' em app_flags (muda SEM deploy;
+ * relida a cada 5 min) → variável COBRANCA_MODELOS_APROVADOS → padrão.
+ * Fora da lista → e-mail + texto pronto pro Junior encaminhar.
+ */
+export function criarListaDeModelosAprovados(
+  lerDoBanco: () => Promise<string | null>,
+  env: string | undefined,
+  agora: () => number = Date.now,
+  ttlMs = 5 * 60_000,
+): (nome: string) => Promise<boolean> {
+  let cache: { em: number; lista: ReadonlySet<string> } | null = null;
+  return async (nome: string) => {
+    if (!cache || agora() - cache.em > ttlMs) {
+      let doBanco: string[] | null = null;
+      try { doBanco = lerListaDeModelos(await lerDoBanco()); } catch { doBanco = cache ? [...cache.lista] : null; }
+      cache = { em: agora(), lista: new Set(doBanco ?? lerListaDeModelos(env) ?? MODELOS_APROVADOS_PADRAO) };
+    }
+    return cache.lista.has(nome);
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Serviço montado
 // ---------------------------------------------------------------------------
 
@@ -209,6 +251,8 @@ export interface InfraCobranca {
   /** Acesso suspenso voltou (ponte calculadora / companies.ativo). */
   liberarAcesso(a: AssinaturaMotor): Promise<void>;
   log?: (ev: Record<string, unknown>) => void;
+  /** Lista de modelos aprovados (testes). Padrão: app_flags 'cobranca_modelos_aprovados'. */
+  modelosAprovados?: () => Promise<string | null>;
   /** Auditoria / linha do tempo (audit_log da casa). */
   auditar?: (ev: { assinaturaId: string; acao: string; detalhe?: string }) => Promise<void>;
   /** Pausa/reativação mudou nesta empresa → limpa o cache do consumer da fila. */
@@ -233,7 +277,11 @@ export type ResultadoPorCobranca = 'sem_fatura' | 'ja_paga' | 'valor_nao_bate' |
 export function criarServicoCobranca(infra: InfraCobranca) {
   const { client, donaId } = infra;
   const log = infra.log ?? logPadrao;
-  const modeloAprovado = criarVerificadorDeModelo(infra.waba ? () => infra.waba!.listTemplates() : null);
+  // Quais modelos a Meta JÁ aprovou = LISTA CONFIGURADA (app_flags 'cobranca_modelos_aprovados'
+  // → env COBRANCA_MODELOS_APROVADOS → padrão). Sem WABA → nenhum (plano B).
+  const modeloAprovado = infra.waba
+    ? criarListaDeModelosAprovados(infra.modelosAprovados ?? (() => lerModelosAprovadosDoBanco(client)), process.env.COBRANCA_MODELOS_APROVADOS)
+    : async () => false;
 
   const canais = {
     modeloAprovado,

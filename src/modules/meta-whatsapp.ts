@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import type { Config } from '../config.js';
 import type { IncomingMessage } from './evolution.js';
+import { lerCorpoComLimite } from './http-limite.js';
 
 const GRAPH_API = 'https://graph.facebook.com/v21.0';
 
@@ -31,6 +32,8 @@ export interface MetaStatusUpdate {
   recipientUserId?: string;
   errorCode?: number;
   errorTitle?: string;
+  /** W3: número (phone_number_id) que ENVIOU — resolve a empresa. */
+  phoneNumberId?: string;
 }
 
 /** String nao-vazia (trim) ou undefined — pra campos opcionais do webhook. */
@@ -231,6 +234,7 @@ export class MetaWhatsAppService {
       method: 'POST',
       headers: { Authorization: `Bearer ${this.accessToken}` },
       body: form,
+      signal: AbortSignal.timeout(60_000),
     });
 
     if (!resp.ok) {
@@ -270,6 +274,32 @@ export class MetaWhatsAppService {
       image: { id: mediaId, ...(caption ? { caption } : {}) },
     };
     return this.postMessage(body);
+  }
+
+  /**
+   * W1 — mídia do painel já enviada à Meta (uploadMedia → media_id). Áudio não
+   * leva legenda (a Cloud API recusa); documento leva o nome do arquivo.
+   */
+  async sendMediaById(
+    to: string,
+    tipo: 'image' | 'video' | 'audio' | 'document',
+    mediaId: string,
+    opts: { caption?: string; filename?: string; contextId?: string } = {},
+  ): Promise<{ messageId: string }> {
+    const obj: Record<string, unknown> = { id: mediaId };
+    if (tipo !== 'audio' && opts.caption) obj.caption = opts.caption;
+    if (tipo === 'document' && opts.filename) obj.filename = opts.filename;
+    return this.postMessage({ messaging_product: 'whatsapp', to, type: tipo, [tipo]: obj, ...(opts.contextId ? { context: { message_id: opts.contextId } } : {}) });
+  }
+
+  /** W2 — texto RESPONDENDO outra mensagem (aparece citada no WhatsApp do cliente). */
+  async sendTextReply(to: string, text: string, contextMessageId: string): Promise<{ messageId: string }> {
+    return this.postMessage({ messaging_product: 'whatsapp', to, type: 'text', text: { body: text, preview_url: false }, context: { message_id: contextMessageId } });
+  }
+
+  /** W2 — reagir a uma mensagem (emoji vazio tira a reação). */
+  async sendReaction(to: string, messageId: string, emoji: string): Promise<{ messageId: string }> {
+    return this.postMessage({ messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'reaction', reaction: { message_id: messageId, emoji } });
   }
 
   async sendAudio(to: string, mediaUrl: string): Promise<{ messageId: string }> {
@@ -405,7 +435,9 @@ export class MetaWhatsAppService {
       };
     }
 
-    const base = { from, timestamp, messageId, fromMe: false, pushName, referral, phoneNumberId };
+    // W2: resposta a outra mensagem (context.id).
+    const ctxId = (msg.context as { id?: string } | undefined)?.id;
+    const base = { from, timestamp, messageId, fromMe: false, pushName, referral, phoneNumberId, ...(typeof ctxId === 'string' && ctxId ? { citandoId: ctxId } : {}) };
 
     switch (type) {
       case 'text': {
@@ -413,9 +445,10 @@ export class MetaWhatsAppService {
         return { ...base, type: 'text', content: text };
       }
       case 'image': {
-        const img = msg.image as { id?: string; caption?: string } | undefined;
+        const img = msg.image as { id?: string; caption?: string; mime_type?: string } | undefined;
         return {
           ...base,
+          ...(img?.mime_type ? { mimeType: img.mime_type } : {}),
           type: 'image',
           // No WABA o conteudo e media_id (nao URL direta). Pra baixar chamar
           // getMediaBase64(media_id) — ele faz GET /v21.0/{media-id} e depois
@@ -446,6 +479,7 @@ export class MetaWhatsAppService {
           content: doc?.id ?? '',
           caption: doc?.filename,
           mimeType: doc?.mime_type,
+          ...(doc?.filename ? { nomeArquivo: doc.filename } : {}),
         };
       }
       case 'location': {
@@ -480,6 +514,25 @@ export class MetaWhatsAppService {
     }
   }
 
+  /** W2 — reações recebidas (type=reaction). Emoji vazio = o cliente tirou a reação. Nunca vão para a Eva. */
+  parseReacoes(payload: Record<string, unknown>): Array<{ from: string; wamid: string; alvo: string; emoji: string; phoneNumberId?: string; timestamp: Date }> {
+    const out: Array<{ from: string; wamid: string; alvo: string; emoji: string; phoneNumberId?: string; timestamp: Date }> = [];
+    for (const e of (payload.entry as Array<Record<string, unknown>> | undefined) ?? []) {
+      for (const ch of (e.changes as Array<Record<string, unknown>> | undefined) ?? []) {
+        if (ch.field !== 'messages') continue;
+        const value = ch.value as Record<string, unknown> | undefined;
+        const pnid = (value?.metadata as { phone_number_id?: string } | undefined)?.phone_number_id;
+        for (const m of (value?.messages as Array<Record<string, unknown>> | undefined) ?? []) {
+          if (m.type !== 'reaction') continue;
+          const r = m.reaction as { message_id?: string; emoji?: string } | undefined;
+          if (!r?.message_id) continue;
+          out.push({ from: String(m.from ?? ''), wamid: String(m.id ?? ''), alvo: r.message_id, emoji: typeof r.emoji === 'string' ? r.emoji : '', ...(pnid ? { phoneNumberId: pnid } : {}), timestamp: new Date(Number(m.timestamp ?? 0) * 1000) });
+        }
+      }
+    }
+    return out;
+  }
+
   // Parse separado pra status updates (sent/delivered/read/failed). Util pra
   // tracking de entrega da cadencia. Retorna array porque um webhook pode
   // trazer varios updates de uma vez.
@@ -492,6 +545,7 @@ export class MetaWhatsAppService {
         if (ch.field !== 'messages') continue;
         const value = ch.value as Record<string, unknown> | undefined;
         const statuses = (value?.statuses as Array<Record<string, unknown>> | undefined) ?? [];
+        const pnidStatus = (value?.metadata as { phone_number_id?: string } | undefined)?.phone_number_id;
         for (const s of statuses) {
           const errors = (s.errors as Array<Record<string, unknown>> | undefined) ?? [];
           const firstErr = errors[0];
@@ -503,6 +557,7 @@ export class MetaWhatsAppService {
             ...(texto(s.recipient_user_id) ? { recipientUserId: texto(s.recipient_user_id) } : {}),
             errorCode: firstErr ? Number(firstErr.code) : undefined,
             errorTitle: firstErr ? String(firstErr.title) : undefined,
+            ...(pnidStatus ? { phoneNumberId: pnidStatus } : {}),
           });
         }
       }
@@ -515,7 +570,7 @@ export class MetaWhatsAppService {
   // Baixa midia recebida em base64. Espelha a interface do EvolutionService
   // pra os modulos que ja usam (transcriber, vision) nao precisarem mudar.
   // Implementacao WABA: 2 chamadas (GET /v21.0/{media-id} → URL; depois GET na URL).
-  async getMediaBase64(mediaId: string): Promise<{ base64: string; mimetype: string } | null> {
+  async getMediaBase64(mediaId: string, opts: { limiteBytes?: number } = {}): Promise<{ base64: string; mimetype: string } | null> {
     try {
       // Passo 1: pegar URL temporaria da midia
       // Nota: tentamos primeiro SEM phone_number_id (formato padrao v18+);
@@ -529,7 +584,12 @@ export class MetaWhatsAppService {
         console.error(`[meta-whatsapp] getMediaBase64 metadata failed: ${metaRes.status} url=${metaUrl} body=${errBody.slice(0, 500)}`);
         return null;
       }
-      const meta = await metaRes.json() as { url?: string; mime_type?: string };
+      const meta = await metaRes.json() as { url?: string; mime_type?: string; file_size?: number };
+      // W1: a Meta diz o tamanho antes — acima do limite nem baixa.
+      if (opts.limiteBytes && Number(meta.file_size) > opts.limiteBytes) {
+        console.warn('[meta-whatsapp] getMediaBase64: arquivo acima do limite — não baixado');
+        return null;
+      }
       if (!meta.url || !meta.mime_type) {
         console.error('[meta-whatsapp] getMediaBase64: metadata sem url/mime_type');
         return null;
@@ -543,7 +603,8 @@ export class MetaWhatsAppService {
         console.error(`[meta-whatsapp] getMediaBase64 download failed: ${binRes.status} body=${errBody.slice(0, 500)}`);
         return null;
       }
-      const buf = Buffer.from(await binRes.arrayBuffer());
+      const buf = opts.limiteBytes ? await lerCorpoComLimite(binRes, opts.limiteBytes) : Buffer.from(await binRes.arrayBuffer());
+      if (!buf) { console.warn('[meta-whatsapp] getMediaBase64: arquivo acima do limite — não baixado'); return null; }
       return { base64: buf.toString('base64'), mimetype: meta.mime_type };
     } catch (error) {
       console.error('[meta-whatsapp] getMediaBase64 error:', error);

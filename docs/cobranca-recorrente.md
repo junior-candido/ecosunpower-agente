@@ -50,6 +50,25 @@ Todos (faturas, lembretes, último aviso, 1ª e 2ª trava, reativação, recibo)
   - **"1ª trava: para de responder"** — dias depois do vencimento (padrão **3**; último aviso na véspera);
   - **"2ª trava: param os disparos automáticos"** — dias depois do vencimento (padrão **7**; aviso na véspera; sempre depois da 1ª).
 
+## Quais modelos estão APROVADOS (e como marcar um novo — sem deploy)
+
+Situação em 28/09/2026:
+- ✅ **aprovados** (saem pelo WhatsApp): `cobranca_mensalidade_v1`, `aviso_pausa_assistente_v1`, `assistente_pausada_v1`
+- ⏳ **ainda não**: `recibo_mensalidade_v1` (submetido), `aviso_pausa_disparos_v1` e `disparos_pausados_v1` (não submetidos) → esses saem por **e-mail + texto pronto no seu WhatsApp** pra encaminhar.
+
+O robô só usa o WhatsApp pra modelo que está na **lista de aprovados**. A lista vem, nesta ordem:
+1. linha `cobranca_modelos_aprovados` na tabela `app_flags` (muda **sem deploy**; o robô relê a cada 5 min);
+2. variável de ambiente `COBRANCA_MODELOS_APROVADOS` no EasyPanel (precisa reiniciar);
+3. padrão do código = os 3 aprovados acima.
+
+**Quando a Meta aprovar outro modelo**, cole no SQL Editor do Supabase (a lista inteira, separada por vírgula):
+```sql
+INSERT INTO app_flags (key, value) VALUES
+  ('cobranca_modelos_aprovados', 'cobranca_mensalidade_v1, aviso_pausa_assistente_v1, assistente_pausada_v1, recibo_mensalidade_v1')
+ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = now();
+```
+(Pra tirar um da lista, rode de novo sem ele. Apagar a linha volta pro padrão.)
+
 ## WhatsApp: os 6 MODELOS que você submete na Meta
 
 Fora da janela de 24 h a Meta só deixa mandar **modelo aprovado**. Enquanto um modelo não é

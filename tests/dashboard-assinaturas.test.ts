@@ -303,13 +303,17 @@ describe('router — revisão de segurança', () => {
 
 describe('consumer da fila (index.ts) — pausa usa o caminho "guarda sem responder"', () => {
   const fonte = readFileSync(join(process.cwd(), 'src', 'index.ts'), 'utf-8');
-  it('antes do switch de tipos: empresa pausada → registrarPausado e return; casa nunca (ECOSUN_COMPANY_ID)', () => {
+  it('antes do switch de tipos: empresa pausada → registrarPausado + registro no painel, e o switch (a assistente) NÃO roda; casa nunca', () => {
     const i = fonte.indexOf('empresaPausadaNoCache(cachePausaAssistente, msg.companyId, ECOSUN_COMPANY_ID)');
     expect(i).toBeGreaterThan(-1);
-    expect(i).toBeLessThan(fonte.indexOf('switch (msg.type)', i));
-    const trecho = fonte.slice(i, fonte.indexOf('switch (msg.type)', i));
+    const sw = fonte.indexOf('switch (msg.type)', i);
+    expect(i).toBeLessThan(sw);
+    const trecho = fonte.slice(i, sw);
     expect(trecho).toContain('registrarPausado(dbMsg, msg.from, companyId, tipo');
-    expect(trecho).toContain('return;');
+    expect(trecho).toContain('registrarTextoDaAssistente(');
+    expect(trecho.trimEnd().endsWith('if (!pausadaPorFatura) {')).toBe(true);
+    // a mídia continua sendo arquivada no painel (W1) depois do switch
+    expect(fonte.indexOf('} // fim do if (!pausadaPorFatura)', sw)).toBeLessThan(fonte.indexOf('arquivarMidiaDaAssistente(supabase.getClient()', sw));
   });
 });
 
@@ -348,7 +352,7 @@ describe('faixa no painel do tenant — estágio e quem vê o quê', () => {
   it('router: faixa e "Minha assinatura" conferem admin do tenant', () => {
     const fonte = readFileSync(join(process.cwd(), 'src', 'modules', 'dashboard', 'router.ts'), 'utf-8');
     expect(fonte).toContain("const admin = can(u, 'usuarios', 'administrar');");
-    expect(fonte).toContain("if (!can(req.dashUser, 'usuarios', 'administrar')) {\n        res.type('html').send(renderMinhaAssinaturaSoAdmin(req.dashUser));");
+    expect(fonte.replace(/\r\n/g, '\n')).toContain("if (!can(req.dashUser, 'usuarios', 'administrar')) {\n        res.type('html').send(renderMinhaAssinaturaSoAdmin(req.dashUser));");
   });
   it('detalhe com a 2ª trava ligada: pílula "2ª trava" e Reativar agora', () => {
     const h = telaAssinaturaDetalhe({ a: { disparosPausadosEm: '2026-10-17T12:00:00Z' } });

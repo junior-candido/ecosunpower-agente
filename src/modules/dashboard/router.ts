@@ -224,7 +224,19 @@ export function createDashboardRouter(
     // Atendimento P2: "Devolver para a Eva" limpa a pausa curta do Redis (takeover) do telefone.
     retomarTakeover?: (telefone: string) => Promise<void>;
     // Atendimento P2b: WhatsApp PESSOAL do dono (QR/Evolution) — envio pela instância dele.
-    enviarPessoal?: (instancia: string, to: string, text: string) => Promise<{ messageId?: string } | void>;
+    enviarPessoal?: import('./atendimento-rotas.js').DepsAtendimento['enviarPessoal'];
+    // W2 — responder citando (QR do tenant) e reagir pela Evolution.
+    sendTextEvolutionCitando?: import('./atendimento-rotas.js').DepsAtendimento['sendTextEvolutionCitando'];
+    reagirEvolution?: import('./atendimento-rotas.js').DepsAtendimento['reagirEvolution'];
+    marcarLidasEvolution?: import('./atendimento-rotas.js').DepsAtendimento['marcarLidasEvolution'];
+    // W4 — etiquetas do WhatsApp Business (número pessoal) ↔ etapa do funil.
+    etiquetasDaInstancia?: (instancia: string) => Promise<import('../etiquetas-funil.js').EtiquetaWhatsapp[]>;
+    /** Etapa do lead mudou no painel → troca a etiqueta no celular (por fora; nunca lança). */
+    sincronizarEtiquetas?: (companyId: string, leadId: string, etapa: string) => void;
+    // W1 — mídia pela Evolution (instância do dono ou do tenant) e gravação WebM → OGG.
+    enviarMidiaEvolution?: import('./atendimento-rotas.js').DepsAtendimento['enviarMidiaEvolution'];
+    converterAudio?: (webm: Buffer) => Promise<Buffer>;
+    converterImagemJpeg?: (img: Buffer) => Promise<Buffer>;
     // EVOLUTION_INSTANCE (a da Eva): nunca pode virar número pessoal.
     evolutionInstanciaEva?: string;
     // Histórico do número pessoal (últimos 90 dias): progresso + puxar da Evolution (numero-pessoal-historico.ts).
@@ -304,6 +316,12 @@ export function createDashboardRouter(
     engineerPhone: options.engineerPhone ?? '',
     retomarTakeover: options.retomarTakeover,
     enviarPessoal: options.enviarPessoal,
+    enviarMidiaEvolution: options.enviarMidiaEvolution,
+    sendTextEvolutionCitando: options.sendTextEvolutionCitando,
+    reagirEvolution: options.reagirEvolution,
+    marcarLidasEvolution: options.marcarLidasEvolution,
+    converterAudio: options.converterAudio,
+    converterImagemJpeg: options.converterImagemJpeg,
     copiarParaMemoria: async ({ leadId, companyId, texto, painelId }) => {
       // Memória curta da Eva: quando ela voltar, sabe o que a equipe disse.
       const conv = await supabaseService.getOrCreateConversation(leadId, companyId);
@@ -324,6 +342,7 @@ export function createDashboardRouter(
     webhookUrl: options.evolutionWebhookUrl,
     webhookToken: options.evolutionWebhookToken,
     historico: options.historicoPessoal,
+    etiquetasDaInstancia: options.etiquetasDaInstancia,
   });
 
   // Parser dos forms internos (form-urlencoded). Limite maior porque a tela de
@@ -1865,6 +1884,10 @@ b.onclick=async function(){
   router.post('/whatsapp/pessoal/criar', exigir('usuarios', 'administrar'), rotasNumeroPessoal.criar);
   router.post('/whatsapp/pessoal/desligar', exigir('usuarios', 'administrar'), rotasNumeroPessoal.desligar);
   router.post('/whatsapp/pessoal/religar', exigir('usuarios', 'administrar'), rotasNumeroPessoal.religar);
+  // W3: "marcar como lida ao abrir" (liga/desliga) + reaponta os avisos (✓✓ e digitando).
+  router.post('/whatsapp/pessoal/leitura', exigir('usuarios', 'administrar'), rotasNumeroPessoal.leitura);
+  // W4: etiqueta do WhatsApp para cada etapa do funil.
+  router.post('/whatsapp/pessoal/etiquetas', exigir('usuarios', 'administrar'), rotasNumeroPessoal.etiquetas);
   // Buscar o histórico (últimos 90 dias): reconecta (QR de novo uma vez) + progresso.
   router.post('/whatsapp/pessoal/historico', exigir('usuarios', 'administrar'), rotasNumeroPessoal.buscarHistorico);
   router.get('/whatsapp/pessoal/historico.json', exigir('usuarios', 'administrar'), rotasNumeroPessoal.historicoJson);
@@ -2717,8 +2740,8 @@ b.onclick=async function(){
       // (padrão) é o mesmo supabase de serviço — zero mudança até o Junior virar a chave.
       const db = bancoDoOperador(req as AuthedRequest, supabase);
       const [result, insights] = await Promise.all([
-        listLeads(db, { status, only_alerts, atencao, search, limit, offset, viewerId: viewer.id, viewerIsAdmin: viewer.isAdmin }),
-        buildLeadsInsights(db),
+        listLeads(db, { status, only_alerts, atencao, search, limit, offset, viewerId: viewer.id, viewerIsAdmin: viewer.isAdmin, companyId: viewer.companyId }),
+        buildLeadsInsights(db, viewer.companyId),
       ]);
       res.send(renderLeadsListPage(result.rows, {
         status,
@@ -2759,6 +2782,8 @@ b.onclick=async function(){
   // Registrado ANTES de /leads/:id (conversas não é UUID).
   // Sem recarregar (28/09): a conversa com quem não é lead se atualiza sozinha (só o dono do número vê).
   router.get('/leads/conversas/contato.json', exigir('leads', 'visualizar'), rotasAtendimento.contatoJson);
+  // W1: ver/baixar a mídia de uma mensagem (confere quem vê; redireciona p/ URL assinada de 2 min).
+  router.get('/leads/midia/:id', exigir('leads', 'visualizar'), rotasAtendimento.midia);
   router.get('/leads/conversas', exigir('leads', 'visualizar'), async (req: Request, res: Response) => {
     try {
       const viewer = (req as AuthedRequest).dashUser!;
@@ -2784,10 +2809,27 @@ b.onclick=async function(){
     try {
       const { getLeadDetail, leadDaSessao } = await import('./leads-queries.js');
       const { renderLeadDetailPage } = await import('./leads-views.js');
+      const viewer = (req as AuthedRequest).dashUser!;
+      // Demora (28/09): a lista de conversas, o chat e os serviços NÃO dependem
+      // do lead carregado — saem JUNTO com ele (antes: só depois, em fila).
+      // São só LEITURAS, todas presas à empresa da sessão (lista/chat) ou ao id;
+      // nada disso vai pra tela antes das travas de empresa e de vendedor abaixo.
+      const { servicosDoLead } = await import('./servicos-store.js');
+      const { listarConversas, historicoDoLead, lerFiltros } = await import('./conversas-queries.js');
+      const db = bancoDoOperador(req as AuthedRequest, supabase);
+      const filtros = lerFiltros(req.query as Record<string, unknown>);
+      // Parte 2: o chat junta a memória da Eva com o histórico do painel
+      // (envios com autor/canal + "assumiu"/"devolveu") e traz o campo de resposta.
+      const extrasP = Promise.all([
+        servicosDoLead(supabase, id).catch(() => []),
+        listarConversas(db, viewer, filtros, supabase),
+        historicoDoLead(db, id, viewer.companyId, viewer.id, supabase).catch(() => undefined),
+        rotasAtendimento.nomeDoDonoPessoal(req as AuthedRequest),
+      ]);
+      extrasP.catch(() => {}); // saída antecipada (404/403) não deixa rejeição solta
       const lead = await getLeadDetail(supabase, id);
       if (!lead) return res.status(404).send('lead não encontrado');
 
-      const viewer = (req as AuthedRequest).dashUser!;
       // Multi-tenant (Atendimento, 28/09): o lead TEM que ser da empresa da sessão.
       // Antes da trava, qualquer operador abria (e "capturava") lead de outra
       // empresa sabendo o id. Confere ANTES do claim automático, que grava.
@@ -2822,20 +2864,11 @@ b.onclick=async function(){
 
       // Atendimento: a ficha virou a tela de 3 colunas. O Copiloto IA saiu da
       // tela (decisão do Junior, 28/09) — a rota /ia-copiloto continua viva.
-      const { servicosDoLead } = await import('./servicos-store.js');
-      const { listarConversas, historicoDoLead, lerFiltros } = await import('./conversas-queries.js');
-      const db = bancoDoOperador(req as AuthedRequest, supabase);
-      const filtros = lerFiltros(req.query as Record<string, unknown>);
-      // Parte 2: o chat junta a memória da Eva com o histórico do painel
-      // (envios com autor/canal + "assumiu"/"devolveu") e traz o campo de resposta.
-      const [servicosDoCliente, lista, mensagens, donoPessoal] = await Promise.all([
-        servicosDoLead(supabase, id).catch(() => []),
-        listarConversas(db, viewer, filtros, supabase),
-        historicoDoLead(db, id, viewer.companyId, viewer.id, supabase).catch(() => undefined),
-        rotasAtendimento.nomeDoDonoPessoal(req as AuthedRequest),
-      ]);
+      const [servicosDoCliente, lista, mensagens, donoPessoal] = await extrasP;
       // Padrão da resposta = o número em que o cliente escreveu por último (P2b).
       const envio = can(viewer, 'leads', 'editar') ? await rotasAtendimento.envioDaTela(req as AuthedRequest, lead, mensagens ?? []) : undefined;
+      // W3: abriu a conversa → marca como lida no WhatsApp pessoal (só o dono, com a opção ligada).
+      rotasAtendimento.aoAbrirConversa(req as AuthedRequest, { leadId: id });
       res.send(renderLeadDetailPage(lead, [], String(req.query.docs ?? ''), String(req.query.envio ?? ''), servicosDoCliente, viewer, { lista, filtros, mensagens, envio, donoPessoal }));
     } catch (err) {
       console.error('[dashboard/leads/:id]', err);
@@ -2980,9 +3013,15 @@ b.onclick=async function(){
   router.get('/leads/:id/conversa.json', exigir('leads', 'visualizar'), rotasAtendimento.conversaJson);
   router.post('/leads/:id/responder', exigir('leads', 'editar'), rotasAtendimento.responder);
   router.post('/leads/:id/responder-modelo', exigir('leads', 'editar'), rotasAtendimento.responderModelo);
+  // W1 — foto, PDF/documento, áudio e vídeo (multipart; a permissão e a trava de empresa vêm ANTES do upload).
+  router.post('/leads/:id/responder-midia', exigir('leads', 'editar'), rotasAtendimento.comArquivo(rotasAtendimento.responderMidia));
+  // W2 — reagir com emoji a uma mensagem da conversa (mesmo número da mensagem reagida).
+  router.post('/leads/:id/reagir', exigir('leads', 'editar'), rotasAtendimento.reagir);
 
   // P2b — número PESSOAL do dono: responder quem ainda não é lead e "virar lead".
   router.post('/leads/conversas/contato/responder', exigir('leads', 'editar'), rotasAtendimento.responderContato);
+  router.post('/leads/conversas/contato/responder-midia', exigir('leads', 'editar'), rotasAtendimento.comArquivo(rotasAtendimento.responderContatoMidia));
+  router.post('/leads/conversas/contato/reagir', exigir('leads', 'editar'), rotasAtendimento.reagirContato);
   router.post('/leads/conversas/contato/virar-lead', exigir('leads', 'criar'), rotasAtendimento.virarLeadDoContato);
 
   // Cancela TODOS os toques pendentes de cadencia deste lead.
@@ -3055,6 +3094,8 @@ b.onclick=async function(){
     if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
     const viewer = (req as AuthedRequest).dashUser;
     if (viewer) await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'etapa', valorNovo: status });
+    // W4: a etiqueta da conversa no WhatsApp pessoal acompanha a etapa.
+    if (viewer) options.sincronizarEtiquetas?.(viewer.companyId, id, status);
     res.redirect(`/dashboard/leads/${id}`);
   });
 
@@ -3091,6 +3132,7 @@ b.onclick=async function(){
         console.warn('[set-etapa] registrarAtividade falhou (segue):', (err as Error).message);
       }
       await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'etapa', valorNovo: etapa });
+      options.sincronizarEtiquetas?.(viewer.companyId, id, etapa);
     }
     res.status(200).send('ok');
   });
@@ -3238,7 +3280,13 @@ b.onclick=async function(){
   router.post('/leads/:id/delete', exigir('leads', 'editar'), async (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+    // W1/LGPD: os arquivos do WhatsApp do lead saem do bucket (as mensagens caem junto com o lead).
+    // Lê os caminhos ANTES (depois o cascade apaga as linhas) e só apaga se o lead saiu.
+    const dono = (req as AuthedRequest).dashUser;
+    const midia = await import('../midia-whatsapp.js');
+    const arquivos = dono?.companyId ? await midia.midiasDoLead(supabase, dono.companyId, id) : [];
     const r = await supabaseService.excluirLead(id);
+    if (r.ok && arquivos.length) await midia.apagarCaminhos(supabase, arquivos);
     if (!r.ok) {
       return res.status(400).send(
         `<h2>Não foi possível excluir</h2><p>${escapeHtmlSimple(r.error ?? '')}</p><a href="/dashboard/leads/${id}">← voltar</a>`,
@@ -3279,14 +3327,17 @@ b.onclick=async function(){
     const db = bancoDoOperador(req as AuthedRequest, supabase);
     // Lead virou terminal (perdido): cancela tarefas pendentes pra não alertar SLA-fantasma.
     try { await cancelarTarefasPendentesDoLead(db, id); } catch (e) { console.warn('[mark-lost] cancelar tarefas falhou (segue):', (e as Error).message); }
+    if (viewer) options.sincronizarEtiquetas?.(viewer.companyId, id, 'perdido');
     res.redirect(`/dashboard/leads/${id}`);
   });
 
-  router.post('/leads/:id/unmark-lost', async (req: Request, res: Response) => {
+  router.post('/leads/:id/unmark-lost', exigir('leads', 'editar'), async (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
     const r = await supabaseService.desmarcarLeadPerdido(id);
     if (!r.ok) return res.status(500).send(`erro: ${escapeHtmlSimple(r.error ?? '')}`);
+    const quem = (req as AuthedRequest).dashUser;
+    if (quem) options.sincronizarEtiquetas?.(quem.companyId, id, 'qualificando');
     res.redirect(`/dashboard/leads/${id}`);
   });
 

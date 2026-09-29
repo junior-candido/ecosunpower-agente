@@ -281,3 +281,40 @@ describe('logs sem dado pessoal', () => {
     expect(semDadoPessoal(42)).toBe(42);
   });
 });
+
+describe('modelos APROVADOS — lista configurável (sem deploy)', () => {
+  it('padrão (nada configurado): os 3 aprovados em 28/09; recibo e os da 2ª trava NÃO', async () => {
+    const { criarListaDeModelosAprovados } = await import('../src/modules/cobranca-recorrente/servico.js');
+    const ok = criarListaDeModelosAprovados(async () => null, undefined);
+    for (const m of ['cobranca_mensalidade_v1', 'aviso_pausa_assistente_v1', 'assistente_pausada_v1']) expect(await ok(m), m).toBe(true);
+    for (const m of ['recibo_mensalidade_v1', 'aviso_pausa_disparos_v1', 'disparos_pausados_v1']) expect(await ok(m), m).toBe(false);
+  });
+  it('app_flags manda (e é relida a cada 5 min); sem ela, a variável de ambiente', async () => {
+    const { criarListaDeModelosAprovados } = await import('../src/modules/cobranca-recorrente/servico.js');
+    let flag: string | null = 'cobranca_mensalidade_v1, recibo_mensalidade_v1';
+    let t = 0;
+    const ok = criarListaDeModelosAprovados(async () => flag, 'aviso_pausa_disparos_v1', () => t);
+    expect(await ok('recibo_mensalidade_v1')).toBe(true);
+    expect(await ok('assistente_pausada_v1')).toBe(false);
+    flag = null; t = 6 * 60_000;
+    expect(await ok('aviso_pausa_disparos_v1')).toBe(true);
+    expect(await ok('recibo_mensalidade_v1')).toBe(false);
+  });
+  it('lerListaDeModelos aceita vírgula, espaço e ponto e vírgula', async () => {
+    const { lerListaDeModelos } = await import('../src/modules/cobranca-recorrente/servico.js');
+    expect(lerListaDeModelos(' a, b;c  d ')).toEqual(['a', 'b', 'c', 'd']);
+    expect(lerListaDeModelos('  ')).toBeNull();
+  });
+  it('no serviço: modelo fora da lista → não vai pelo WhatsApp (plano B)', async () => {
+    const { client } = mockClient({});
+    const s = criarServicoCobranca({
+      client, donaId: 'casa', handle: '$h', baseUrl: undefined,
+      criarCobranca: async () => ({ id: 'c', orderNsu: 'n' }), salvarLinkCobranca: async () => undefined,
+      waba: { sendTemplate: async () => undefined, listTemplates: async () => [] }, email: null,
+      avisarJunior: async () => undefined, liberarAcesso: async () => undefined, log: () => undefined,
+      modelosAprovados: async () => 'cobranca_mensalidade_v1',
+    });
+    expect(await s.modeloAprovado('cobranca_mensalidade_v1')).toBe(true);
+    expect(await s.modeloAprovado('recibo_mensalidade_v1')).toBe(false);
+  });
+});

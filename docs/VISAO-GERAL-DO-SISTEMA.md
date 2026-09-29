@@ -189,6 +189,28 @@ script); `GET /leads/:id/conversa.json` e `/leads/conversas/contato.json` devolv
 puxa o que a Evolution já guardou (`/chat/findMessages`). Eva/dono/equipe (`definirNumerosInternos` +
 `contatos_internos`) ficam fora da caixa pessoal. A lista pessoal usa `conversas_pessoais_recentes`
 (migration 140: uma linha por contato; sem ela, cai nas 1000 mensagens mais novas).
+**Mídia no chat (W1, 28/09/2026):** `midia-whatsapp.ts` (lista branca de tipos com conferência dos primeiros bytes,
+foto 5 MB / resto 16 MB, bucket privado `whatsapp-midia` com caminho `<company_id>/<ano>/<mês>/<uuid>.<ext>`,
+migration 141). Enviar: `POST /leads/:id/responder-midia` e `/leads/conversas/contato/responder-midia`
+(multipart, mesmas travas do texto; Meta = upload + `sendMediaById`; Evolution = `sendMediaBase64` /
+`sendWhatsAppAudio`; gravação WebM → OGG em `audio-ogg.ts`). Receber: o consumidor da fila guarda a mídia do
+número da assistente (`arquivarMidiaDaAssistente`) e o webhook do número pessoal completa o arquivo em segundo
+plano (`completarMidiaRecebida`). Ver: `GET /leads/midia/:id` confere empresa/dono/vendedor e redireciona para
+URL assinada de 2 min. Apagar o lead apaga os arquivos dele do bucket.
+**Citar e reagir (W2):** `reacoes-citacoes.ts` + migration 142 (`citando_wamid`/`citando_texto`; reação = linha
+`tipo='reacao'`, uma por pessoa por mensagem). Rotas `POST /leads/:id/reagir` e `/leads/conversas/contato/reagir`;
+`citando` (id da linha) nos formulários de resposta. Meta: `sendTextReply`/`sendReaction`/`context`; Evolution:
+`sendTextQuoted`/`sendReactionTo` (JID via `/chat/whatsappNumbers`). O texto do cliente no número da assistente
+entra em `mensagens_whatsapp` com o wamid (`registrarTextoDaAssistente`); a cópia da memória da Eva sai do chat.
+**Lido / digitando (W3):** `status-whatsapp.ts` + migration 143 (status `entregue`/`lida`, `entregue_em`/`lida_em`,
+`whatsapp_numeros_pessoais.marcar_lida_ao_abrir`). Meta `statuses` e Evolution `messages.update` → ✓/✓✓/✓✓ azul
+(nunca volta); `presence.update` → "digitando…" em memória (só o dono vê o do número pessoal). Abrir a conversa marca
+como lida no número pessoal (`marcarLidasAoAbrir`, opção em Meu WhatsApp). Instância pessoal assina MESSAGES_UPDATE e
+PRESENCE_UPDATE (reapontado ao salvar a opção).
+**Etiquetas × funil (W4):** `etiquetas-funil.ts` + migration 144 (`whatsapp_etiquetas_funil`: etapa ↔ etiqueta do
+WhatsApp Business por número pessoal). Painel → celular: `set-status`/`set-etapa`/`mark-lost`/`unmark-lost` chamam
+`sincronizarEtiquetas` (handleLabel na instância do dono; só lead que já conversou no número pessoal). Celular → painel:
+webhook `labels.association` (add) → `etiquetaParaEtapa` (só quem é lead; eco = mesma etapa, nada). Mapeamento em Meu WhatsApp.
 
 ## Cobrança recorrente — mensalidades por FATURA (28/09/2026)
 `src/modules/cobranca-recorrente/` (puros: `ciclo.ts`, `mensagens.ts`; banco: `faturas-repo.ts`; robô e botões:

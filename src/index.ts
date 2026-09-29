@@ -1,6 +1,6 @@
 import express from 'express';
 import { loadConfig } from './config.js';
-import { EvolutionService } from './modules/evolution.js';
+import { EvolutionService, lerReacaoEvolution } from './modules/evolution.js';
 import { MessageQueue } from './modules/queue.js';
 import { temTelefone, montarJobDaFila, processarMensagemSemTelefone, backfillWaUserId } from './modules/whatsapp-bsuid.js';
 import { criarTenantResolver, ECOSUN_COMPANY_ID } from './modules/tenant-resolver.js';
@@ -19,8 +19,15 @@ import { DossierBuilder } from './modules/dossier.js';
 import { calculateSolarEstimate, formatEstimateForPrompt } from './modules/solar.js';
 import { archiveInboundMedia } from './modules/inbound-media.js';
 import { Transcriber } from './modules/transcriber.js';
+import { arquivarMidiaDaAssistente, TIPO_DA_ENTRADA, LIMITE_MIDIA_BYTES } from './modules/midia-whatsapp.js';
+import { leadDoTelefoneNaEmpresa } from './modules/numero-pessoal.js';
+import { registrarTextoDaAssistente, gravarReacao } from './modules/reacoes-citacoes.js';
+import { statusDaMeta, aplicarStatus, lerStatusEvolution, lerPresencaEvolution, marcarPresenca } from './modules/status-whatsapp.js';
+import { lerAssociacaoEtiqueta, lerEtiquetasEvolution, etiquetaParaEtapa, etapaParaEtiqueta, emFilaDoLead, esquecerEtiqueta } from './modules/etiquetas-funil.js';
 import { VisionAnalyzer } from './modules/vision.js';
 import Anthropic from '@anthropic-ai/sdk';
+import { criarRotasLeitorIa } from './modules/leitor-ia/rotas.js';
+import { LimitesLeitor, limitesDoAmbiente } from './modules/leitor-ia/limites.js';
 import { LearningModule } from './modules/learning.js';
 import { FollowupModule } from './modules/followup.js';
 import { MaintenanceService } from './modules/maintenance.js';
@@ -6578,24 +6585,26 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
   }
 
   // Handle audio messages
-  async function handleAudioMessage(from: string, messageId: string, companyId?: string) {
+  /** Devolve a transcrição (W1: fica embaixo do player no painel) ou null. */
+  async function handleAudioMessage(from: string, messageId: string, companyId?: string): Promise<string | null> {
     const db = supabase.paraMensagem(companyId); // EVA MT 3c: crachá nos cancelamentos
     if (await takeover.isPaused(from)) {
       await registrarPausado(db, from, companyId, 'audio', '');
-      return;
+      return null;
     }
     if (!(await db.isEvaActiveForPhone(from))) { // [3e] gate pelo crachá
       console.log(`[eva-active] Skipping audio from ${from} — eva_active=false`);
       await registrarPausado(db, from, companyId, 'audio', ''); // fica na conversa (Atendimento P2)
-      return;
+      return null;
     }
     await cancelIntroIfPending(from, db);
     if (!transcriber) {
       const msg = 'Nao consegui ouvir o audio. Pode me enviar por texto, por favor? 😊';
       if (!isSandbox) await sendText(from, msg);
-      return;
+      return null;
     }
 
+    let transcrito: string | null = null;
     try {
       if (!isSandbox) await sendText(from, 'Ouvindo seu audio... 🎧');
 
@@ -6604,7 +6613,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       if (!media) {
         const msg = 'Nao consegui baixar o audio. Pode mandar de novo? 😊';
         if (!isSandbox) await sendText(from, msg);
-        return;
+        return null;
       }
 
       // Arquiva o audio original no cofre do lead (Junior quer TUDO em maos)
@@ -6615,15 +6624,18 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       if (!text) {
         const msg = 'O audio ficou um pouco dificil de entender. Pode mandar de novo ou escrever por texto? 😊';
         if (!isSandbox) await sendText(from, msg);
-        return;
+        return null;
       }
 
-      console.log(`[audio] Transcribed from ${from}: "${text.substring(0, 80)}..."`);
+      console.log(`[audio] Transcrito (…${from.slice(-4)}, ${text.length} letras)`);
+      transcrito = text;
       await handleTextMessage(from, text, undefined, companyId);
+      return text;
     } catch (error) {
       console.error(`[audio] Error processing audio from ${from}:`, error);
       const msg = 'Nao consegui processar o audio. Pode me enviar por texto? 😊';
       if (!isSandbox) await sendText(from, msg);
+      return transcrito;
     }
   }
 
@@ -7043,27 +7055,49 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
     const mediaRef = (mediaContent: string, fallbackId: string) =>
       (metaWaba && !canalExigeEvolution()) ? mediaContent : fallbackId;
 
+    // W1 — o painel mostra a mídia: guarda o arquivo ligado à mensagem (depois do atendimento da Eva).
+    let transcricaoDoAudio: string | null = null;
+
     // COBRANÇA RECORRENTE — "se não pagar, a assistente para" (28/09/2026).
     // Assistente de um TENANT pausada por fatura em aberto: fica calada, mas a
     // mensagem é GUARDADA no painel dele (o mesmo caminho do "equipe assumiu":
-    // registrarSemResponder) pra ele atender na mão. A casa (EcoSun/Eva) NUNCA
-    // entra aqui (empresaPausadaNoCache devolve false pra ela).
-    if (await empresaPausadaNoCache(cachePausaAssistente, msg.companyId, ECOSUN_COMPANY_ID)) {
+    // registrarSemResponder + o registro do painel W2/W1 logo abaixo) pra ele
+    // atender na mão. A casa (EcoSun/Eva) NUNCA entra aqui (empresaPausadaNoCache
+    // devolve false pra ela).
+    const pausadaPorFatura = await empresaPausadaNoCache(cachePausaAssistente, msg.companyId, ECOSUN_COMPANY_ID);
+    if (pausadaPorFatura) {
       const TIPO: Record<string, import('./modules/takeover-registro.js').TipoDeEntrada> = {
         text: 'texto', audio: 'audio', image: 'imagem', video: 'video', document: 'documento',
       };
       const tipo = TIPO[msg.type];
       if (tipo) await registrarPausado(dbMsg, msg.from, companyId, tipo, tipo === 'texto' ? msg.content : (msg.caption ?? ''));
+      if (msg.type === 'text' && !isAdminPhone(msg.from)) {
+        await registrarTextoDaAssistente(supabase.getClient(), {
+          companyId, telefone: msg.from, wamid: msg.messageId || null, texto: msg.content, recebidaEm: msg.timestamp ?? null,
+          citandoId: msg.citandoId ?? null, contatoNome: msg.pushName ?? null,
+          lead: await leadDoTelefoneNaEmpresa(supabase.getClient(), companyId, msg.from).catch(() => null),
+        }).catch((e) => console.warn(`[painel] texto não registrado: ${(e as Error).message}`));
+      }
       console.log(`[cobranca-recorrente] assistente da empresa ${companyId.slice(0, 8)} pausada por fatura — mensagem ${tipo ? 'guardada' : 'ignorada'}, sem resposta`);
-      return;
     }
-
+    if (!pausadaPorFatura) {
     switch (msg.type) {
       case 'text':
-        await handleTextMessage(msg.from, msg.content, msg.referral, companyId);
+        try {
+          await handleTextMessage(msg.from, msg.content, msg.referral, companyId);
+        } finally {
+        // W2: a mensagem entra no painel com o id do WhatsApp (dá para citar/reagir) — mesmo se a Eva falhar.
+        if (!isAdminPhone(msg.from)) {
+          await registrarTextoDaAssistente(supabase.getClient(), {
+            companyId, telefone: msg.from, wamid: msg.messageId || null, texto: msg.content, recebidaEm: msg.timestamp ?? null,
+            citandoId: msg.citandoId ?? null, contatoNome: msg.pushName ?? null,
+            lead: await leadDoTelefoneNaEmpresa(supabase.getClient(), companyId, msg.from).catch(() => null),
+          }).catch((e) => console.warn(`[painel] texto não registrado: ${(e as Error).message}`));
+        }
+        }
         break;
       case 'audio':
-        await handleAudioMessage(msg.from, mediaRef(msg.content, msg.messageId), companyId);
+        transcricaoDoAudio = await handleAudioMessage(msg.from, mediaRef(msg.content, msg.messageId), companyId);
         break;
       case 'image':
         await handleImageMessage(msg.from, mediaRef(msg.content, msg.messageId), companyId, msg.caption);
@@ -7179,6 +7213,25 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
       default:
         console.log(`[router] Unknown message type "${msg.type}" from ${msg.from}`);
     }
+    } // fim do if (!pausadaPorFatura) — o registro da mídia no painel (W1) vale nos dois casos
+
+    if (TIPO_DA_ENTRADA[msg.type] && !isAdminPhone(msg.from)) {
+      await arquivarMidiaDaAssistente(supabase.getClient(), {
+        companyId,
+        telefone: msg.from,
+        lead: await leadDoTelefoneNaEmpresa(supabase.getClient(), companyId, msg.from).then((l) => (l ? { id: l.id, company_id: companyId } : null)).catch(() => null),
+        tipoEntrada: msg.type,
+        tamanhoBytes: msg.tamanhoBytes ?? null,
+        wamid: msg.messageId || null,
+        recebidaEm: msg.timestamp ?? null,
+        legenda: msg.type === 'document' ? (msg.caption && msg.caption !== msg.nomeArquivo ? msg.caption : '') : msg.caption,
+        nomeArquivo: msg.nomeArquivo ?? (msg.type === 'document' ? msg.caption : null) ?? null,
+        contatoNome: msg.pushName ?? null,
+        transcricao: transcricaoDoAudio,
+        baixar: () => messagingDaMensagem().getMediaBase64(mediaRef(msg.content, msg.messageId), { limiteBytes: LIMITE_MIDIA_BYTES }),
+        transcrever: transcriber ? (b64, mime) => transcriber.transcribeFromBase64(b64, mime) : undefined,
+      }).catch((e) => console.warn(`[midia] arquivar falhou: ${(e as Error).message}`));
+    }
 
     // [BSUID fase 1] Guarda o ID Meta (e @username) no lead achado pelo
     // telefone — DEPOIS da resposta, best-effort (nunca lança, nunca bloqueia).
@@ -7188,6 +7241,17 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
 
   // Express server
   const app = express();
+  // Leitor por IA do programa Gerador de Relatórios Solar (SunBright): rota pública autenticada pela
+  // licença GRS2 do programa. ANTES do express.json global (tem limite próprio) e do rewrite do host
+  // dashboard.* — responde nos dois hosts. A imagem é lida e descartada (nada gravado).
+  app.use(criarRotasLeitorIa({
+    claude: config.anthropicApiKey ? new Anthropic({ apiKey: config.anthropicApiKey }) : null,
+    desligado: process.env.LEITOR_IA_DESLIGADO === '1',
+    licencasBloqueadas: (process.env.LEITOR_IA_LICENCAS_BLOQUEADAS ?? '').split(','),
+    cabecalhoIp: process.env.LEITOR_IA_IP_HEADER || undefined,
+    limites: new LimitesLeitor(limitesDoAmbiente()),
+    medir: (a) => medirIa(a),
+  }));
   // Limit 50mb: webhooks da Evolution API chegam com imagem/video em base64
   // inline (PayloadTooLargeError no default de 100kb). 50mb cobre videos curtos
   // do zap (~25mb MP4 + overhead base64 ~33%).
@@ -7725,6 +7789,13 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
       try {
         // Status updates (sent/delivered/read/failed) — log e prossegue
         const statuses = metaWaba.parseStatusUpdates(req.body);
+        // W3: ✓✓ entregue / ✓✓ azul lida nas mensagens que a equipe mandou pelo painel.
+        for (const s of statuses) {
+          const st = statusDaMeta(s.status);
+          if (!st || !s.messageId) continue;
+          const emp = await tenantResolver.companyDoNumero(s.phoneNumberId).catch(() => ({ companyId: null }));
+          if (emp.companyId) await aplicarStatus(supabase.getClient(), emp.companyId, { wamid: s.messageId, status: st, em: s.timestamp, erro: s.errorTitle ?? null });
+        }
         for (const s of statuses) {
           if (s.status === 'failed') {
             console.warn(`[waba-status] ❌ FALHOU msg=${s.messageId} to=${s.recipientPhone || s.recipientUserId || "?"} err=${s.errorCode}: ${s.errorTitle}`);
@@ -7735,6 +7806,18 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
 
         // Mensagens recebidas
         const parsed = metaWaba.parseWebhook(req.body);
+        // W2: reações do cliente (👍 numa mensagem) — só para o painel; a Eva não vê.
+        for (const rc of metaWaba.parseReacoes(req.body)) {
+          if (!temTelefone(rc.from) || rc.from === config.engineerPhone) continue;
+          const emp = await tenantResolver.companyDoNumero(rc.phoneNumberId).catch(() => ({ companyId: null }));
+          if (!emp.companyId) continue;
+          const lead = await leadDoTelefoneNaEmpresa(supabase.getClient(), emp.companyId, rc.from).catch(() => null);
+          if (!lead) continue;
+          await gravarReacao(supabase.getClient(), {
+            companyId: emp.companyId, leadId: lead.id, telefone: rc.from, alvoWamid: rc.alvo, emoji: rc.emoji, de: 'cliente',
+            canal: emp.companyId === ECOSUN_COMPANY_ID ? 'eva_oficial' : 'qr_code', numero: null, visivelSoPara: null, wamid: rc.wamid, contatoNome: lead.name,
+          });
+        }
         if (!parsed) return; // pode ser status only ou tipo nao suportado
 
         // 🚨 BSUID fase 1 (27/09/2026): usuario que escondeu o telefone atras de
@@ -7887,6 +7970,86 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
     console.log('[ig] Webhook endpoints registered: GET/POST /webhook-ig');
   }
 
+  /**
+   * W4 — o dono pôs no celular a etiqueta de uma etapa: o lead vai para ela
+   * (perdido = marcar perdido; sair de perdido = reabrir antes), com linha do
+   * tempo e auditoria; depois as outras etiquetas mapeadas saem da conversa.
+   */
+  async function mudarEtapaPelaEtiqueta(np: { id: string; company_id: string; dono_user_id: string; instancia: string; ativo: boolean }, leadId: string, atual: string, nova: string, telefone: string, labelId: string): Promise<void> {
+    const db = supabase.getClient();
+    let ok: boolean;
+    if (nova === 'perdido') {
+      ok = (await supabase.marcarLeadPerdido(leadId, 'outro', 'Marcado pela etiqueta do WhatsApp')).ok;
+    } else {
+      if (atual === 'perdido') await supabase.desmarcarLeadPerdido(leadId);
+      // Lead antigo sem empresa é da casa (mesma regra da trava de empresa).
+      const base = db.from('leads').update({ status: nova, updated_at: new Date().toISOString() }).eq('id', leadId);
+      const { error } = await (np.company_id === ECOSUN_COMPANY_ID ? base.or(`company_id.eq.${ECOSUN_COMPANY_ID},company_id.is.null`) : base.eq('company_id', np.company_id));
+      ok = !error;
+    }
+    if (!ok) return;
+    // Etapa final: as tarefas pendentes saem (mesmo efeito do painel — nada de alerta de SLA fantasma).
+    if (nova === 'ganho' || nova === 'perdido') {
+      const { cancelarTarefasPendentesDoLead } = await import('./modules/dashboard/tarefas.js');
+      await cancelarTarefasPendentesDoLead(db, leadId).catch(() => undefined);
+    }
+    const { registrarAtividade } = await import('./modules/dashboard/atividades.js');
+    const { audit } = await import('./modules/dashboard/audit.js');
+    await registrarAtividade(db, { company_id: np.company_id, lead_id: leadId, tipo: 'etapa_mudou', titulo: `Etapa movida pela etiqueta do WhatsApp: → ${nova}`, automatica: true, user_id: np.dono_user_id }).catch(() => undefined);
+    await audit(db, { companyId: np.company_id, userId: np.dono_user_id, entidade: 'lead', entidadeId: leadId, acao: 'etapa_etiqueta', valorNovo: nova }).catch(() => undefined);
+    // Tirar as outras etiquetas mapeadas: por fora (não segura o webhook da Evolution).
+    void etapaParaEtiqueta(db, { companyId: np.company_id, leadId, telefone, etapa: nova, jaTem: { instancia: np.instancia, labelId } }, apiEtiquetas).catch(() => 0);
+  }
+
+  /** W4 — handleLabel pela instância do número pessoal (dentro da empresa/canal dela). */
+  const apiEtiquetas = {
+    aplicar: (instancia: string, companyId: string, telefone: string, labelId: string, acao: 'add' | 'remove') =>
+      comEmpresaDe(companyId, () => comCanal({ companyId, evolutionInstance: instancia }, () => evolution.etiquetar(telefone, labelId, acao))),
+  };
+
+  /** W2 — reação que chegou pela Evolution: número pessoal (só o dono vê) ou assistente (a empresa vê, se for lead). */
+  async function receberReacaoEvolution(rc: import('./modules/evolution.js').ReacaoRecebida, inst: string | undefined): Promise<'gravada' | 'ignorada' | 'erro'> {
+    if (rc.deGrupo || !rc.alvo) return 'ignorada';
+    const telefone = normalizeBrazilianPhone(rc.from);
+    if (!telefone) return 'ignorada';
+    const pessoal = await numerosPessoais.porInstancia(inst);
+    if (pessoal === 'erro') return 'erro';
+    if (pessoal) {
+      if (!pessoal.ativo || await evolutionTenant.companyDaInstancia(inst)) return 'ignorada';
+      if (rc.fromMe && rc.wamid) {
+        const { data: ja } = await supabase.getClient().from('mensagens_whatsapp').select('id').eq('company_id', pessoal.company_id).eq('wamid', rc.wamid).limit(1);
+        if (Array.isArray(ja) && ja.length) return 'ignorada';
+      }
+      const { telefonesOcultosDoPessoal, ehTelefoneOculto } = await import('./modules/numero-pessoal.js');
+      if (ehTelefoneOculto(await telefonesOcultosDoPessoal(supabase.getClient(), pessoal.company_id, pessoal), telefone)) return 'ignorada';
+      const lead = await leadDoTelefoneNaEmpresa(supabase.getClient(), pessoal.company_id, telefone).catch(() => null);
+      const ok = await gravarReacao(supabase.getClient(), {
+        companyId: pessoal.company_id, leadId: lead?.id ?? null, telefone, alvoWamid: rc.alvo, emoji: rc.emoji,
+        de: rc.fromMe ? 'humano' : 'cliente', userId: rc.fromMe ? pessoal.dono_user_id : null, autorNome: rc.fromMe ? pessoal.dono_nome : null,
+        canal: 'whatsapp_business', numero: pessoal.instancia, visivelSoPara: pessoal.dono_user_id, wamid: rc.wamid || null,
+        origem: rc.fromMe ? 'celular' : 'webhook', status: rc.fromMe ? 'enviada' : 'recebida',
+      });
+      return ok ? 'gravada' : 'ignorada';
+    }
+    const cid = await evolutionTenant.companyDaInstancia(inst);
+    if (!cid && inst && inst !== config.evolutionInstance) return 'ignorada';
+    const companyId = cid ?? ECOSUN_COMPANY_ID;
+    if (companyId === ECOSUN_COMPANY_ID && isAdminPhone(telefone)) return 'ignorada';
+    // Eco da reação que a equipe mandou pelo painel (já gravada com quem reagiu).
+    if (rc.fromMe && rc.wamid) {
+      const { data: ja } = await supabase.getClient().from('mensagens_whatsapp').select('id').eq('company_id', companyId).eq('wamid', rc.wamid).limit(1);
+      if (Array.isArray(ja) && ja.length) return 'ignorada';
+    }
+    const lead = await leadDoTelefoneNaEmpresa(supabase.getClient(), companyId, telefone).catch(() => null);
+    if (!lead) return 'ignorada';
+    const ok = await gravarReacao(supabase.getClient(), {
+      companyId, leadId: lead.id, telefone, alvoWamid: rc.alvo, emoji: rc.emoji, de: rc.fromMe ? 'humano' : 'cliente',
+      canal: companyId === ECOSUN_COMPANY_ID ? 'eva_oficial' : 'qr_code', numero: inst ?? null, visivelSoPara: null, wamid: rc.wamid || null,
+      origem: rc.fromMe ? 'celular' : 'webhook', status: rc.fromMe ? 'enviada' : 'recebida', contatoNome: lead.name,
+    });
+    return ok ? 'gravada' : 'ignorada';
+  }
+
   app.post('/webhook', async (req, res) => {
     const token = (req.headers['x-webhook-token'] as string)
       ?? (req.query.token as string)
@@ -7908,6 +8071,65 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
         instanciaDaEva: config.evolutionInstance,
       });
       res.status(h.http).json({ status: h.status });
+      return;
+    }
+
+    // W4: etiqueta posta no celular (número PESSOAL) → etapa do lead no painel.
+    {
+      const assoc = lerAssociacaoEtiqueta(req.body as Record<string, unknown>);
+      const evento = String((req.body as { event?: unknown })?.event ?? '').toLowerCase().replace(/_/g, '.');
+      if (assoc || evento === 'labels.edit' || evento === 'labels.association') {
+        const inst = typeof (req.body as { instance?: unknown })?.instance === 'string' ? (req.body as { instance: string }).instance : undefined;
+        const pessoal = inst ? await numerosPessoais.porInstancia(inst) : null;
+        if (pessoal === 'erro') { res.status(503).json({ status: 'numero_pessoal_indisponivel' }); return; }
+        if (assoc && pessoal && pessoal.ativo && !(await evolutionTenant.companyDaInstancia(inst))) {
+          const tel = normalizeBrazilianPhone(assoc.jid.replace(/@.*/, ''));
+          if (!assoc.jid.endsWith('@s.whatsapp.net')) console.log('[etiquetas] conversa com id escondido (@lid) — etiqueta não sincronizada');
+          if (tel && assoc.jid.endsWith('@s.whatsapp.net')) {
+            const r = await etiquetaParaEtapa(supabase.getClient(), pessoal, { labelId: assoc.labelId, telefone: tel, tipo: assoc.tipo }, {
+              mudarEtapa: (leadId, atual, nova) => emFilaDoLead(leadId, () => mudarEtapaPelaEtiqueta(pessoal, leadId, atual, nova, tel, assoc.labelId)),
+            }).catch(() => 'ignorada' as const);
+            res.status(200).json({ status: `etiqueta_${r}` });
+            return;
+          }
+        }
+        // Etiqueta apagada no celular: sai do mapeamento.
+        const ed = (req.body as { data?: { id?: unknown; deleted?: unknown } })?.data;
+        if (evento === 'labels.edit' && pessoal && ed?.deleted === true && typeof ed.id === 'string') await esquecerEtiqueta(supabase.getClient(), pessoal, ed.id);
+        res.status(200).json({ status: 'etiqueta_ignorada' });
+        return;
+      }
+    }
+
+    // W3: risquinhos (messages.update) e "digitando…" (presence.update) — só para o painel.
+    {
+      const inst = typeof (req.body as { instance?: unknown })?.instance === 'string' ? (req.body as { instance: string }).instance : undefined;
+      const atualiz = lerStatusEvolution(req.body as Record<string, unknown>);
+      const presencas = lerPresencaEvolution(req.body as Record<string, unknown>);
+      if (atualiz.length || presencas.length) {
+        const pessoal = await numerosPessoais.porInstancia(inst);
+        if (pessoal === 'erro') { res.status(503).json({ status: 'numero_pessoal_indisponivel' }); return; }
+        // Mesma trava do caminho das mensagens: instância em DOIS cadastros não grava nada.
+        if (pessoal && await evolutionTenant.companyDaInstancia(inst)) { res.status(200).json({ status: 'numero_pessoal_conflito' }); return; }
+        const cid = pessoal && pessoal.ativo ? pessoal.company_id : await evolutionTenant.companyDaInstancia(inst) ?? (!inst || inst === config.evolutionInstance ? ECOSUN_COMPANY_ID : null);
+        if (cid) {
+          for (const a of atualiz) if (a.fromMe !== false) await aplicarStatus(supabase.getClient(), cid, a);
+          for (const pr of (inst ? presencas : [])) {
+            const tel = normalizeBrazilianPhone(pr.jid.replace(/@.*/, ''));
+            if (tel) marcarPresenca(cid, pessoal && pessoal.ativo ? pessoal.dono_user_id : null, tel, pr.presenca);
+          }
+        }
+        res.status(200).json({ status: 'atualizado' });
+        return;
+      }
+    }
+
+    // W2: reação (👍 numa mensagem) — só vai para o painel; ninguém responde.
+    const reacao = lerReacaoEvolution((req.body as { data?: Record<string, unknown> })?.data);
+    if (reacao) {
+      const inst = typeof (req.body as { instance?: unknown })?.instance === 'string' ? (req.body as { instance: string }).instance : undefined;
+      const r = await receberReacaoEvolution(reacao, inst);
+      res.status(r === 'erro' ? 503 : 200).json({ status: `reacao_${r}` });
       return;
     }
 
@@ -7944,7 +8166,12 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
       }
       if (!pessoal.ativo) { res.status(200).json({ status: 'numero_pessoal_desligado' }); return; }
       const { receberNoNumeroPessoal } = await import('./modules/numero-pessoal.js');
-      const r = await receberNoNumeroPessoal(supabase.getClient(), pessoal, parsed);
+      // W1: mídia recente é baixada PELA INSTÂNCIA DO DONO e guardada (só ele vê); áudio transcrito.
+      const r = await receberNoNumeroPessoal(supabase.getClient(), pessoal, parsed, Date.now(), {
+        baixarMidia: (m) => comCanal({ companyId: pessoal.company_id, evolutionInstance: pessoal.instancia }, () => evolution.getMediaBase64(m.messageId, { limiteBytes: LIMITE_MIDIA_BYTES })),
+        transcrever: transcriber ? (b64, mime) => transcriber.transcribeFromBase64(b64, mime) : undefined,
+        emSegundoPlano: (tarefa) => { void tarefa.catch((e) => console.warn(`[numero-pessoal] mídia não completou: ${(e as Error).message}`)); },
+      });
       res.status(200).json({ status: `numero_pessoal_${r}` });
       return;
     }
@@ -9353,7 +9580,31 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     retomarTakeover: (telefone) => takeover.resumeFor(telefone),
     // Atendimento P2b: responder pelo WhatsApp PESSOAL do dono (instância QR dele) — sem
     // passar pelo sendText da Eva (lá é outro número, outra marca, outra trava).
-    enviarPessoal: (instancia, to, text) => comEmpresaDe(ECOSUN_COMPANY_ID, () => comCanal({ companyId: ECOSUN_COMPANY_ID, evolutionInstance: instancia }, () => evolution.sendText(to, text))),
+    enviarPessoal: (instancia, to, text, citada) => comEmpresaDe(ECOSUN_COMPANY_ID, () => comCanal({ companyId: ECOSUN_COMPANY_ID, evolutionInstance: instancia }, () => (citada ? evolution.sendTextQuoted(to, text, citada) : evolution.sendText(to, text)))),
+    // W2: responder citando pelo QR do tenant (a rota já roda dentro do canal da empresa) e reagir pela Evolution.
+    sendTextEvolutionCitando: (to, text, citada) => evolution.sendTextQuoted(to, text, citada),
+    reagirEvolution: (instancia, companyId, to, alvo, emoji) => comEmpresaDe(companyId, () => comCanal({ companyId, evolutionInstance: instancia }, () => evolution.sendReactionTo(to, alvo, emoji))),
+    // W4: etiquetas do WhatsApp Business do número pessoal ↔ etapa do funil.
+    etiquetasDaInstancia: async (instancia) => lerEtiquetasEvolution(await comEmpresaDe(ECOSUN_COMPANY_ID, () => comCanal({ companyId: ECOSUN_COMPANY_ID, evolutionInstance: instancia }, () => evolution.listarEtiquetas()))),
+    sincronizarEtiquetas: (companyId, leadId, etapa) => {
+      // Uma troca por vez por lead (clique rápido A→B chega na ordem).
+      void emFilaDoLead(leadId, async () => {
+        const base = supabase.getClient().from('leads').select('phone').eq('id', leadId);
+        const { data } = await (companyId === ECOSUN_COMPANY_ID ? base.or(`company_id.eq.${ECOSUN_COMPANY_ID},company_id.is.null`) : base.eq('company_id', companyId)).maybeSingle();
+        const tel = normalizeBrazilianPhone(String((data as { phone?: string } | null)?.phone ?? ''));
+        if (!tel) return;
+        await etapaParaEtiqueta(supabase.getClient(), { companyId, leadId, telefone: tel, etapa }, apiEtiquetas);
+      }).catch((e) => console.warn(`[etiquetas] painel → celular falhou: ${(e as Error).message}`));
+    },
+    // W3: marcar como lida (✓✓ azul) pela instância do dono.
+    marcarLidasEvolution: (instancia, companyId, to, wamids) => comEmpresaDe(companyId, () => comCanal({ companyId, evolutionInstance: instancia }, () => evolution.marcarComoLidas(to, wamids))),
+    // W1 — mídia pela Evolution: número pessoal do dono ou assistente do tenant (instância já conferida na rota).
+    enviarMidiaEvolution: (instancia, companyId, to, m) => comEmpresaDe(companyId, () => comCanal({ companyId, evolutionInstance: instancia }, () => (m.tipo === 'audio'
+      ? evolution.sendWhatsAppAudio(to, m.base64, m.citada)
+      : evolution.sendMediaBase64(to, { mediatype: m.tipo === 'imagem' ? 'image' : m.tipo === 'video' ? 'video' : 'document', mimetype: m.mime, base64: m.base64, fileName: m.nome, caption: m.legenda, citada: m.citada })))),
+    converterAudio: async (webm) => (await import('./modules/audio-ogg.js')).webmParaOgg(webm),
+    // A Meta só aceita foto JPEG/PNG (WebP é figurinha): converte antes de sair pelo número da Eva.
+    converterImagemJpeg: async (img) => { const sharp = (await import('sharp')).default; return sharp(img).rotate().jpeg({ quality: 85 }).toBuffer(); },
     evolutionInstanciaEva: config.evolutionInstance,
     // Histórico do número pessoal: progresso na tela + puxar o que a Evolution já guardou.
     historicoPessoal,
