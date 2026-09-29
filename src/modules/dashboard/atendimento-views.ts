@@ -35,6 +35,7 @@ import {
 import { parametroNome, type ModeloAtendimento } from './modelos-atendimento.js';
 import { respostasProntas } from './respostas-prontas.js';
 import { tamanhoLegivel, ACEITA_NO_SELETOR, LIMITE_IMAGEM_BYTES, LIMITE_MIDIA_BYTES, LIMITE_LEGENDA } from '../midia-whatsapp.js';
+import { casarMidiaAntiga, tipoDoArquivo, type AnexoDoLead } from './atendimento-arquivos.js';
 
 const FUSO = 'America/Sao_Paulo';
 
@@ -135,17 +136,51 @@ export function corpoDaMidia(m: Pick<MensagemChat, 'content' | 'midia' | 'transc
   const transc = m.transcricao ? `<div class="cc-at-transc"><span>Transcrição</span>${escapeHtml(m.transcricao)}</div>` : '';
   if (!ID_MIDIA_OK.test(md.id)) return `<span class="cc-at-midia">📎 Arquivo</span>${txt}${transc}`;
   const url = `/dashboard/leads/midia/${md.id}`;
+  const baixar = botaoBaixar(url, md.tipo === 'imagem' ? 'a foto' : md.tipo === 'audio' ? 'o áudio' : md.tipo === 'video' ? 'o vídeo' : 'o arquivo');
   if (md.tipo === 'imagem') {
-    return `<a class="cc-at-foto" href="${url}" target="_blank" rel="noopener" data-ampliar aria-label="Ampliar foto"><img src="${url}" alt="Foto enviada na conversa" loading="lazy" decoding="async"></a>${txt}`;
+    return `<a class="cc-at-foto" href="${url}" target="_blank" rel="noopener" data-ampliar aria-label="Ampliar foto"><img src="${url}" alt="Foto enviada na conversa" loading="lazy" decoding="async"></a>${baixar}${txt}`;
   }
-  if (md.tipo === 'audio') return `<audio controls preload="none" src="${url}" class="cc-at-audio"></audio>${txt}${transc}`;
-  if (md.tipo === 'video') return `<video controls preload="none" src="${url}" class="cc-at-video" playsinline></video>${txt}${transc}`;
+  if (md.tipo === 'audio') return `<audio controls preload="none" src="${url}" class="cc-at-audio"></audio>${baixar}${txt}${transc}`;
+  if (md.tipo === 'video') return `<video controls preload="none" src="${url}" class="cc-at-video" playsinline></video>${baixar}${txt}${transc}`;
   const mime = (md.mime ?? '').toLowerCase();
   const ic = ICONE_DOC.find(([re]) => re.test(mime))?.[1] ?? '📄';
   const nome = md.nome || 'Documento';
   const tam = tamanhoLegivel(md.bytes);
+  return cartaoDoc(ic, nome, tam, url) + txt;
+}
+
+/**
+ * ⬇ Baixar com UM clique (Junior 28/09): `?baixar=1` na MESMA rota protegida
+ * (confere empresa, vendedor e dono do número) — o servidor manda o arquivo
+ * como anexo, com nome amigável ("Ana-Exemplo_2026-09-28_foto.jpg").
+ */
+function botaoBaixar(url: string, oQue: string): string {
+  return `<a class="cc-at-baixar" href="${url}?baixar=1" download aria-label="Baixar ${escapeHtml(oQue)}">⬇ Baixar</a>`;
+}
+
+function cartaoDoc(ic: string, nome: string, tam: string, url: string): string {
   return `<div class="cc-at-doc"><span class="cc-at-doc-ic" aria-hidden="true">${ic}</span><span class="cc-at-doc-txt"><strong>${escapeHtml(nome)}</strong>${tam ? `<small>${escapeHtml(tam)}</small>` : ''}</span>
-      <a class="cc-link" href="${url}" target="_blank" rel="noopener">Abrir</a><a class="cc-link" href="${url}?baixar=1">Baixar</a></div>${txt}`;
+      <a class="cc-link" href="${url}" target="_blank" rel="noopener">Abrir</a>${botaoBaixar(url, 'o arquivo')}</div>`;
+}
+
+/**
+ * Mídia ANTIGA da Eva (antes do bucket novo): o balão só dizia "[Enviou uma
+ * foto]"; o arquivo está nos Arquivos do lead (lead_anexos). Quando casa com
+ * certeza (casarMidiaAntiga), mostra a miniatura/cartão + ⬇ Baixar pela rota
+ * protegida /dashboard/leads/:id/anexo/:anexoId. PURA.
+ */
+export function corpoDaMidiaAntiga(leadId: string, a: AnexoDoLead, conteudo: string): string {
+  const resto = conteudo.replace(/^\[[^\]]*\]\s*/, '').trim();
+  const txt = resto ? `<div class="cc-at-msg-t">${escapeHtml(resto)}</div>` : '';
+  if (!ID_MSG_OK.test(leadId) || !ID_MSG_OK.test(a.id)) return `<span class="cc-at-midia">📎 Arquivo</span>${txt}`;
+  const url = `/dashboard/leads/${leadId}/anexo/${a.id}`;
+  const t = tipoDoArquivo(a.mime_type);
+  if (t === 'foto') {
+    return `<a class="cc-at-foto" href="${url}" target="_blank" rel="noopener" data-ampliar aria-label="Ampliar foto"><img src="${url}" alt="Foto enviada na conversa" loading="lazy" decoding="async"></a>${botaoBaixar(url, 'a foto')}${txt}`;
+  }
+  const mime = (a.mime_type ?? '').toLowerCase();
+  const ic = ICONE_DOC.find(([re]) => re.test(mime))?.[1] ?? '📄';
+  return cartaoDoc(ic, t === 'pdf' ? 'PDF enviado pelo cliente' : 'Arquivo enviado pelo cliente', '', url) + txt;
 }
 
 function qsFiltros(f: FiltrosConversa, extra: Partial<FiltrosConversa> = {}): string {
@@ -258,7 +293,7 @@ export function blocoReacoes(rs: NonNullable<MensagemChat['reacoes']>): string {
   return `<div class="cc-at-reacoes" title="${escapeHtml(titulo)}">${rs.map((r) => `<span>${escapeHtml(r.emoji)}</span>`).join('')}${rs.length > 1 ? `<small>${rs.length}</small>` : ''}</div>`;
 }
 
-function balao(m: MensagemChat, rotuloAssistente: string, nomeCliente: string, temArquivos: boolean, mostrarCanal: boolean, donoPessoal: string | null, acoes = false): string {
+function balao(m: MensagemChat, rotuloAssistente: string, nomeCliente: string, temArquivos: boolean, mostrarCanal: boolean, donoPessoal: string | null, acoes = false, corpoAntigo: string | null = null): string {
   if (m.role === 'evento' || m.autor === 'evento') {
     return `<div class="cc-at-evento cc-at-evento-${m.evento === 'assumiu' ? 'assumiu' : m.evento === 'reagiu' ? 'reagiu' : 'devolveu'}" role="note">${escapeHtml(textoDoEvento(m, rotuloAssistente))}</div>`;
   }
@@ -277,7 +312,7 @@ function balao(m: MensagemChat, rotuloAssistente: string, nomeCliente: string, t
   return `<div class="cc-at-msg ${classe}${reacoes ? ' cc-at-com-reacao' : ''}"${podeAgir ? ` data-msg="${m.painelId}"` : ''}>
       <div class="cc-at-msg-q">${escapeHtml(quem)}${canal}${podeAgir ? `<button type="button" class="cc-at-acoes-btn" data-acoes aria-label="Responder ou reagir" title="Responder ou reagir">⋯</button>` : ''}</div>
       ${m.citando ? blocoCitacao(m.citando) : ''}
-      ${m.midia ? corpoDaMidia(m) : corpoDaMensagem(m.content, temArquivos)}${!m.midia && m.transcricao ? `<div class="cc-at-transc"><span>Transcrição</span>${escapeHtml(m.transcricao)}</div>` : ''}
+      ${m.midia ? corpoDaMidia(m) : corpoAntigo ?? corpoDaMensagem(m.content, temArquivos)}${!m.midia && m.transcricao ? `<div class="cc-at-transc"><span>Transcrição</span>${escapeHtml(m.transcricao)}</div>` : ''}
       ${falhou}
       ${hora ? `<div class="cc-at-msg-h">${escapeHtml(hora + enviando)}${humano ? tique(m.status) : ''}</div>` : ''}
       ${reacoes}
@@ -487,7 +522,9 @@ function faixaAssumir(lead: LeadDetail, mensagens: MensagemChat[], assistente: s
 }
 
 /** Os balões da conversa (com a divisória de cada dia). Usado na página E no "sem recarregar". */
-export function blocoMensagens(mensagens: MensagemChat[], assistente: string, nomeCliente: string, temArquivos: boolean, donoPessoal: string | null, soDono = false, acoes = false, digitando: 'digitando' | 'gravando' | null = null): string {
+export function blocoMensagens(mensagens: MensagemChat[], assistente: string, nomeCliente: string, temArquivos: boolean, donoPessoal: string | null, soDono = false, acoes = false, digitando: 'digitando' | 'gravando' | null = null,
+  /** Mídia antiga da Eva: os anexos do lead para casar com os balões "[Enviou uma foto]". */
+  antigas: { leadId: string; anexos: AnexoDoLead[] } | null = null): string {
   // W3: "digitando…" / "gravando áudio…" no fim da conversa (quando o WhatsApp avisa).
   const dig = digitando ? `<div class="cc-at-digitando" role="status" aria-live="polite"><span class="cc-at-dig-pts" aria-hidden="true"><i></i><i></i><i></i></span>${escapeHtml(nomeCliente)} está ${digitando === 'gravando' ? 'gravando áudio…' : 'digitando…'}</div>` : '';
   if (mensagens.length === 0 && dig) return dig;
@@ -498,8 +535,9 @@ export function blocoMensagens(mensagens: MensagemChat[], assistente: string, no
   }
   const canais = new Set(mensagens.map((m) => m.canal).filter(Boolean));
   const mostrarCanal = !soDono && canais.size > 1;
+  const casadas = antigas ? casarMidiaAntiga(mensagens, antigas.anexos) : new Map<number, AnexoDoLead>();
   let diaAnterior = '';
-  return mensagens.map((m) => {
+  return mensagens.map((m, i) => {
     let sep = '';
     if (m.timestamp && Number.isFinite(Date.parse(m.timestamp))) {
       const dia = rotuloDia(m.timestamp);
@@ -507,7 +545,8 @@ export function blocoMensagens(mensagens: MensagemChat[], assistente: string, no
     }
     // Conversa do número pessoal com quem não é lead: quem responde é o dono (nunca a assistente).
     const mm = soDono && m.role === 'assistant' && m.autor !== 'humano' ? { ...m, autor: 'humano' as const, autorNome: m.autorNome ?? donoPessoal } : m;
-    return sep + balao(mm, assistente, nomeCliente, temArquivos, mostrarCanal, donoPessoal, acoes);
+    const anx = casadas.get(i);
+    return sep + balao(mm, assistente, nomeCliente, temArquivos, mostrarCanal, donoPessoal, acoes, anx && antigas ? corpoDaMidiaAntiga(antigas.leadId, anx, m.content) : null);
   }).join('') + dig;
 }
 
@@ -525,7 +564,7 @@ function topoDoChat(lead: LeadDetail, mensagens: MensagemChat[], assistente: str
     : lead.eva_active ? pilulaStatus('normal', `${assistente} ativa`) : pilulaStatus('acompanhar', `${assistente} pausada`);
   const canalChip = envio ? `<span class="cc-at-canal cc-at-canal-${escapeHtml(envio.canal)}">${escapeHtml(rotuloCanal(envio.canal, assistente, donoPessoal))}</span>` : '';
   return `<div class="cc-at-topo" id="cc-at-topo">
-    <header class="cc-at-chat-topo">
+    <header class="cc-at-chat-topo" tabindex="-1">
       ${avatarAt(lead.name, lead.phone)}
       <div class="cc-at-chat-id">
         <div class="cc-at-chat-nome"><strong>${escapeHtml(nome)}</strong>${pilulaEtapa(lead.status)}${eva}${canalChip}</div>
@@ -535,6 +574,12 @@ function topoDoChat(lead: LeadDetail, mensagens: MensagemChat[], assistente: str
     </header>
     ${!lead.eva_active ? faixaAssumir(lead, mensagens, assistente, assistenteMin, podeEditar) : ''}
     </div>`;
+}
+
+/** Anexos do lead para casar com os balões antigos da Eva (só metadados; a URL é a rota protegida). */
+function antigasDo(lead: Pick<LeadDetail, 'id' | 'anexos'>): { leadId: string; anexos: AnexoDoLead[] } | null {
+  const anexos = (lead.anexos ?? []).filter((a) => a && a.id && a.created_at);
+  return anexos.length ? { leadId: lead.id, anexos } : null;
 }
 
 /** W2: citar/reagir aparece para quem pode responder por algum número. */
@@ -563,7 +608,7 @@ export function pedacosDaConversa(p: {
   const temArquivos = (p.lead.anexos ?? []).length > 0;
   return {
     topo: topoDoChat(p.lead, p.mensagens, assistente, assistenteMin, p.envio, p.donoPessoal ?? null, can(p.user, 'leads', 'editar')),
-    msgs: blocoMensagens(p.mensagens, assistente, p.lead.name ?? 'Sem nome', temArquivos, p.donoPessoal ?? null, false, podeAgirNoChat(p.envio), p.digitando ?? null),
+    msgs: blocoMensagens(p.mensagens, assistente, p.lead.name ?? 'Sem nome', temArquivos, p.donoPessoal ?? null, false, podeAgirNoChat(p.envio), p.digitando ?? null, antigasDo(p.lead)),
     compor: compositor(p.lead, p.mensagens, p.envio, assistente),
     estado: estadoDoCompositor(p.lead, p.mensagens, p.envio),
   };
@@ -589,15 +634,15 @@ export function estadoDoCompositor(lead: Pick<LeadDetail, 'opt_out' | 'phone'>, 
   return `${c.canal}|${t}|${m}|${c.modelos.length}`;
 }
 
-function colunaChat(lead: LeadDetail, mensagens: MensagemChat[], assistente: string, assistenteMin: string, envio: CompositorInput | undefined, donoPessoal: string | null, podeEditar: boolean): string {
+function colunaChat(lead: LeadDetail, mensagens: MensagemChat[], assistente: string, assistenteMin: string, envio: CompositorInput | undefined, donoPessoal: string | null, podeEditar: boolean, eu: string | null = null): string {
   const nome = lead.name ?? 'Sem nome';
   const temArquivos = (lead.anexos ?? []).length > 0;
-  const corpo = blocoMensagens(mensagens, assistente, nome, temArquivos, donoPessoal, false, podeAgirNoChat(envio));
+  const corpo = blocoMensagens(mensagens, assistente, nome, temArquivos, donoPessoal, false, podeAgirNoChat(envio), null, antigasDo(lead));
   const topo = topoDoChat(lead, mensagens, assistente, assistenteMin, envio, donoPessoal, podeEditar);
   // Sem recarregar: o script busca os pedaços desta conversa (mesmo número da resposta).
   const estado = envio ? estadoDoCompositor(lead, mensagens, envio) : '';
   const vivo = envio
-    ? ` data-conversa="/dashboard/leads/${escapeHtml(lead.id)}/conversa.json?canal=${escapeHtml(envio.canal)}" data-estado="${escapeHtml(estado)}" data-assinatura="${assinaturaDaConversa({ topo, msgs: corpo, estado })}"${podeAgirNoChat(envio) ? ` data-reagir="/dashboard/leads/${escapeHtml(lead.id)}/reagir"` : ''}`
+    ? ` data-conversa="/dashboard/leads/${escapeHtml(lead.id)}/conversa.json?canal=${escapeHtml(envio.canal)}" data-estado="${escapeHtml(estado)}" data-assinatura="${assinaturaDaConversa({ topo, msgs: corpo, estado })}"${podeAgirNoChat(envio) ? ` data-reagir="/dashboard/leads/${escapeHtml(lead.id)}/reagir"` : ''}${eu ? ` data-eu="${escapeHtml(eu)}"` : ''}`
     : '';
   return `<section class="cc-at-col cc-at-chat" id="conversa" aria-label="Conversa"${vivo}>
     <nav class="cc-at-abas-cel" aria-label="Navegação do atendimento">
@@ -685,8 +730,9 @@ function blocoLinhaDoTempo(leadId: string, timeline: Atividade[]): string {
   return secao('Linha do tempo', `${registrar}${lista}`);
 }
 
-function blocoArquivos(anexos: LeadDetail['anexos']): string {
-  if (!anexos || anexos.length === 0) return '';
+function blocoArquivos(leadId: string, anexos: LeadDetail['anexos'], temMidiaNoChat = false): string {
+  if ((!anexos || anexos.length === 0) && !temMidiaNoChat) return '';
+  anexos = anexos ?? [];
   const card = (a: LeadDetail['anexos'][number]) => {
     const mime = (a.mime_type ?? '').toLowerCase();
     const rotulo = a.tipo === 'conta_luz' ? 'Conta de luz' : a.tipo === 'recebido_cliente' ? 'Enviado pelo cliente' : a.tipo;
@@ -699,9 +745,12 @@ function blocoArquivos(anexos: LeadDetail['anexos']): string {
     else if (mime.includes('pdf')) prev = `<a class="cc-at-anx-prev" href="${url}" target="_blank" rel="noopener">${icone('file')}<span>PDF</span></a>`;
     else if (mime.startsWith('video/')) prev = `<a class="cc-at-anx-prev" href="${url}" target="_blank" rel="noopener">${icone('eye')}<span>Vídeo</span></a>`;
     else prev = `<a class="cc-at-anx-prev" href="${url}" target="_blank" rel="noopener">${icone('ext')}<span>Arquivo</span></a>`;
-    return `<div class="cc-at-anx" title="${escapeHtml(a.descricao ?? '')}">${prev}<small>${escapeHtml(rotulo)}${quando ? ` · ${escapeHtml(quando)}` : ''}</small></div>`;
+    const baixar = ID_MSG_OK.test(leadId) && ID_MSG_OK.test(a.id) ? botaoBaixar(`/dashboard/leads/${leadId}/anexo/${a.id}`, rotulo) : '';
+    return `<div class="cc-at-anx" title="${escapeHtml(a.descricao ?? '')}">${prev}<small>${escapeHtml(rotulo)}${quando ? ` · ${escapeHtml(quando)}` : ''}</small>${baixar}</div>`;
   };
-  return secao(`Arquivos (${anexos.length})`, `<div class="cc-at-anx-grade">${anexos.map(card).join('')}</div>`, 'arquivos');
+  // ⬇ Baixar tudo: um .zip com as fotos e os PDFs do lead (cofre + conversa), nomes amigáveis.
+  const tudo = ID_MSG_OK.test(leadId) ? `<a class="cc-btn cc-btn-sm cc-at-baixar-tudo" href="/dashboard/leads/${leadId}/arquivos.zip" download>⬇ Baixar tudo (.zip)</a>` : '';
+  return secao(`Arquivos (${anexos.length})`, `${tudo}${anexos.length ? `<div class="cc-at-anx-grade">${anexos.map(card).join('')}</div>` : '<p class="cc-at-nada">As fotos e os PDFs da conversa entram no .zip.</p>'}`, 'arquivos');
 }
 
 function blocoServicos(servicos: ServicoDoLead[]): string {
@@ -723,7 +772,7 @@ const CLIENTE_STATUSES = ['contrato_assinado', 'instalado', 'medidor_trocado', '
 
 export interface ServicoDoLead { id: string; tipoNome: string; dataServico: string; fotos: number; videos: number }
 
-function colunaCockpit(lead: LeadDetail, servicos: ServicoDoLead[], assistente: string, assistenteMin: string): string {
+function colunaCockpit(lead: LeadDetail, servicos: ServicoDoLead[], assistente: string, assistenteMin: string, temMidiaNoChat = false): string {
   const id = escapeHtml(lead.id);
   const perdido = lead.status === 'perdido';
   const jaVenda = CLIENTE_STATUSES.includes(String(lead.installation_status ?? ''));
@@ -828,7 +877,7 @@ function colunaCockpit(lead: LeadDetail, servicos: ServicoDoLead[], assistente: 
     ${resumo}
     ${blocoTarefas(lead.id, lead.tarefas)}
     ${blocoLinhaDoTempo(lead.id, lead.timeline)}
-    ${blocoArquivos(lead.anexos)}
+    ${blocoArquivos(lead.id, lead.anexos, temMidiaNoChat)}
     ${blocoServicos(servicos)}
     ${contato}
   </aside>`;
@@ -996,16 +1045,16 @@ export function pedacosDoContato(p: { user: DashUser | undefined; contato: Conta
   };
 }
 
-function colunaChatContato(ct: ContatoPessoalTela, donoPessoal: string | null, assistente: string): string {
+function colunaChatContato(ct: ContatoPessoalTela, donoPessoal: string | null, assistente: string, eu: string | null = null): string {
   const nome = ct.nome || formatPhoneBR(ct.telefone);
   const corpo = blocoMensagens(ct.mensagens, assistente, nome, false, donoPessoal, true, ct.envio?.via === 'evolution');
   const estado = ct.envio?.via === 'evolution' ? 'pessoal|livre' : 'pessoal|desconectado';
-  const vivo = ct.envio ? ` data-conversa="/dashboard/leads/conversas/contato.json?contato=${encodeURIComponent(ct.telefone)}" data-estado="${escapeHtml(estado)}" data-assinatura="${assinaturaDaConversa({ msgs: corpo, estado })}"${ct.envio.via === 'evolution' ? ` data-reagir="/dashboard/leads/conversas/contato/reagir" data-telefone="${escapeHtml(ct.telefone)}"` : ''}` : '';
+  const vivo = ct.envio ? ` data-conversa="/dashboard/leads/conversas/contato.json?contato=${encodeURIComponent(ct.telefone)}" data-estado="${escapeHtml(estado)}" data-assinatura="${assinaturaDaConversa({ msgs: corpo, estado })}"${ct.envio.via === 'evolution' ? ` data-reagir="/dashboard/leads/conversas/contato/reagir" data-telefone="${escapeHtml(ct.telefone)}"` : ''}${eu ? ` data-eu="${escapeHtml(eu)}"` : ''}` : '';
   return `<section class="cc-at-col cc-at-chat" id="conversa" aria-label="Conversa"${vivo}>
     <nav class="cc-at-abas-cel" aria-label="Navegação do atendimento">
       <a class="cc-at-voltar" href="/dashboard/leads/conversas" aria-label="Voltar para a lista">${icone('chev', 'sm')}Conversas</a>
     </nav>
-    <header class="cc-at-chat-topo">
+    <header class="cc-at-chat-topo" tabindex="-1">
       ${avatarAt(ct.nome, ct.telefone)}
       <div class="cc-at-chat-id">
         <div class="cc-at-chat-nome"><strong>${escapeHtml(nome)}</strong><span class="cc-at-naolead">Não é lead</span><span class="cc-at-canal cc-at-canal-whatsapp_business">${escapeHtml(rotuloCanal('whatsapp_business', assistente, donoPessoal))}</span></div>
@@ -1057,8 +1106,10 @@ export function renderAtendimentoPage(p: AtendimentoInput): string {
 
   const ct = !lead ? p.contato ?? null : null;
   const raiz = `cc-root cc-at${lead || ct ? ' cc-at-com-lead' : ''}`;
-  const colChat = lead ? colunaChat(lead, mensagens, assistente, assistenteMin, p.envio, p.donoPessoal ?? null, can(p.user, 'leads', 'editar')) : ct ? colunaChatContato(ct, p.donoPessoal ?? null, assistente) : chatSemLead();
-  const colResumo = lead ? colunaCockpit(lead, p.servicos ?? [], assistente, assistenteMin) : ct ? cockpitContato(ct, p.donoPessoal ?? null) : cockpitSemLead();
+  // nome de quem escreve: o balão "enviando…" já nasce igual ao de verdade ("Junior · pelo painel")
+  const eu = p.user?.nome?.trim() || null;
+  const colChat = lead ? colunaChat(lead, mensagens, assistente, assistenteMin, p.envio, p.donoPessoal ?? null, can(p.user, 'leads', 'editar'), eu) : ct ? colunaChatContato(ct, p.donoPessoal ?? null, assistente, eu) : chatSemLead();
+  const colResumo = lead ? colunaCockpit(lead, p.servicos ?? [], assistente, assistenteMin, mensagens.some((m) => { const md = (m as MensagemChat).midia; return !!md && (md.tipo === 'imagem' || md.tipo === 'documento'); })) : ct ? cockpitContato(ct, p.donoPessoal ?? null) : cockpitSemLead();
   const modais = `${lead && !CLIENTE_STATUSES.includes(String(lead.installation_status ?? '')) ? modalFechou(lead) : ''}
     ${lead && lead.status !== 'perdido' ? modalPerdido(lead, assistente) : ''}`;
   const titulo = lead ? `Conversa: ${lead.name ?? 'Sem nome'}` : ct ? `Conversa: ${ct.nome || formatPhoneBR(ct.telefone)}` : 'Conversas';
@@ -1135,53 +1186,64 @@ document.addEventListener('keydown',function(e){var a=alca(e);if(!a)return;
  *  - prévia do modelo e respostas prontas (textContent: nada vira HTML).
  */
 export const SCRIPT_RESPONDER = `(function(){
-var chat=null,URLC=null,assin=null,URLR=null,TELR=null,enviando=false,buscando=false,geracao=0,parados=0,tiques=0,nav=0,rascunhos={};
+var chat=null,URLC=null,assin=null,URLR=null,TELR=null,enviando=false,buscando=false,geracao=0,parados=0,tiques=0,nav=0,contB=0,rascunhos={};
 var podeFetch=!!(window.fetch&&window.FormData&&window.URLSearchParams);
 function rolar(){var c=document.getElementById('cc-at-msgs');if(c)c.scrollTop=c.scrollHeight;}
 function noFim(c){return c.scrollHeight-c.scrollTop-c.clientHeight<120;}
 function pedaco(html){var t=document.createElement('template');t.innerHTML=html;return t.content;}
 function lista(p){return Array.prototype.slice.call(p.children);}
 /* Balões novos SEM trocar o chat inteiro: o que não mudou fica (foto, áudio tocando, rolagem); só entra/sai/troca o diferente. */
-function aplicarMsgs(c,html){var ns=lista(pedaco(html)),os=lista(c),i=0,j=0,n,o;
+function igual(o,n){var a=o.querySelectorAll('details'),b=n.querySelectorAll('details');for(var k=0;k<a.length&&k<b.length;k++){if(a[k].open)b[k].open=true;}return o.isEqualNode(n);}
+/* até 12 itens à frente: vários balões novos no meio (fila da assistente atrasada) ou vários que saíram */
+function achaNovo(ns,de,o){for(var k=de;k<ns.length&&k<de+12;k++){if(igual(o,ns[k]))return k;}return -1;}
+function achaVelho(os,de,n){for(var k=de;k<os.length&&k<de+12;k++){if(igual(os[k],n))return k;}return -1;}
+function aplicarMsgs(c,html){var ns=lista(pedaco(html)),os=lista(c),i=0,j=0,n,o,k;
 while(j<ns.length){n=ns[j];o=os[i];
 if(!o){c.appendChild(n);j++;continue;}
-if(o.isEqualNode(n)){i++;j++;continue;}
-if(os[i+1]&&os[i+1].isEqualNode(n)){c.removeChild(o);i++;continue;}
-if(ns[j+1]&&o.isEqualNode(ns[j+1])){c.insertBefore(n,o);j++;continue;}
+if(igual(o,n)){i++;j++;continue;}
+k=achaNovo(ns,j+1,o);if(k>0){while(j<k){c.insertBefore(ns[j],o);j++;}continue;}
+k=achaVelho(os,i+1,n);if(k>0){while(i<k){c.removeChild(os[i]);i++;}continue;}
 c.replaceChild(n,o);i++;j++;}
 while(i<os.length){c.removeChild(os[i]);i++;}}
 function aviso(html){var f=document.getElementById('responder');if(!f)return;f.querySelectorAll('.cc-at-aviso-envio').forEach(function(x){x.remove();});if(!html)return;var d=document.createElement('div');d.className='cc-at-aviso-envio';d.setAttribute('role','status');d.innerHTML=html;f.insertBefore(d,f.firstChild);}
+function horaAgora(){var d=new Date();return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);}
 function balao(texto){var c=document.getElementById('cc-at-msgs');if(!c)return null;var v=c.querySelector('.cc-at-vazio');if(v)v.remove();
+var dias=c.querySelectorAll('.cc-at-dia'),ult=dias.length?dias[dias.length-1]:null;
+if(!ult||(ult.textContent||'').trim()!=='Hoje'){var sd=document.createElement('div');sd.className='cc-at-dia';var ss=document.createElement('span');ss.textContent='Hoje';sd.appendChild(ss);c.appendChild(sd);}
 var d=document.createElement('div');d.className='cc-at-msg cc-at-msg-eva cc-at-msg-hum cc-at-msg-otimista';
-var q=document.createElement('div');q.className='cc-at-msg-q';q.textContent='Você · pelo painel';
+var q=document.createElement('div');q.className='cc-at-msg-q';q.textContent=((chat&&chat.getAttribute('data-eu'))||'Você')+' · pelo painel';
+var r=document.createElement('span');r.className='cc-at-acoes-btn';r.setAttribute('aria-hidden','true');r.setAttribute('style','visibility:hidden');r.textContent='⋯';q.appendChild(r);
 var t=document.createElement('div');t.className='cc-at-msg-t';t.textContent=texto;
-var h=document.createElement('div');h.className='cc-at-msg-h';h.textContent='enviando…';
+var h=document.createElement('div');h.className='cc-at-msg-h';h.textContent=horaAgora()+' · enviando…';
 d.appendChild(q);d.appendChild(t);d.appendChild(h);c.appendChild(d);rolar();return d;}
-function marcar(d,ok,motivo){if(!d)return;var h=d.querySelector('.cc-at-msg-h');if(ok){h.textContent='✓ enviado';return;}
+function marcar(d,ok,motivo){if(!d)return;var h=d.querySelector('.cc-at-msg-h');if(ok){h.textContent=horaAgora()+' ✓';return;}
 var f=document.createElement('div');f.className='cc-at-msg-falha';f.textContent='⚠ não saiu — '+(motivo||'tente de novo.');d.insertBefore(f,h);h.textContent='';}
 function novaChave(k){if(!k)return;var f=document.getElementById('responder');if(f)f.querySelectorAll('input[name=chave]').forEach(function(i){i.value=k;});}
 function trocarRodape(html,estado){var f=document.getElementById('responder');if(!f||!chat||typeof html!=='string')return;var novo=pedaco(html).querySelector('#responder');if(!novo)return;
 var ia=document.getElementById('cc-at-arquivo');if(grav||(ia&&ia.files&&ia.files.length))estado=null;
 if(estado&&chat.getAttribute('data-estado')!==estado){var ta=document.getElementById('cc-at-texto'),txt=ta?ta.value:'',foco=document.activeElement===ta;f.parentNode.replaceChild(novo,f);chat.setAttribute('data-estado',estado);var nt=document.getElementById('cc-at-texto');if(nt&&txt){nt.value=txt;}if(nt&&foco)nt.focus();atualizarPrevia();return;}
 var jv=f.querySelector('.cc-at-janela'),jn=novo.querySelector('.cc-at-janela');if(jv&&jn&&!jv.isEqualNode(jn))jv.parentNode.replaceChild(jn,jv);}
-function buscar(depoisDeEnviar){if(!URLC||buscando||!window.fetch)return;if(enviando&&!depoisDeEnviar)return;buscando=true;var g=geracao;
+function buscar(depoisDeEnviar){if(!URLC||buscando||!window.fetch)return;if(enviando&&!depoisDeEnviar)return;buscando=true;var g=geracao,meuB=++contB;
 var u=URLC+(URLC.indexOf('?')>=0?'&':'?')+'assinatura='+encodeURIComponent(assin||'')+(document.hasFocus&&document.hasFocus()?'&foco=1':'');
 return fetch(u,{credentials:'same-origin',headers:{'Accept':'application/json'}}).then(function(r){return r.ok?r.json():null;}).then(function(j){
 if(!j||g!==geracao)return;if(j.irPara){if(!(window.ccAtTroca&&window.ccAtTroca.ir(j.irPara)))location.href=j.irPara;return;}if(j.igual){parados++;return;}parados=0;assin=j.assinatura||null;
-var c=document.getElementById('cc-at-msgs');if(c&&typeof j.msgs==='string'){var fim=depoisDeEnviar||noFim(c);aplicarMsgs(c,j.msgs);if(fim)rolar();}
+var c=document.getElementById('cc-at-msgs'),fim=!!c&&(depoisDeEnviar||noFim(c));
 if(typeof j.topo==='string'){var t=document.getElementById('cc-at-topo'),n=pedaco(j.topo).querySelector('#cc-at-topo');if(t&&n&&!t.isEqualNode(n))t.parentNode.replaceChild(n,t);}
 trocarRodape(j.compor,j.estado);
+if(c&&typeof j.msgs==='string')aplicarMsgs(c,j.msgs);if(fim)rolar();
 if(typeof j.msgs==='string'&&j.msgs.indexOf('cc-at-digitando')>=0){setTimeout(function(){if(!document.hidden&&g===geracao)buscar(false);},3000);}
-}).catch(function(){}).then(function(){buscando=false;});}
+}).catch(function(){}).then(function(){if(meuB===contB)buscando=false;});}
 /* Troca de contato sem recarregar (SCRIPT_TROCA): antes de trocar as colunas, desmontar; depois, montar a conversa nova. */
+function chaveR(u){return u?u.replace(/([?&])canal=[^&]*&?/,'$1').replace(/[?&]$/,''):u;}
 function montar(){chat=document.getElementById('conversa');URLC=chat?chat.getAttribute('data-conversa'):null;assin=chat?chat.getAttribute('data-assinatura'):null;
-URLR=chat?chat.getAttribute('data-reagir'):null;TELR=chat?chat.getAttribute('data-telefone'):null;enviando=false;buscando=false;geracao++;parados=0;
+URLR=chat?chat.getAttribute('data-reagir'):null;TELR=chat?chat.getAttribute('data-telefone'):null;enviando=false;buscando=false;contB++;geracao++;parados=0;
 if(chat){chat.classList.add('cc-at-js');if(window.MediaRecorder&&navigator.mediaDevices&&navigator.mediaDevices.getUserMedia)chat.classList.add('cc-at-pode-gravar');}
-var ta=document.getElementById('cc-at-texto');if(ta&&URLC&&rascunhos[URLC]&&!ta.value)ta.value=rascunhos[URLC];
+var ta=document.getElementById('cc-at-texto'),k=chaveR(URLC);if(ta&&k&&rascunhos[k]&&!ta.value)ta.value=rascunhos[k];
 rolar();}
-function desmontar(){var ta=document.getElementById('cc-at-texto');if(URLC){if(ta&&ta.value.trim())rascunhos[URLC]=ta.value;else delete rascunhos[URLC];}
+function desmontar(){var ta=document.getElementById('cc-at-texto'),k=chaveR(URLC);if(k){if(ta&&ta.value.trim())rascunhos[k]=ta.value;else delete rascunhos[k];}
 nav++;geracao++;fecharMenu();if(grav){var g0=grav;grav=null;g0.cancelado=true;if(g0.cancelar)g0.cancelar();}limparPrev();tirarCitacao();}
-function guardar(u,texto){if(u&&texto&&!rascunhos[u])rascunhos[u]=texto;}
+/* Envio que não saiu enquanto o usuário estava noutra conversa: o texto volta (no campo, se ela já está aberta de novo). */
+function guardar(u,texto){var k=chaveR(u);if(!k||!texto)return;if(k===chaveR(URLC)){var ta=document.getElementById('cc-at-texto');if(ta&&!ta.value){ta.value=texto;aviso('<div class="cc-aviso cc-aviso-atencao">A última mensagem não saiu — o texto voltou para o campo.</div>');return;}}if(!rascunhos[k])rascunhos[k]=texto;}
 document.addEventListener('submit',function(e){var f=e.target&&e.target.closest?e.target.closest('form[data-envio]'):null;if(!f)return;
 var b=f.querySelector('button[type=submit]');
 if(!podeFetch){if(b){if(b.disabled){e.preventDefault();return;}setTimeout(function(){b.disabled=true;b.textContent='Enviando…';},0);}return;}
@@ -1339,7 +1401,8 @@ var x=c.querySelector('.cc-at-esq');if(!on){if(x)x.remove();c.removeAttribute('a
 x=document.createElement('div');x.className='cc-at-esq';x.setAttribute('aria-hidden','true');x.style.top=m.offsetTop+'px';x.style.height=m.offsetHeight+'px';
 [['cli',46],['eva',34],['cli',58],['eva',40],['cli',30]].forEach(function(k){var b=document.createElement('div');b.className='cc-at-esq-b cc-at-esq-'+k[0];b.style.width=k[1]+'%';x.appendChild(b);});
 c.appendChild(x);c.setAttribute('aria-busy','true');}
-function focar(c){var h=c&&c.querySelector('.cc-at-chat-topo');if(!h)return;h.setAttribute('tabindex','-1');try{h.focus({preventScroll:true});}catch(e){h.focus();}}
+function focar(c){var h=c&&c.querySelector('.cc-at-chat-topo');if(!h)return;if(!h.hasAttribute('tabindex'))h.setAttribute('tabindex','-1');try{h.focus({preventScroll:true});}catch(e){h.focus();}}
+function parar(){seq++;if(ctrl){try{ctrl.abort();}catch(e){}}ctrl=null;pendente=false;clearTimeout(tEsq);esqueleto(false);}
 function ir(href,empurrar,rolagem){var u=new URL(href,location.href),meu=++seq;
 if(ctrl){try{ctrl.abort();}catch(e){}}ctrl=window.AbortController?new AbortController():null;pendente=true;
 destacar(u);clearTimeout(tEsq);tEsq=setTimeout(function(){if(meu===seq)esqueleto(true);},120);
@@ -1347,13 +1410,15 @@ return fetch(chave(u),{credentials:'same-origin',headers:{'X-Atendimento-Miolo':
 .then(function(r){if(!r.ok)throw new Error('http '+r.status);var fim=r.url?new URL(r.url):u;return r.text().then(function(t){return {t:t,fim:fim};});})
 .then(function(x){if(meu!==seq)return;
 var doc=new DOMParser().parseFromString(x.t,'text/html'),nc=col('.cc-at-chat',doc),nr=col('.cc-at-cockpit',doc),vc=col('.cc-at-chat'),vr=col('.cc-at-cockpit');
-if(!nc||!nr||!vc||!vr||!podeTrocar(x.fim)&&x.fim.pathname!==LISTA)throw new Error('sem colunas');
+if(!nc||!nr||!vc||!vr||x.fim.origin!==location.origin||(!podeTrocar(x.fim)&&x.fim.pathname!==LISTA))throw new Error('sem colunas');
+if(!empurrar&&chave(new URL(location.href))!==chave(u))return;
 clearTimeout(tEsq);if(window.ccAtChat)window.ccAtChat.desmontar();
 nc=document.adoptNode(nc);nr=document.adoptNode(nr);vc.parentNode.replaceChild(nc,vc);vr.parentNode.replaceChild(nr,vr);
 var nraiz=doc.querySelector('.cc-at');lista(raiz).forEach(function(m){if(m.classList.contains('cc-modal'))m.remove();});if(nraiz)lista(nraiz).forEach(function(m){if(m.classList.contains('cc-modal'))raiz.appendChild(document.adoptNode(m));});raiz.classList.toggle('cc-at-com-lead',!!(nraiz&&nraiz.classList.contains('cc-at-com-lead')));
 var tt=(doc.title||'').split(' · ')[0],k=document.title.indexOf(' · ');if(tt)document.title=tt+(k>=0?document.title.slice(k):'');
 var destino=chave(x.fim)+(x.fim.pathname===u.pathname?u.hash:'');atual=chave(x.fim);
-if(empurrar){try{history.replaceState({ccAt:1,y:window.scrollY},'');}catch(e){}history.pushState({ccAt:1},'',destino);}
+if(empurrar&&destino!==location.pathname+location.search+location.hash){try{history.replaceState({ccAt:1,y:window.scrollY},'');}catch(e){}history.pushState({ccAt:1},'',destino);}
+else if(empurrar)history.replaceState(history.state,'',destino);
 else if(destino!==location.pathname+location.search+location.hash)history.replaceState(history.state,'',destino);
 if(!mesmo(x.fim,u))destacar(x.fim);
 if(window.ccAtChat)window.ccAtChat.montar();
@@ -1363,15 +1428,26 @@ focar(nc);})
 .then(function(){if(meu===seq){pendente=false;clearTimeout(tEsq);esqueleto(false);}});}
 document.addEventListener('click',function(e){if(e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;
 var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;if(!a||!grade.contains(a))return;
-if(!a.classList.contains('cc-at-item')&&!a.closest('.cc-at-como'))return;
+var volta=a.classList.contains('cc-at-voltar')||!!a.closest('.cc-at-abas-voltar');
+if(!a.classList.contains('cc-at-item')&&!a.closest('.cc-at-como')&&!volta)return;
 if((a.target&&a.target!=='_self')||a.hasAttribute('download'))return;
-var u=new URL(a.getAttribute('href'),location.href);if(!podeTrocar(u))return;
+var u=new URL(a.getAttribute('href'),location.href);
+/* "‹ Conversas" (notebook/celular): volta para a lista sem recarregar, com os mesmos filtros. */
+if(volta&&u.origin===location.origin&&u.pathname===LISTA&&!u.search){var aq=new URL(location.href).searchParams;['filtro','etapa','q'].forEach(function(k){if(aq.get(k))u.searchParams.set(k,aq.get(k));});e.preventDefault();if(chave(u)!==atual||pendente)ir(u.href,true);return;}
+if(!podeTrocar(u))return;
 e.preventDefault();if(chave(u)===atual&&!pendente){focar(col('.cc-at-chat'));return;}
 ir(u.href,true);});
-window.addEventListener('popstate',function(e){var u=new URL(location.href);if(chave(u)===atual)return;
+window.addEventListener('popstate',function(e){var u=new URL(location.href);if(chave(u)===atual){if(pendente){parar();destacar(u);}return;}
 if(!podeTrocar(u)&&u.pathname!==LISTA){location.reload();return;}
 ir(location.href,false,e.state&&typeof e.state.y==='number'?e.state.y:undefined);});
-window.ccAtTroca={ir:function(h){var u=new URL(h,location.href);if(!podeTrocar(u))return false;ir(u.href,true);return true;}};
+window.ccAtTroca={ir:function(h){var u=new URL(h,location.href);if(!podeTrocar(u))return false;ir(u.href,true);return true;},
+  /* redesenha o miolo da conversa aberta (depois de Assumir/Devolver), sem esqueleto nem histórico novo */
+  recarregar:function(){ir(location.href,false);}};
+/* ✋ Assumir / ↩ Devolver sem recarregar: o MESMO POST (o servidor confere tudo); depois o miolo é redesenhado. */
+document.addEventListener('submit',function(e){var f=e.target;if(!f||!f.closest||!f.closest('#cc-at-topo'))return;var ac=f.getAttribute('action')||'';
+if(!/^\\/dashboard\\/leads\\/[0-9a-f-]{36}\\/(pause|resume)-eva$/i.test(ac))return;e.preventDefault();var b=f.querySelector('button[type=submit]');if(b)b.disabled=true;
+fetch(ac,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(new FormData(f)).toString()})
+.then(function(r){if(!r.ok)throw new Error('http');ir(location.href,false);}).catch(function(){f.submit();});});
 })();`;
 
 /** CSS só do Atendimento — mora em ui/css-atendimento.ts (vai por arquivo, no <head>). */

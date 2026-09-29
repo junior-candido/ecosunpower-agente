@@ -187,11 +187,12 @@ const IDS_DO_CHAT = [
 export const entraTrocaSuave = (html: string): MudancaContrato => ({
   motivo: 'Junior: trocar de contato sem recarregar (script do chat sempre na tela de Conversas)',
   entra: {
-    fetches: ['URLR', 'chave(u)', "f.getAttribute('action')", 'u'],
+    // 'ac' = ✋ Assumir / ↩ Devolver sem recarregar (o MESMO POST do formulário)
+    fetches: ['URLR', 'ac', 'chave(u)', "f.getAttribute('action')", 'u'],
     ids: IDS_DO_CHAT,
     idsAusentes: IDS_DO_CHAT.filter((id) => !html.includes(`id="${id}"`)),
     seletores: [
-      '#cc-at-gravar', '#cc-at-topo', '#conversa', '#responder', '.cc-at', '.cc-at-aviso-envio', '.cc-at-chat-topo', '.cc-at-como',
+      '#cc-at-gravar', '#cc-at-topo', '#conversa', '#responder', '.cc-at', '.cc-at-abas-voltar', '.cc-at-aviso-envio', '.cc-at-chat-topo', '.cc-at-como', '.cc-at-dia',
       '.cc-at-esq', '.cc-at-foto', '.cc-at-grade', '.cc-at-item', '.cc-at-janela', '.cc-at-menu-msg', '.cc-at-midia,.cc-at-doc-txt strong',
       '.cc-at-msg-h', '.cc-at-msg-q', '.cc-at-msg-t', '.cc-at-msgs', '.cc-at-reacoes', '.cc-at-vazio', '[data-acoes]', '[data-msg]',
       '[data-pronta]', '[data-tirar-citacao]', 'a[href]', 'audio', 'button', 'button[type=submit]', 'details', 'form[data-envio-midia]',
@@ -199,4 +200,15 @@ export const entraTrocaSuave = (html: string): MudancaContrato => ({
     ],
     dataAttrs: ['data-acoes', 'data-envio', 'data-envio-midia', 'data-msg', 'data-pronta', 'data-tirar-citacao'],
   },
+});
+
+/**
+ * Junior (28/09): "senti falta de baixar as imagens e PDF somente com um
+ * clique". Cada foto/PDF/áudio/vídeo do chat ganha ⬇ Baixar (?baixar=1 na
+ * MESMA rota protegida) e a seção Arquivos ganha "⬇ Baixar tudo (.zip)".
+ * `temArquivos` = o lead tem arquivos (a seção só aparece com arquivo).
+ */
+export const entraBaixar = (temArquivos: boolean): MudancaContrato => ({
+  motivo: 'Junior: baixar foto/PDF com um clique e tudo num .zip',
+  entra: { links: temArquivos ? [`/dashboard/leads/${ID}/arquivos.zip`] : [] },
 });

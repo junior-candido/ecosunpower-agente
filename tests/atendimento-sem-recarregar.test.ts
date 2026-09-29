@@ -352,7 +352,8 @@ describe('script do responder — sem recarregar', () => {
     expect(post.init.body).toContain('texto=++Oi+Ana%21++');
     const bal = t.msgs.querySelector('.cc-at-msg-otimista')!;
     expect(bal.textContent).toContain('Oi Ana!');
-    expect(bal.querySelector('.cc-at-msg-h')!.textContent).toBe('enviando…');
+    // nasce igual ao balão de verdade: hora + "enviando…" (e o nome de quem envia, quando a tela tem data-eu)
+    expect(bal.querySelector('.cc-at-msg-h')!.textContent).toMatch(/^\d\d:\d\d · enviando…$/);
     expect(t.msgs.querySelector('.cc-at-vazio')).toBeNull();
     expect(t.ta.value).toBe('');
     expect(t.doc.activeElement).toBe(t.ta);
@@ -365,7 +366,7 @@ describe('script do responder — sem recarregar', () => {
 
     liberar({ ok: true, json: () => Promise.resolve({ ok: true, resultado: 'enviada', texto: 'Mensagem enviada.', chave: 'nova-chave' }) });
     await esperar();
-    expect(bal.querySelector('.cc-at-msg-h')!.textContent).toBe('✓ enviado');
+    expect(bal.querySelector('.cc-at-msg-h')!.textContent).toMatch(/^\d\d:\d\d ✓$/);
     expect(t.chave.value).toBe('nova-chave');
     expect(t.btn.disabled).toBe(false);
     expect(t.btn.textContent).toBe('Enviar');
@@ -415,7 +416,7 @@ describe('script do responder — sem recarregar', () => {
     t.doc.disparar('submit', { target: t.form });
     await esperar();
     expect(t.ta.value).toBe('');
-    expect(t.msgs.querySelector('.cc-at-msg-h')!.textContent).toBe('✓ enviado');
+    expect(t.msgs.querySelector('.cc-at-msg-h')!.textContent).toMatch(/^\d\d:\d\d ✓$/);
     expect(fetchImpl.mock.calls.some((c) => !(c[1] as any)?.method)).toBe(true);
   });
 

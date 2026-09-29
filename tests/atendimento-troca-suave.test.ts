@@ -117,6 +117,30 @@ describe.skipIf(!temChrome)('troca de contato sem recarregar (Chrome)', { timeou
     expect(await marca()).toBe('mesmo-documento');
   });
 
+  it('↩ Devolver / ✋ Assumir: o MESMO POST, sem recarregar; topo e resumo atualizados', async () => {
+    await page.click('#cc-at-topo form[action$="/resume-eva"] button[type=submit]');
+    await page.waitForSelector('#cc-at-topo form[action$="/pause-eva"]');
+    expect(await page.$eval('.cc-at-cockpit', (e) => e.textContent)).toContain('Eva ativa');
+    await page.click('#cc-at-topo form[action$="/pause-eva"] button[type=submit]');
+    await page.waitForSelector('#cc-at-topo form[action$="/resume-eva"]');
+    expect(await marca()).toBe('mesmo-documento');
+    expect(await page.evaluate(() => (window as any).__relogios)).toBe(1);
+  });
+
+  it('notebook (lista escondida com conversa aberta): "‹ Conversas" volta para a lista sem recarregar', async () => {
+    await page.setViewport({ width: 1200, height: 860 });
+    expect(await page.$eval('.cc-at-lista', (e) => getComputedStyle(e).display)).toBe('none');
+    await page.click('.cc-at-chat .cc-at-voltar');
+    await page.waitForFunction(() => !document.querySelector('.cc-at')?.classList.contains('cc-at-com-lead'));
+    expect(await page.$eval('.cc-at-lista', (e) => getComputedStyle(e).display)).not.toBe('none');
+    expect(new URL(page.url()).pathname).toBe('/dashboard/leads/conversas');
+    expect(await marca()).toBe('mesmo-documento');
+    await page.goBack();
+    await page.waitForFunction(() => !!document.querySelector('.cc-at')?.classList.contains('cc-at-com-lead'));
+    expect(await marca()).toBe('mesmo-documento');
+    await page.setViewport({ width: 1440, height: 900 });
+  });
+
   it('deu erro (500): navegação normal para o endereço clicado', async () => {
     await page.$eval('.cc-at-itens', (e, id) => {
       const it = e.querySelector(`.cc-at-item[href^="/dashboard/leads/${id}"]`) as HTMLElement;

@@ -2521,7 +2521,8 @@ b.onclick=async function(){
       // company_id sai SÓ da sessão (dentro de listarConversas, .eq explícito).
       const lista = soMiolo ? LISTA_VAZIA : await listarConversas(bancoDoOperador(req as AuthedRequest, supabase), viewer, filtros, supabase);
       const donoPessoal = ct?.donoPessoal ?? await rotasAtendimento.nomeDoDonoPessoal(req as AuthedRequest);
-      if (soMiolo) res.set('Cache-Control', 'no-store').vary(CABECALHO_MIOLO);
+      // Conversa na tela: nunca em cache (página inteira ou só o miolo — a URL é a mesma).
+      res.set('Cache-Control', 'private, no-store').vary(CABECALHO_MIOLO);
       res.type('text/html').send(renderAtendimentoPage({ user: viewer, lista, filtros, lead: null, contato: ct?.contato ?? null, donoPessoal, soMiolo }));
     } catch (err) {
       console.error('[dashboard/leads/conversas]', err);
@@ -2599,7 +2600,8 @@ b.onclick=async function(){
       const envio = can(viewer, 'leads', 'editar') ? await rotasAtendimento.envioDaTela(req as AuthedRequest, lead, mensagens ?? []) : undefined;
       // W3: abriu a conversa → marca como lida no WhatsApp pessoal (só o dono, com a opção ligada).
       rotasAtendimento.aoAbrirConversa(req as AuthedRequest, { leadId: id });
-      if (soMiolo) res.set('Cache-Control', 'no-store').vary(CABECALHO_MIOLO);
+      // Conversa na tela: nunca em cache (página inteira ou só o miolo — a URL é a mesma).
+      res.set('Cache-Control', 'private, no-store').vary(CABECALHO_MIOLO);
       res.send(renderLeadDetailPage(lead, [], String(req.query.docs ?? ''), String(req.query.envio ?? ''), servicosDoCliente, viewer, { lista, filtros, mensagens, envio, donoPessoal, soMiolo }));
     } catch (err) {
       console.error('[dashboard/leads/:id]', err);
@@ -2742,6 +2744,9 @@ b.onclick=async function(){
   // Responder o WhatsApp pelo painel (texto na janela de 24 h / modelo aprovado fora dela).
   // Sem recarregar (28/09): balões, faixa "assumiu" e janela de 24 h da conversa aberta (JSON).
   router.get('/leads/:id/conversa.json', exigir('leads', 'visualizar'), rotasAtendimento.conversaJson);
+  // ⬇ Baixar (28/09): arquivo do cofre do lead e "Baixar tudo" (.zip) — atrás do portão de empresa + vendedor.
+  router.get('/leads/:id/anexo/:anexoId', exigir('leads', 'visualizar'), rotasAtendimento.anexo);
+  router.get('/leads/:id/arquivos.zip', exigir('leads', 'visualizar'), rotasAtendimento.arquivosZip);
   router.post('/leads/:id/responder', exigir('leads', 'editar'), rotasAtendimento.responder);
   router.post('/leads/:id/responder-modelo', exigir('leads', 'editar'), rotasAtendimento.responderModelo);
   // W1 — foto, PDF/documento, áudio e vídeo (multipart; a permissão e a trava de empresa vêm ANTES do upload).

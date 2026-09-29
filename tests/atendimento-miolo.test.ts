@@ -76,7 +76,8 @@ describe('rotas: o miolo passa pelas MESMAS travas', () => {
   });
 
   it('o miolo não fica em cache (no-store + Vary pelo cabeçalho)', () => {
-    expect(fonte.match(/if \(soMiolo\) res\.set\('Cache-Control', 'no-store'\)\.vary\(CABECALHO_MIOLO\);/g)).toHaveLength(2);
+    // página inteira E miolo (a URL é a mesma): nunca em cache
+    expect(fonte.match(/res\.set\('Cache-Control', 'private, no-store'\)\.vary\(CABECALHO_MIOLO\);/g)).toHaveLength(2);
   });
 
   it('o script só troca para rotas do Atendimento, da mesma origem, e manda o cabeçalho', () => {

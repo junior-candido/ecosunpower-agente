@@ -77,7 +77,8 @@ export function criarServidorFalso(o: OpcoesServidorFalso = {}) {
     if (!estado.mensagens.has(id)) estado.mensagens.set(id, mensagensDoLead(leadN(id), NMSG));
     return estado.mensagens.get(id)!;
   };
-  const lead = (id: string) => leadDetalhe({ id, name: `Lead Fictício ${leadN(id)}`, phone: `55619${String(10000000 + leadN(id))}`, eva_active: false, conversation_messages: [] });
+  const evaAtiva = new Map<string, boolean>();
+  const lead = (id: string) => leadDetalhe({ id, name: `Lead Fictício ${leadN(id)}`, phone: `55619${String(10000000 + leadN(id))}`, eva_active: evaAtiva.get(id) ?? false, conversation_messages: [] });
   const envio = (): CompositorInput => ({ via: 'waba', canal: 'eva_oficial', modelos: [], chave: randomUUID() });
   const pausa = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
   async function mandarEmPedacos(res: express.Response, html: string) {
@@ -117,6 +118,13 @@ export function criarServidorFalso(o: OpcoesServidorFalso = {}) {
     if (String(req.query.assinatura ?? '') === assinatura) { res.json({ igual: true, assinatura }); return; }
     res.json({ assinatura, ...p });
   });
+  // ✋ Assumir / ↩ Devolver: como a rota de verdade (POST → redirect para a tela do lead)
+  for (const acao of ['pause-eva', 'resume-eva']) {
+    app.post(`/dashboard/leads/:id/${acao}`, (req, res) => {
+      evaAtiva.set(req.params.id, acao === 'resume-eva');
+      res.redirect(303, `/dashboard/leads/${req.params.id}`);
+    });
+  }
   app.post('/dashboard/leads/:id/responder', async (req, res) => {
     const id = req.params.id;
     const texto = String(req.body?.texto ?? '');
