@@ -44,10 +44,18 @@ const R5_COCKPIT_ANTIGO_NO_RODAPE: MudancaContrato = {
   motivo: 'R5: link "Cockpit antigo" no rodapé do Command Center (só casa, 30 dias)',
   entra: { links: ['/dashboard/cockpit'] },
 };
+/** R25 (faxina): /cockpit puro redireciona pro Command Center; o link do
+ *  rodapé abre o antigo com ?antigo=1 (só casa, até o Junior decidir). */
+const R25_LINK_ANTIGO: MudancaContrato = {
+  motivo: 'R25: /cockpit redireciona; o link "Cockpit antigo" abre com ?antigo=1',
+  sai: { links: ['/dashboard/cockpit'] },
+  entra: { links: ['/dashboard/cockpit?antigo=1'] },
+};
 /** R5: trocas por caso de tests/fixtures/casos-command-center.ts. */
 export const MUDANCAS_R5: Record<string, MudancaContrato[]> = {
-  'cc-casa': [R5_CSS_CC_NO_HEAD, R5_COCKPIT_FORA_DO_MENU, R5_COCKPIT_ANTIGO_NO_RODAPE],
-  'cc-casa-sem-dado': [R5_CSS_CC_NO_HEAD, R5_COCKPIT_FORA_DO_MENU, R5_COCKPIT_ANTIGO_NO_RODAPE],
+  // (+ R25: o link do rodapé ganha ?antigo=1 — R25_COCKPIT_ANTIGO, no fim do arquivo)
+  'cc-casa': [R5_CSS_CC_NO_HEAD, R5_COCKPIT_FORA_DO_MENU, R5_COCKPIT_ANTIGO_NO_RODAPE, R25_LINK_ANTIGO],
+  'cc-casa-sem-dado': [R5_CSS_CC_NO_HEAD, R5_COCKPIT_FORA_DO_MENU, R5_COCKPIT_ANTIGO_NO_RODAPE, R25_LINK_ANTIGO],
   'cc-tenant': [R5_CSS_CC_NO_HEAD],
   'atencao-casa': [R5_CSS_CC_NO_HEAD, R5_COCKPIT_FORA_DO_MENU],
   'atencao-tenant': [R5_CSS_CC_NO_HEAD],

@@ -2166,6 +2166,10 @@ b.onclick=async function(){
   // Cockpit: 1 tela dark neon com KPIs + gauges + funil + atividade + top leads.
   // Auto-refresh 30s (gauges) + 5min (page completa). ECharts via CDN.
   router.get('/cockpit', async (req: Request, res: Response) => {
+    // R25 (faxina): /cockpit redireciona pra entrada (Command Center). O Cockpit
+    // antigo continua abrindo SÓ com ?antigo=1 (link discreto no rodapé do
+    // Command Center, só casa) até o Junior decidir aposentar de vez.
+    if (req.query.antigo !== '1') { res.redirect(302, paginaInicialDe((req as AuthedRequest).dashUser)); return; }
     try {
       const { getCockpitData } = await import('./cockpit-queries.js');
       const { renderCockpitPage } = await import('./cockpit-views.js');

@@ -80,7 +80,8 @@ describe('Command Center — rodapé "Cockpit antigo" e CSS no <head>', () => {
   it('casa vê o link discreto "Cockpit antigo" no rodapé', () => {
     const h = pagina(casa);
     const pe = h.slice(h.indexOf('class="cc-foot"'));
-    expect(pe).toMatch(/<a [^>]*href="\/dashboard\/cockpit"[^>]*>Cockpit antigo<\/a>/);
+    // R25: o /cockpit puro redireciona; o antigo abre com ?antigo=1.
+    expect(pe).toMatch(/<a [^>]*href="\/dashboard\/cockpit\?antigo=1"[^>]*>Cockpit antigo<\/a>/);
   });
   it('tenant não vê o Cockpit em lugar nenhum', () => {
     expect(pagina(tenant)).not.toContain('/dashboard/cockpit');

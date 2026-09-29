@@ -122,7 +122,8 @@ const CSS_ENERGIA = `
 
 function pagina(user: DashUser | undefined, titulo: string, corpo: string): string {
   return renderLayout({
-    active: 'energia', title: titulo, dark: true, largo: true, user,
+    // R25 (faxina): a Energia nasceu no padrão cc- — sai o Tailwind do CDN.
+    active: 'energia', title: titulo, dark: true, largo: true, user, tailwind: false,
     body: `<div class="cc-root cc-energia">${corpo}</div><style>${CSS_ENERGIA}</style>`,
   });
 }

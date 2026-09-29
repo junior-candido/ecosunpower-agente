@@ -139,8 +139,20 @@ interface LayoutInput {
 }
 
 export function renderLayout(input: LayoutInput): string {
-  const { active, title, body, scripts, dark, user, largo, selos, imersivo } = input;
+  const { active, title, scripts, dark, user, largo, selos, imersivo } = input;
   const comTailwind = input.tailwind !== false;
+
+  // R25 (faxina, sem piscada): nas telas renovadas, todo <style> que a tela
+  // ainda manda DENTRO do corpo sobe pro <head>, na mesma ordem (depois do CSS
+  // do painel e do `cabeca`). No fim do <body> o navegador pintava a tela sem
+  // ele e depois "pulava" (a piscada do #337). O CSS de tela é constante do
+  // código — dado de cliente chega escapado (&lt;style&gt;) e não casa aqui.
+  // Tela antiga (com Tailwind do CDN) fica como está: o Tailwind injeta o CSS
+  // dele no fim do <head> e mudaria quem ganha no desempate.
+  const estilosDoCorpo: string[] = [];
+  const body = comTailwind
+    ? input.body
+    : input.body.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, (m) => { estilosDoCorpo.push(m); return ''; });
 
   // MARCA DA EMPRESA (01/09/2026): cada empresa entra com a própria logo e cor;
   // nada da casa aparece na tela de outra empresa. EcoSun (ou tela legada sem
@@ -212,6 +224,7 @@ export function renderLayout(input: LayoutInput): string {
     comTailwind ? '' : `<link rel="stylesheet" href="${URL_CSS_SEM_TAILWIND}">`,
     `<style>\n  :root { --marca: ${corMarca}; }\n</style>`,
     input.cabeca ?? '',
+    ...estilosDoCorpo,
   ].filter(Boolean).join('\n');
 
   return `<!doctype html>

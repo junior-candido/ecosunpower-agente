@@ -174,7 +174,7 @@ export function telaConhecer(chave: string, empresaNome: string, user?: unknown)
     </div>
   </div>` : '';
   const lista = m.ganhos.length
-    ? `<ul style="margin:14px 0 0;padding-left:18px;line-height:2">${m.ganhos.map((g) => `<li>${escapeHtml(g)}</li>`).join('')}</ul>`
+    ? `<ul style="margin:14px 0 0;padding-left:18px;line-height:2;list-style:disc">${m.ganhos.map((g) => `<li>${escapeHtml(g)}</li>`).join('')}</ul>`
     : '';
   const body = `
 <style>
@@ -190,7 +190,7 @@ export function telaConhecer(chave: string, empresaNome: string, user?: unknown)
 </style>
 <div style="color:#d1d5db;max-width:720px">
   <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#9ca3af">Ainda não faz parte do seu plano</div>
-  <h1 class="text-2xl font-bold mb-1" style="${ESTILO_TITULO}">${escapeHtml(m.titulo)}</h1>
+  <h1 style="${ESTILO_TITULO};font-size:24px;font-weight:700;line-height:1.25;margin:0 0 4px">${escapeHtml(m.titulo)}</h1>
   <p style="font-size:16px;line-height:1.6;margin:6px 0 0;max-width:60ch">${escapeHtml(m.resumo)}</p>
   ${lista}
   ${amostra}
@@ -207,18 +207,19 @@ export function telaConhecer(chave: string, empresaNome: string, user?: unknown)
   </div>
   <p style="margin-top:16px"><a href="${escapeHtml(paginaInicialDe(user as DashUser | undefined))}" style="color:#9ca3af;font-size:13px">← voltar</a></p>
 </div>`;
-  return renderLayout({ active: chaveAtiva(chave), title: m.titulo, body, dark: true, user: user as never });
+  // R25 (faxina): sem o Tailwind do CDN — a vitrine já era estilo próprio.
+  return renderLayout({ active: chaveAtiva(chave), title: m.titulo, body, dark: true, user: user as never, tailwind: false });
 }
 
 export function telaConhecerEnviado(chave: string, user?: unknown): string {
   const m = MODULOS[chave] ?? fallback(chave);
   const body = `
 <div style="color:#d1d5db;max-width:640px">
-  <h1 class="text-2xl font-bold mb-2" style="${ESTILO_TITULO}">Anotado 👍</h1>
+  <h1 style="${ESTILO_TITULO};font-size:24px;font-weight:700;line-height:1.25;margin:0 0 8px">Anotado 👍</h1>
   <p style="font-size:16px;line-height:1.6">
     Recebemos seu interesse em <b>${escapeHtml(m.titulo)}</b>. Alguém vai te procurar para mostrar funcionando.
   </p>
   <p style="margin-top:18px"><a href="${escapeHtml(paginaInicialDe(user as DashUser | undefined))}" style="color:#9ca3af;font-size:13px">← voltar pro início</a></p>
 </div>`;
-  return renderLayout({ active: chaveAtiva(chave), title: 'Interesse registrado', body, dark: true, user: user as never });
+  return renderLayout({ active: chaveAtiva(chave), title: 'Interesse registrado', body, dark: true, user: user as never, tailwind: false });
 }

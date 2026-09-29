@@ -745,8 +745,9 @@ export function renderCommandCenterPage(d: CommandCenterDados, user?: DashUser):
     ${mapa}
     ${departamentos(d)}
     <div class="cc-foot">${casa ? `${icone('tv', 'sm')}Modo TV: a tela do escritório vai girar entre visão geral, usinas e comercial. ` : ''}<span class="cc-sp"></span>Todo número é clicável e leva ao detalhe.${
-      // R5 (D2 = a): o Cockpit saiu do menu; link discreto só da casa por 30 dias (sai no R25).
-      casa ? ` <a class="cc-cockpit-antigo" href="/dashboard/cockpit">Cockpit antigo</a>` : ''}</div>
+      // R5 (D2 = a): o Cockpit saiu do menu; link discreto só da casa. R25: o
+      // /cockpit redireciona; o antigo só abre com ?antigo=1 (até o Junior decidir).
+      casa ? ` <a class="cc-cockpit-antigo" href="/dashboard/cockpit?antigo=1">Cockpit antigo</a>` : ''}</div>
   </div>
 </div>
 `;
