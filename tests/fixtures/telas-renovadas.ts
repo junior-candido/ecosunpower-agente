@@ -63,7 +63,7 @@ function mensagens(n: number) {
   return Array.from({ length: n }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: `Mensagem fictícia número ${i} da conversa.`, timestamp: hora(n - i) }));
 }
 
-function dadosCC(n: number): DadosCommandCenter {
+export function dadosCC(n: number): DadosCommandCenter {
   const agora = new Date();
   const usinas: UsinaLinha[] = Array.from({ length: Math.max(2, n) }, (_, i) => ({
     id: `u${i}`, apelido: `Usina ${i}`, potencia_kwp: 10, cidade: 'Gama', uf: 'DF', ativo: true,
