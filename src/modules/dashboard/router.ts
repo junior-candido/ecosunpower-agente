@@ -1917,7 +1917,7 @@ b.onclick=async function(){
   router.get('/predio', async (req: AuthedRequest, res) => {
     if (!ehAdminEcosun(req.dashUser)) { res.status(403).send('Sem permissão'); return; }
     const { renderPredioPage } = await import('./predio-views.js');
-    res.type('html').send(renderPredioPage());
+    res.type('html').send(renderPredioPage(req.dashUser));
   });
 
   router.get('/api/predio', async (req: AuthedRequest, res) => {
@@ -7614,18 +7614,18 @@ b.onclick=async function(){
   });
 
   // ============================================
-  // Cérebro do Elo: tela viva full-screen (sem sidebar, feita pra
-  // apresentação) + "Pergunte ao Elo" ancorado no snapshot real.
+  // Cérebro do Elo: tela viva (desde o R23 dentro da casca, modo imersivo)
+  // + "Pergunte ao Elo" ancorado no snapshot real. Só da casa (soEcosunPorEnquanto).
   // ============================================
 
-  router.get('/cerebro', exigir('relatorios', 'visualizar'), async (_req: Request, res: Response) => {
+  router.get('/cerebro', exigir('relatorios', 'visualizar'), async (req: Request, res: Response) => {
     try {
       const { montarSnapshotElo } = await import('./cerebro-data.js');
       const { montarFalasElo } = await import('./cerebro-elo.js');
       const { renderCerebroPage } = await import('./cerebro-views.js');
       const snap = await montarSnapshotElo(supabaseService);
       const falas = montarFalasElo(snap);
-      res.type('text/html').send(renderCerebroPage(snap, falas));
+      res.type('text/html').send(renderCerebroPage(snap, falas, (req as AuthedRequest).dashUser));
     } catch (err) {
       console.error('[dashboard/cerebro]', err);
       res.status(500).type('text/html').send(`<h2>Erro Cérebro</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);

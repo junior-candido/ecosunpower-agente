@@ -4,6 +4,9 @@
 // fatia na sua seção). A troca comum (sai o Tailwind do CDN) é TELAS_LEVES
 // (mudancas-telas-leves.ts). O R20 (Financeiro II) NÃO faz parte desta onda.
 import type { ContratoTela, MudancaContrato } from '../helpers/contrato-tela.js';
+import { contratoDaTela } from '../helpers/contrato-tela.js';
+import { renderLayout } from '../../src/modules/dashboard/views.js';
+import { USER_CASA } from './miolo-leads.js';
 
 import { URL_CSS_COMMAND_CENTER } from '../../src/modules/dashboard/ui/estatico.js';
 import { TELAS_LEVES } from './mudancas-telas-leves.js';
@@ -101,5 +104,16 @@ export const MUDANCAS_R22: Record<string, MudancaContrato[]> = {
 // R23 — Prédio Vivo e Cérebro dentro da casca (modo imersivo)
 // ════════════════════════════════════════════════════════════════════════
 
+/** R23 (troca deliberada, ok do Junior): as duas telas eram páginas soltas e
+ *  agora vêm DENTRO da casca — entra exatamente o contrato de uma casca vazia
+ *  (menu, sair, CSS do painel por arquivo, script do menu). Nada da tela sai. */
+function r23NaCasca(active: 'predio' | 'cerebro'): MudancaContrato {
+  const casca = contratoDaTela(renderLayout({ active, title: 'x', body: '', user: USER_CASA, tailwind: false, imersivo: true, dark: true, largo: true }));
+  const { formularios, ...resto } = casca;
+  return { motivo: `R23: ${active} entra na casca do painel (modo imersivo)`, entra: { ...resto, formularios } };
+}
 /** R23: trocas por caso de tests/fixtures/casos-imersivo.ts. */
-export const MUDANCAS_R23: Record<string, MudancaContrato[]> = {};
+export const MUDANCAS_R23: Record<string, MudancaContrato[]> = {
+  predio: [r23NaCasca('predio')],
+  cerebro: [r23NaCasca('cerebro')],
+};

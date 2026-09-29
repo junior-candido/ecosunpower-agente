@@ -5,55 +5,68 @@
 // gira sozinho; arrastar orbita; scroll aproxima; clique num apto abre o
 // painel lateral. Dados: fetch em /dashboard/api/predio (polling 10s) OU
 // window.__PREDIO_MOCK__ (preview de aprovação do Junior, regra do visual).
+//
+// Renovação do miolo — R23 (28/09/2026): a tela entra na CASCA do painel
+// (menu de sempre, modo imersivo: sem padding nem rodapé, altura cheia). O CSS
+// fica todo debaixo de #predio-vivo (nada em html/body) e vai no <head>; o 3D
+// mede o contêiner (ResizeObserver) e a mira do mouse é relativa ao canvas.
+// Mesmo fetch, mesmos ids. O "← voltar" sai (o menu está do lado).
+import { renderLayout } from './views.js';
+import type { DashUser } from './permissions.js';
 
-export function renderPredioPage(_user?: unknown): string {
-  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>🏢 Prédio Vivo — EcoSunPower</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap');
-  html,body{margin:0;height:100%;background:#05070D;color:#E2E8F0;font-family:'Space Grotesk',ui-sans-serif,system-ui,sans-serif;overflow:hidden}
-  #cena{position:fixed;inset:0}
-  .hud{position:fixed;z-index:10}
-  #titulo{top:18px;left:22px}
-  #titulo h1{margin:0;font-size:20px;letter-spacing:.04em}
-  #titulo p{margin:2px 0 0;font-size:11px;color:#64748B}
-  #voltar{top:18px;right:22px;font-size:12px}
-  #voltar a{color:#7DD3FC;text-decoration:none;border:1px solid #1E293B;border-radius:10px;padding:8px 12px;background:rgba(9,14,24,.7);backdrop-filter:blur(6px)}
-  #letreiro{left:22px;right:22px;bottom:16px;background:rgba(9,14,24,.72);backdrop-filter:blur(8px);border:1px solid #1E293B;border-radius:14px;padding:10px 14px;font-size:12px;display:flex;gap:18px;align-items:center;overflow:hidden;white-space:nowrap}
-  #letreiro b{color:#FDE68A}
-  #painel{top:0;right:0;bottom:0;width:340px;max-width:88vw;background:rgba(7,11,20,.92);backdrop-filter:blur(10px);border-left:1px solid #1E293B;padding:20px;transform:translateX(105%);transition:transform .25s ease;overflow:auto}
-  #painel.aberto{transform:none}
-  #painel h2{margin:0 0 2px;font-size:18px}
-  #painel .sub{font-size:11px;color:#64748B;margin-bottom:14px}
-  #painel .num{display:flex;justify-content:space-between;border-bottom:1px dashed #1E293B;padding:8px 0;font-size:13px}
-  #painel .num b{font-size:16px}
-  #painel .secao{margin-top:16px;font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:.06em}
-  #painel .mnt{font-size:12px;padding:7px 0;border-bottom:1px solid #111827}
-  #painel .st-pedido{color:#FCA5A5}.st-fazendo{color:#FCD34D}.st-entregue{color:#6EE7B7}
-  #painel .fechar{position:absolute;top:12px;right:14px;cursor:pointer;color:#64748B;font-size:18px;background:none;border:none}
-  #tooltip{position:fixed;pointer-events:none;background:rgba(9,14,24,.9);border:1px solid #1E293B;border-radius:8px;padding:6px 10px;font-size:12px;display:none;z-index:20}
-  #aviso-vazio{position:fixed;inset:0;display:none;align-items:center;justify-content:center;color:#64748B;font-size:14px}
-</style></head>
-<body>
+const CSS_PREDIO = `
+#predio-vivo{position:relative;flex:1 1 auto;min-height:100vh;min-height:100dvh;background:#05070D;color:#E2E8F0;font-family:'Space Grotesk',ui-sans-serif,system-ui,sans-serif;overflow:hidden;isolation:isolate}
+@media (max-width:1023px){#predio-vivo{min-height:calc(100dvh - 64px)}}
+#predio-vivo #cena{position:absolute;inset:0}
+#predio-vivo #cena canvas{display:block}
+#predio-vivo .hud{position:absolute;z-index:10}
+#predio-vivo #titulo{top:18px;left:22px;right:22px;pointer-events:none}
+#predio-vivo #titulo h1{margin:0;font-size:20px;letter-spacing:.04em}
+#predio-vivo #titulo p{margin:2px 0 0;font-size:11px;color:#64748B}
+#predio-vivo #letreiro{left:22px;right:22px;bottom:16px;background:rgba(9,14,24,.72);backdrop-filter:blur(8px);border:1px solid #1E293B;border-radius:14px;padding:10px 14px;font-size:12px;display:flex;gap:18px;align-items:center;overflow:hidden;white-space:nowrap}
+#predio-vivo #letreiro strong{color:#FDE68A}
+#predio-vivo #painel{top:0;right:0;bottom:0;width:340px;max-width:88%;background:rgba(7,11,20,.92);backdrop-filter:blur(10px);border-left:1px solid #1E293B;padding:20px;transform:translateX(105%);transition:transform .25s ease;overflow:auto}
+#predio-vivo #painel.aberto{transform:none}
+#predio-vivo #painel h2{margin:0 0 2px;font-size:18px}
+#predio-vivo #painel .sub{font-size:11px;color:#64748B;margin-bottom:14px}
+#predio-vivo #painel .num{display:flex;justify-content:space-between;border-bottom:1px dashed #1E293B;padding:8px 0;font-size:13px}
+#predio-vivo #painel .num strong{font-size:16px}
+#predio-vivo #painel .secao{margin-top:16px;font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:.06em}
+#predio-vivo #painel .mnt{font-size:12px;padding:7px 0;border-bottom:1px solid #111827}
+#predio-vivo #painel .mnt-vazio{color:#475569}
+#predio-vivo .st-pedido{color:#FCA5A5}
+#predio-vivo .st-fazendo{color:#FCD34D}
+#predio-vivo .st-entregue{color:#6EE7B7}
+#predio-vivo #painel .fechar{position:absolute;top:12px;right:14px;cursor:pointer;color:#64748B;font-size:18px;background:none;border:none}
+#predio-vivo #aviso-vazio{position:absolute;inset:0;display:none;align-items:center;justify-content:center;color:#64748B;font-size:14px}
+#tooltip{position:fixed;pointer-events:none;background:rgba(9,14,24,.9);color:#E2E8F0;border:1px solid #1E293B;border-radius:8px;padding:6px 10px;font-size:12px;display:none;z-index:60}
+@media (max-width:640px){
+  #predio-vivo #painel{top:auto;left:0;width:100%;max-width:none;max-height:62%;border-left:none;border-top:1px solid #1E293B;border-radius:18px 18px 0 0;transform:translateY(105%)}
+  #predio-vivo #painel.aberto{transform:none}
+  #predio-vivo #letreiro{left:12px;right:12px;bottom:12px}
+  #predio-vivo #titulo{left:14px;top:14px}
+}
+`;
+
+export function renderPredioPage(user?: DashUser): string {
+  const body = `<div id="predio-vivo">
 <div id="cena"></div>
-<div class="hud" id="titulo"><h1>🏢 Prédio Vivo</h1><p>Cada apartamento é uma empresa · luz acesa = atividade agora · clique num apto</p></div>
-<div class="hud" id="voltar"><a href="/dashboard/home">← voltar ao dashboard</a></div>
-<div class="hud" id="letreiro">🔧 <b>Manutenções do prédio:</b> <span id="letreiro-itens">carregando…</span></div>
+<div class="hud" id="titulo"><h1>Prédio Vivo</h1><p>Cada apartamento é uma empresa · luz acesa = atividade agora · clique num apto</p></div>
+<div class="hud" id="letreiro">🔧 <strong>Manutenções do prédio:</strong> <span id="letreiro-itens">carregando…</span></div>
 <div class="hud" id="painel">
-  <button class="fechar" onclick="document.getElementById('painel').classList.remove('aberto')">✕</button>
+  <button class="fechar" type="button" aria-label="Fechar" onclick="document.getElementById('painel').classList.remove('aberto')">✕</button>
   <h2 id="p-nome">—</h2><div class="sub" id="p-sub">—</div>
-  <div class="num"><span>⚡ Usinas monitoradas</span><b id="p-usinas">—</b></div>
-  <div class="num"><span>👥 Assentos</span><b id="p-assentos">—</b></div>
-  <div class="num"><span>📋 Leads</span><b id="p-leads">—</b></div>
-  <div class="num"><span>🕐 Último sinal</span><b id="p-sinal">—</b></div>
+  <div class="num"><span>⚡ Usinas monitoradas</span><strong id="p-usinas">—</strong></div>
+  <div class="num"><span>👥 Assentos</span><strong id="p-assentos">—</strong></div>
+  <div class="num"><span>📋 Leads</span><strong id="p-leads">—</strong></div>
+  <div class="num"><span>🕐 Último sinal</span><strong id="p-sinal">—</strong></div>
   <div class="secao">🛠 Pedidos & entregas do apto</div>
   <div id="p-manutencoes"></div>
 </div>
-<div id="tooltip"></div>
 <div id="aviso-vazio">Sem dados do prédio (endpoint indisponível).</div>
-
-<script type="importmap">{"imports":{
+</div>
+<div id="tooltip"></div>`;
+  const scripts = `<script type="importmap">{"imports":{
   "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
   "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
 }}</script>
@@ -63,14 +76,16 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const reduzMovimento = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const cont = document.getElementById('cena');
+// R23: dentro da casca, o 3D mede o CONTÊINER (não a janela).
+const larg = () => Math.max(1, cont.clientWidth), alt = () => Math.max(1, cont.clientHeight);
 const cena = new THREE.Scene();
 cena.background = new THREE.Color(0x05070D);
 cena.fog = new THREE.Fog(0x05070D, 60, 160);
 
-const cam = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, .1, 400);
+const cam = new THREE.PerspectiveCamera(45, larg()/alt(), .1, 400);
 cam.position.set(26, 18, 30);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(innerWidth, innerHeight);
+renderer.setSize(larg(), alt());
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 cont.appendChild(renderer.domElement);
 const controles = new OrbitControls(cam, renderer.domElement);
@@ -168,29 +183,48 @@ function abrirPainel(apto){
   g('p-usinas').textContent = apto.usinas; g('p-assentos').textContent = apto.assentos; g('p-leads').textContent = apto.leads;
   g('p-sinal').textContent = apto.atividade.ultimoSinalISO ? new Date(apto.atividade.ultimoSinalISO).toLocaleString('pt-BR') : 'sem sinal ainda';
   const mnts = (dados.manutencoes || []).filter(m => m.company_id === apto.companyId);
-  g('p-manutencoes').innerHTML = mnts.length
-    ? mnts.map(m => '<div class="mnt"><span class="st-' + m.status + '">●</span> ' + m.titulo + ' <span class="st-' + m.status + '">(' + m.status + ')</span></div>').join('')
-    : '<div class="mnt" style="color:#475569">nenhum pedido deste apto ainda</div>';
+  // R23 (segurança): título/status vêm do banco (qualquer empresa escreve o
+  // seu) — montar com textContent, nunca innerHTML com o texto cru.
+  const lista = g('p-manutencoes');
+  lista.replaceChildren();
+  if (!mnts.length) {
+    const vazio = document.createElement('div'); vazio.className = 'mnt mnt-vazio'; vazio.textContent = 'nenhum pedido deste apto ainda';
+    lista.appendChild(vazio);
+  }
+  for (const m of mnts) {
+    const st = /^[a-z_]+$/.test(String(m.status)) ? String(m.status) : 'outro';
+    const linha = document.createElement('div'); linha.className = 'mnt';
+    const bola = document.createElement('span'); bola.className = 'st-' + st; bola.textContent = '●';
+    const fim = document.createElement('span'); fim.className = 'st-' + st; fim.textContent = '(' + st + ')';
+    linha.append(bola, ' ' + String(m.titulo ?? '') + ' ', fim);
+    lista.appendChild(linha);
+  }
   document.getElementById('painel').classList.add('aberto');
 }
 
 // interação: hover tooltip + clique
 const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
 const tooltip = document.getElementById('tooltip');
-addEventListener('pointermove', (e) => {
-  mouse.set(e.clientX/innerWidth*2-1, -(e.clientY/innerHeight)*2+1);
+const tela = renderer.domElement;
+function mira(e){ const r = tela.getBoundingClientRect(); mouse.set((e.clientX - r.left)/r.width*2-1, -((e.clientY - r.top)/r.height)*2+1); }
+tela.addEventListener('pointermove', (e) => {
+  mira(e);
   ray.setFromCamera(mouse, cam);
   const hit = ray.intersectObjects(clicaveis)[0];
   if (hit) { tooltip.style.display='block'; tooltip.style.left=(e.clientX+14)+'px'; tooltip.style.top=(e.clientY+10)+'px';
     const a = hit.object.userData.apto; tooltip.textContent = a.nome + (a.atividade.luzAcesa ? ' · 🟢 ativo agora' : ''); }
   else tooltip.style.display='none';
 });
-addEventListener('click', () => {
+tela.addEventListener('pointerleave', () => { tooltip.style.display='none'; });
+tela.addEventListener('click', (e) => {
+  mira(e);
   ray.setFromCamera(mouse, cam);
   const hit = ray.intersectObjects(clicaveis)[0];
   if (hit) abrirPainel(hit.object.userData.apto);
 });
-addEventListener('resize', () => { cam.aspect = innerWidth/innerHeight; cam.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+function redimensionar(){ cam.aspect = larg()/alt(); cam.updateProjectionMatrix(); renderer.setSize(larg(), alt()); }
+addEventListener('resize', redimensionar);
+if (window.ResizeObserver) new ResizeObserver(redimensionar).observe(cont);
 
 async function carregar(){
   try {
@@ -208,6 +242,9 @@ renderer.setAnimationLoop((tms) => {
   controles.update();
   renderer.render(cena, cam);
 });
-</script>
-</body></html>`;
+</script>`;
+  return renderLayout({
+    active: 'predio', title: 'Prédio Vivo', body, scripts, user,
+    dark: true, largo: true, imersivo: true, tailwind: false, cabeca: `<style>${CSS_PREDIO}</style>`,
+  });
 }

@@ -11,6 +11,7 @@ import { getContrato, CONTRATOS } from '../../src/modules/closing/contratos-regi
 import { CASOS_COMERCIAL2 } from './casos-comercial2.js';
 import { renderPosVendaPage } from '../../src/modules/dashboard/pos-venda-views.js';
 import { CASOS_OPERACAO2, linhaPv } from './casos-operacao2.js';
+import { CASOS_IMERSIVO } from './casos-imersivo.js';
 
 const uuid = (i: number) => `${String(i).padStart(8, '0')}-2222-4333-8444-555555555555`;
 
@@ -21,6 +22,12 @@ export const CLASSES_ONDA4: string[] = [
     'previa-status', 'copiloto-btn', 'chat', 'chat-in', 'chat-send', 'chat-out', 'chat-copy', 'chat-send-eva', 'notas-btn',
     'lembrete-btn', 'lembrete-form', 'lembrete-titulo', 'lembrete-data', 'lembrete-salvar', 'lembrete-status', 'notas', 'nota-in',
     'nota-salvar', 'nota-status', 'historico', 'tarefa-ok', 'tarefa-adiar', 'agenda'].map((c) => 'pv-' + c),
+  // R23 — Prédio Vivo e Cérebro: CSS próprio escopado em #predio-vivo / #cerebro
+  // (a tela é imersiva e desenha tudo sozinha; o JS abre/fecha com estas classes).
+  'hud', 'fechar', 'sub', 'num', 'secao', 'mnt', 'mnt-vazio', 'aberto',
+  'topbar', 'dot', 'cofre-lock', 'hint', 'links', 'legend', 'g', 'v', 'speech', 'who', 'panelClose', 'open', 'listening', 'off',
+  // cartões/painéis do Cérebro montados no JS (strings de HTML no script)
+  'desc', 'em', 'nm', 'n', 'lb', 'src', 'ti', 'kpi', 'l', 'linha', 'total', 'add', "'+(cls||'')+'",
 ];
 
 function telasR21(n: number, user: DashUser): Record<string, string> {
@@ -46,6 +53,12 @@ function telasR22(n: number, user: DashUser): Record<string, string> {
   };
 }
 
+/** R23 — só da casa (as rotas barram o tenant): entra só no caso da casa. */
+function telasR23(user: DashUser): Record<string, string> {
+  if (user.companyId !== '00000000-0000-0000-0000-000000000001') return {};
+  return { 'r23-predio': CASOS_IMERSIVO.predio(), 'r23-cerebro': CASOS_IMERSIVO.cerebro() };
+}
+
 export function telasOnda4(n: number, user: DashUser): Record<string, string> {
-  return { ...telasR21(n, user), ...telasR22(n, user) };
+  return { ...telasR21(n, user), ...telasR22(n, user), ...telasR23(user) };
 }
