@@ -64,6 +64,12 @@ export interface AdapterFetchResult {
   // Status atual do sistema (online/offline/etc) extraido na mesma chamada,
   // se o adapter conseguir.
   statusInversor?: 'ok' | 'offline' | 'falha' | 'desconhecido';
+  // Falha PARCIAL (29/09): parte da busca não respondeu (micro, mês, janela).
+  // Os dias afetados NÃO vêm em `geracoes` (o banco mantém o valor anterior —
+  // nunca gravar soma parcial). Texto curto em português, sem a marca na
+  // frente (o service prefixa): ex. "3 de 30 micros não responderam".
+  // Com ele preenchido o sync NÃO conta como sucesso (vira ultimo_erro).
+  falhaParcial?: string;
 }
 
 export interface AdapterFetchError {

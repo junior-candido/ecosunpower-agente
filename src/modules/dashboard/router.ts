@@ -75,6 +75,7 @@ import { classificarSistema, medianaEspecifica7d } from '../monitoring/classific
 import { getAdapter } from '../monitoring/adapter-registry.js';
 import { garantiaInfo } from '../monitoring/garantia.js';
 import { filtrarOrdenarSistemas } from '../monitoring/filtro.js';
+import { hojeBrasilia } from '../monitoring/util/dia-brasilia.js';
 import multer from 'multer';
 import { listClientes, getClienteDetail } from './clientes-queries.js';
 import { renderClientesListPage, renderClienteDetailPage, renderFormNovoCliente } from './clientes-views.js';
@@ -5766,7 +5767,7 @@ export function createDashboardRouter(
       : 'mes';
     const refQ = typeof req.query.ref === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.ref)
       ? req.query.ref
-      : new Date().toISOString().slice(0, 10);
+      : hojeBrasilia(); // dia de Brasília (às 21h+ o UTC já é amanhã — abria o dia vazio)
 
     try {
       const detalhe = await monitoringService.getDetalheCalendario(id, { vista, ref: refQ });

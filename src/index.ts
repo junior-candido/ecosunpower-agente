@@ -11478,9 +11478,10 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     console.log('[reviews-notifier] cron started (a cada 5min)');
   }
 
-  // Monitoramento Modulo 5: cron de sync da geracao a cada 1h.
-  // SolarEdge atualiza dados ~15min — 1h cobre bem sem estourar rate limit
-  // (default SolarEdge: 300 calls/dia/site → 24 calls/dia esta tranquilo).
+  // Monitoramento Modulo 5: cron de sync da geracao a cada 15 min.
+  // SolarEdge (limite 300 chamadas/dia por chave): o MonitoringService só
+  // consulta cada usina SolarEdge 1×/hora (24/dia) e pausa a chave 3 h num 429.
+  // O próprio syncAll tem trava: rodada nova não começa se a anterior não acabou.
   // Admin pull (Junior usa pra ver), NAO eh outbound pra cliente — fica
   // fora do gate de passive mode. UPSERT idempotente em geracao_diaria.
   if (!isSandbox) {
@@ -11496,7 +11497,7 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
         console.error('[monitoring] sync horario falhou:', (err as Error).message);
       }
     };
-    setInterval(monitoringSyncHourly, 15 * 60 * 1000); // 1x a cada 15min (alinha com SolarEdge)
+    setInterval(monitoringSyncHourly, 15 * 60 * 1000); // 1x a cada 15min (SolarEdge: 1x/h por usina, controlado no service)
     setTimeout(monitoringSyncHourly, 2 * 60 * 1000);   // 2min apos start
     console.log('[monitoring] Cron de sync started (1x a cada 15min)');
 
@@ -11514,7 +11515,7 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
         console.warn('[monitoring/discovery] erro:', (err as Error).message);
       }
     };
-    setInterval(checkMonitoringDiscovery, 60 * 60 * 1000);  // 1x por hora
+    setInterval(checkMonitoringDiscovery, 60 * 60 * 1000);  // 1x por hora (SolarEdge: a cada 6 h, controlado no service)
     setTimeout(checkMonitoringDiscovery, 10 * 60 * 1000);   // 10min apos start
     console.log('[monitoring] Cron de descoberta started (1x/hora)');
 

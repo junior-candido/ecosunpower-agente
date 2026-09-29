@@ -290,6 +290,7 @@ export const solisAdapter: MonitoringAdapter = {
 
     const porDia = new Map<string, number>();
     let ultimoErro: string | null = null;
+    const mesesComFalha: string[] = [];
     for (const month of mesesNoIntervalo(dataInicio, dataFim)) {
       const r = await solisPost<unknown>(parsed, '/v1/api/stationMonth', {
         id: parsed.siteId, month, timeZone: -3, money: 'BRL',
@@ -297,6 +298,7 @@ export const solisAdapter: MonitoringAdapter = {
       if (!r.ok) {
         if (r.invalidCredentials) return r;
         ultimoErro = r.reason;
+        mesesComFalha.push(month);
         console.warn(`[solis] stationMonth ${parsed.siteId} ${month} falhou (${r.reason}); pula esse mês`);
         continue;
       }
@@ -312,7 +314,11 @@ export const solisAdapter: MonitoringAdapter = {
     const geracoes: GeracaoDiaria[] = [...porDia.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([data, kwh]) => ({ data, geracao_kwh: Number(kwh.toFixed(3)) }));
-    return { ok: true, geracoes, statusInversor: 'desconhecido' }; // 'ok' era proxy (linhas na resposta ≠ inversor comunicando) — mentia no alerta com motivo; status real desta marca = fase 2
+    // 29/09: mês que falhou não some calado — o sync não conta como sucesso.
+    const falhaParcial = mesesComFalha.length > 0
+      ? `o mês ${mesesComFalha.map((m) => `${m.slice(5, 7)}/${m.slice(0, 4)}`).join(', ')} não respondeu`
+      : undefined;
+    return { ok: true, geracoes, statusInversor: 'desconhecido', ...(falhaParcial ? { falhaParcial } : {}) }; // 'ok' era proxy (linhas na resposta ≠ inversor comunicando) — mentia no alerta com motivo; status real desta marca = fase 2
   },
 
   // stationDay → curva de potência (kW) do dia da usina. Ao vivo.

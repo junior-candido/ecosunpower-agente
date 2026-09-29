@@ -115,6 +115,14 @@ interface FoxEnvelope<T> { errno?: number; msg?: string; result?: T }
 // errnos de credencial inválida → invalidCredentials (não retentar em loop).
 const AUTH_ERRNOS = new Set([40256, 41807, 41808, 41809]); // signature/token errors
 
+// Rate limit da FoxESS vem como HTTP 200 + errno (não 429). 40400 = "The number
+// of requests is too frequent". Também reconhece pelo texto, caso o código
+// mude. Vira `status: 429` → o retry padrão trata como passageiro e repete.
+const RATE_LIMIT_ERRNOS = new Set([40400]);
+export function ehRateLimitFox(errno: number, msg: string | undefined): boolean {
+  return RATE_LIMIT_ERRNOS.has(errno) || /too frequent|too many|rate limit|frequen/i.test(msg ?? '');
+}
+
 async function foxPostOnce<T>(
   apiKey: string,
   path: string,
@@ -157,6 +165,8 @@ async function foxPostOnce<T>(
       ok: false,
       reason: `FoxESS errno=${errno}: ${json.msg ?? ''}`,
       invalidCredentials: AUTH_ERRNOS.has(errno),
+      // rate limit (HTTP 200 + errno) → marcado como 429 pro retry repetir
+      ...(ehRateLimitFox(errno, json.msg) ? { status: 429 } : {}),
     };
   }
   return { ok: true, data: (json.result as T) ?? ({} as T) };
@@ -327,29 +337,46 @@ export const foxessAdapter: MonitoringAdapter = {
     }
 
     const porDia = new Map<string, number>();
+    // 29/09: micro que falha NÃO some da soma calado. Antes o dia era gravado
+    // com a SOMA PARCIAL (ex.: 27 de 30 micros) por cima do valor certo. Agora
+    // o mês inteiro em que QUALQUER micro falhou fica fora (o banco mantém o
+    // valor anterior) e o adapter avisa quantos micros não responderam.
+    const snsComFalha = new Set<string>();
     for (const { year, month } of mesesNoIntervalo(dataInicio, dataFim)) {
+      const doMes = new Map<string, number>();
+      let mesFalhou = false;
       for (const sn of parsed.deviceSNs) {
         const r = await foxPost<unknown>(parsed.apiKey, '/op/v0/device/report/query', {
           sn, year, month, dimension: 'month', variables: ['generation'],
         });
         if (!r.ok) {
           if (r.invalidCredentials) return r;     // credencial ruim: aborta tudo
-          console.warn(`[foxess] report ${sn} ${year}-${month} falhou (${r.reason}); pula esse micro/mês`);
-          continue;                                // micro com erro pontual: soma o resto
+          console.warn(`[foxess] report ${sn} ${year}-${month} falhou (${r.reason}); mês fora (soma ficaria parcial)`);
+          snsComFalha.add(sn);
+          mesFalhou = true;
+          continue;
         }
         for (const g of parseReportMes(r.data, year, month)) {
           if (dentroDoIntervalo(g.data, dataInicio, dataFim)) {
-            porDia.set(g.data, (porDia.get(g.data) ?? 0) + g.geracao_kwh);
+            doMes.set(g.data, (doMes.get(g.data) ?? 0) + g.geracao_kwh);
           }
         }
       }
+      if (!mesFalhou) for (const [d, kwh] of doMes) porDia.set(d, kwh);
+    }
+    // Nada coletado porque TUDO falhou = erro (o cron re-tenta), não "0 dias ok".
+    if (porDia.size === 0 && snsComFalha.size === parsed.deviceSNs.length) {
+      return { ok: false, reason: `FoxESS: nenhum dos ${parsed.deviceSNs.length} micros respondeu` };
     }
     const geracoes: GeracaoDiaria[] = [...porDia.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([data, kwh]) => ({ data, geracao_kwh: Number(kwh.toFixed(3)) }));
     // [Fase 2A] status REAL via device/list (best-effort; nunca derruba o sync)
     const statusInversor = await statusRealFox(parsed.apiKey, parsed.deviceSNs);
-    return { ok: true, geracoes, statusInversor };
+    const falhaParcial = snsComFalha.size > 0
+      ? `${snsComFalha.size} de ${parsed.deviceSNs.length} micros não responderam`
+      : undefined;
+    return { ok: true, geracoes, statusInversor, ...(falhaParcial ? { falhaParcial } : {}) };
   },
 
   // Lista 1 SITE por USINA (plant/list) + agrupa os micros (device/list) por
