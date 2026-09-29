@@ -6,6 +6,8 @@
 // Tudo é defensivo: dados_input varia (single vs comparação, com/sem campos
 // calculados). Campo ausente simplesmente não entra no bloco — nunca quebra.
 
+import { interpolarEmpresa, type EmpresaConfig } from './empresa-config.js';
+
 function num(v: unknown): number | null {
   if (typeof v === 'number') return isFinite(v) && v !== 0 ? v : null;
   let s = String(v ?? '').replace(/[^\d.,-]/g, '');
@@ -120,4 +122,12 @@ export function montarBlocoProposta(dados: unknown, nomeCliente?: string | null)
   }
 
   return linhas.join('\n');
+}
+
+// [29/09/2026] Postura de consultora + bloco da proposta, com os marcadores da
+// EMPRESA resolvidos ({{rt_o}}, {{nome_atendente}}...). Antes ia cru pro
+// cérebro: o modelo lia "{{rt_o}}" literal e podia repetir pro cliente, e o
+// tenant via "Eva". Mesmo formato de sempre: "\n\n<postura>\n\n<bloco>".
+export function montarContextoConsultora(postura: string, bloco: string, emp: EmpresaConfig): string {
+  return `\n\n${interpolarEmpresa(postura, emp)}\n\n${bloco}`;
 }

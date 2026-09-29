@@ -191,13 +191,13 @@ em branco), nada mais.`;
     const regras = `\n\nRegras:\n- Sem emojis, sem asteriscos, sem markdown\n- 2 a 3 bolhas curtas separadas por LINHA EM BRANCO\n- Maximo 2 frases por bolha\n- Brasileiro, natural\n\nResponda APENAS o texto da mensagem (bolhas separadas por linha em branco), nada mais.`;
     switch (topic) {
       case 'limpeza_maio':
-        return base + `Mande uma mensagem ${greeting} (cliente de manutencao recorrente) lembrando da limpeza dos modulos solares. Contexto: inicio de maio. Periodo seco em Brasilia comeca, poeira acumula nos modulos. Limpeza preventiva pra manter geracao alta. Mencione maio e por que essa epoca eh importante. Conduza pra agendamento: "quer que eu agende a limpeza pra esse mes?"` + regras;
+        return base + `Mande uma mensagem ${greeting} (cliente de manutencao recorrente) lembrando da limpeza dos modulos solares. Contexto: inicio de maio. Periodo seco em Brasilia comeca, poeira acumula nos modulos. Limpeza preventiva pra manter geracao alta. Mencione maio e por que essa epoca eh importante. Conduza pro pedido de limpeza: "quer que eu peca a limpeza pra esse mes? a equipe confirma o dia com voce" (voce NAO marca data sozinha)` + regras;
       case 'limpeza_agosto':
-        return base + `Mande uma mensagem ${greeting} (cliente de manutencao recorrente) lembrando da limpeza dos modulos solares. Contexto: agosto. Pico do periodo seco. Modulos costumam estar muito sujos a essa altura. Limpeza eh especialmente importante agora. Conduza pra agendamento: "quer que eu agende a limpeza pra esse mes?"` + regras;
+        return base + `Mande uma mensagem ${greeting} (cliente de manutencao recorrente) lembrando da limpeza dos modulos solares. Contexto: agosto. Pico do periodo seco. Modulos costumam estar muito sujos a essa altura. Limpeza eh especialmente importante agora. Conduza pro pedido de limpeza: "quer que eu peca a limpeza pra esse mes? a equipe confirma o dia com voce" (voce NAO marca data sozinha)` + regras;
       case 'alerta_offline':
-        return base + `Mande uma mensagem ${greeting}. Voce notou que o sistema dele parou de gerar nos ultimos dias. Pergunta de forma calma se ele consegue verificar se o wifi do inversor esta conectado, ou se tem alguma luz vermelha piscando. Se persistir, diga que voce pode agendar uma visita tecnica. Tom: preocupado mas tranquilo, sem alarmar. Nao prometa que vai voltar, nao culpe o cliente.` + regras;
+        return base + `Mande uma mensagem ${greeting}. Voce notou que o sistema dele parou de gerar nos ultimos dias. Pergunta de forma calma se ele consegue verificar se o wifi do inversor esta conectado, ou se tem alguma luz vermelha piscando. Se persistir, diga que voce pode pedir uma visita tecnica pra equipe (quem confirma o dia e a equipe, voce nao marca data). Tom: preocupado mas tranquilo, sem alarmar. Nao prometa que vai voltar, nao culpe o cliente.` + regras;
       case 'alerta_limpeza':
-        return base + `Mande uma mensagem ${greeting}. Voce notou que a geracao do sistema dele caiu nos ultimos dias. Geralmente eh sujeira/poeira nos modulos. Pergunta se ele topa agendar uma limpeza preventiva pra restaurar a geracao. Tom: util, sem urgencia exagerada.` + regras;
+        return base + `Mande uma mensagem ${greeting}. Voce notou que a geracao do sistema dele caiu nos ultimos dias. Geralmente eh sujeira/poeira nos modulos. Pergunta se ele quer que voce peca uma limpeza preventiva pra equipe pra restaurar a geracao. Tom: util, sem urgencia exagerada.` + regras;
       case 'pedido_depoimento':
         return base + `Mande uma mensagem ${greeting}. Voce viu que o sistema dele esta gerando ACIMA do esperado nos ultimos dias (bombando!). Pergunta como tem sido a experiencia com o sistema e se ele topa contar pra outras pessoas um depoimento curto. Tom: comemorativo, leve, sem ser comercial. Nao pressione.` + regras;
       case 'aniversario_1a':
@@ -206,26 +206,26 @@ em branco), nada mais.`;
       case 'aniversario_4a':
       case 'aniversario_5a': {
         const anos = topic.replace('aniversario_', '').replace('a', '');
-        return base + `Mande uma mensagem ${greeting}. Hoje completa ${anos} ano(s) que o sistema solar foi instalado. Celebre a data de forma leve e ofereca uma revisao preventiva (limpeza + checagem de conexoes + medicao). Tom: gratidao + cuidado de longo prazo. Pergunta se ele topa agendar uma visita rapida.` + regras;
+        return base + `Mande uma mensagem ${greeting}. Hoje completa ${anos} ano(s) que o sistema solar foi instalado. Celebre a data de forma leve e ofereca uma revisao preventiva (limpeza + checagem de conexoes + medicao). Tom: gratidao + cuidado de longo prazo. Pergunta se ele quer que voce peca uma visita rapida pra equipe (a equipe confirma o dia).` + regras;
       }
       default:
         // Fallback genérico (preserva comportamento original pra topics desconhecidos)
-        return base + `Mande uma mensagem ${greeting} sobre manutencao do sistema solar. Conduza pra agendamento.` + regras;
+        return base + `Mande uma mensagem ${greeting} sobre manutencao do sistema solar. Conduza pro pedido de visita (a equipe confirma o dia; voce nao marca data).` + regras;
     }
   }
 
   private buildFallbackForTopic(name: string | null, topic: string): string {
     const olaName = name ? `, ${name}` : '';
     switch (topic) {
-      case 'limpeza_maio': return `oi${olaName}, chegou maio e eh hora da limpeza dos paineis. quer que eu agende?`;
-      case 'limpeza_agosto': return `oi${olaName}, chegou agosto e os paineis costumam estar bem sujos. quer que eu agende uma limpeza?`;
-      case 'alerta_offline': return `oi${olaName}, vi que seu sistema parou de gerar nos ultimos dias. consegue verificar se o wifi do inversor esta conectado? se persistir, posso agendar uma visita.`;
-      case 'alerta_limpeza': return `oi${olaName}, vi que a geracao caiu nos ultimos dias. provavelmente eh sujeira nos modulos. quer que eu agende uma limpeza?`;
+      case 'limpeza_maio': return `oi${olaName}, chegou maio e eh hora da limpeza dos paineis. quer que eu peca pra equipe? eles confirmam o dia com voce.`;
+      case 'limpeza_agosto': return `oi${olaName}, chegou agosto e os paineis costumam estar bem sujos. quer que eu peca uma limpeza pra equipe? eles confirmam o dia com voce.`;
+      case 'alerta_offline': return `oi${olaName}, vi que seu sistema parou de gerar nos ultimos dias. consegue verificar se o wifi do inversor esta conectado? se persistir, posso pedir uma visita tecnica pra equipe.`;
+      case 'alerta_limpeza': return `oi${olaName}, vi que a geracao caiu nos ultimos dias. provavelmente eh sujeira nos modulos. quer que eu peca uma limpeza pra equipe? eles confirmam o dia com voce.`;
       case 'pedido_depoimento': return `oi${olaName}, seu sistema esta bombando! que tal contar a experiencia pra gente?`;
       default:
         if (topic.startsWith('aniversario_')) {
           const anos = topic.replace('aniversario_', '').replace('a', '');
-          return `oi${olaName}, hoje completa ${anos} ano com seu sistema solar. quer que eu agende uma revisao preventiva?`;
+          return `oi${olaName}, hoje completa ${anos} ano com seu sistema solar. quer que eu peca uma revisao preventiva pra equipe? eles confirmam o dia com voce.`;
         }
         return `oi${olaName}, posso te ajudar com algo do seu sistema?`;
     }

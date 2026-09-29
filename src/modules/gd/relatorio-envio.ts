@@ -11,8 +11,8 @@ import { ehEcosun, type EmpresaConfig } from '../empresa-config.js';
 import { motivoEmPortugues, type ResultadoCanal } from '../relatorios/pasta/resultado-envio.js';
 import type { SupabaseService } from '../supabase.js';
 import {
-  TEMPLATE_RELATORIO, componentesTemplateRelatorio, primeiroNome, textoLivreRelatorio, textoTemplateRelatorio,
-  type ComponenteTemplate,
+  TEMPLATE_RELATORIO, componentesTemplateRelatorio, escolherModeloRelatorio, primeiroNome, textoLivreRelatorio,
+  textoTemplateRelatorio, type ComponenteTemplate,
 } from './relatorio-envio-textos.js';
 
 /** Mesmo limite do EvolutionService.sendDocument (10 MB). */
@@ -104,6 +104,16 @@ export interface DepsZapRelatorio {
   sendTemplate?: (to: string, name: string, lang: string, components: ComponenteTemplate[]) => Promise<unknown>;
   /** Só tenant (Evolution): o PDF anexo. */
   sendDocument?: (to: string, base64: string, fileName: string, caption: string) => Promise<void>;
+  /** Modelo Meta a usar (relatorio_usina_v1 | relatorio_usina_v2). Sem valor = v1. */
+  modelo?: string;
+}
+
+/** Modelo do relatório agora: app_flags 'relatorio_usina_modelo' → RELATORIO_USINA_MODELO → v1.
+ *  Banco fora do ar nunca derruba o envio (segue a variável/padrão). */
+export async function modeloRelatorioAtual(lerDoBanco: () => Promise<string | null>): Promise<string> {
+  let doBanco: string | null = null;
+  try { doBanco = await lerDoBanco(); } catch { doBanco = null; }
+  return escolherModeloRelatorio(doBanco, process.env.RELATORIO_USINA_MODELO);
 }
 
 export interface ResultadoZapRelatorio extends ResultadoCanal {
@@ -111,8 +121,8 @@ export interface ResultadoZapRelatorio extends ResultadoCanal {
   textoEnviado?: string;
 }
 
-const AVISO_TEXTO_LIVRE =
-  `saiu como mensagem comum porque o modelo "${TEMPLATE_RELATORIO}" ainda não foi aprovado na Meta — ` +
+const avisoTextoLivre = (modelo: string) =>
+  `saiu como mensagem comum porque o modelo "${modelo}" ainda não foi aprovado na Meta — ` +
   'só chega se o cliente falou com a gente nas últimas 24 horas';
 
 export async function enviarRelatorioZap(
@@ -123,7 +133,9 @@ export async function enviarRelatorioZap(
   if (d.canal === 'nenhum') return { ok: false, reason: 'sem_canal' };
   if (!dest.fone) return { ok: false, reason: dest.motivo ?? 'sem_phone' };
   const fone = dest.fone;
-  const livre = textoLivreRelatorio(m.nome, m.mesExtenso, m.link);
+  // O modelo só vale pra EcoSun (WABA); o tenant manda o texto do v1 como sempre.
+  const modelo = d.canal === 'casa' ? escolherModeloRelatorio(d.modelo, undefined) : TEMPLATE_RELATORIO;
+  const livre = textoLivreRelatorio(m.nome, m.mesExtenso, m.link, modelo);
 
   if (d.canal === 'evolution') {
     // Número próprio do tenant: mensagem comum sempre chega (não há janela de 24 h).
@@ -149,16 +161,16 @@ export async function enviarRelatorioZap(
   let erroModelo = 'modelo não configurado neste ambiente';
   if (d.sendTemplate) {
     try {
-      await d.sendTemplate(fone, TEMPLATE_RELATORIO, 'pt_BR', componentesTemplateRelatorio(m.nome, m.mesExtenso, m.token));
-      return { ok: true, para: fone, textoEnviado: textoTemplateRelatorio(m.nome, m.mesExtenso) };
+      await d.sendTemplate(fone, modelo, 'pt_BR', componentesTemplateRelatorio(m.nome, m.mesExtenso, m.token));
+      return { ok: true, para: fone, textoEnviado: textoTemplateRelatorio(m.nome, m.mesExtenso, modelo) };
     } catch (err) {
       erroModelo = (err as Error).message;
-      console.warn(`[relatorio-gd] modelo ${TEMPLATE_RELATORIO} recusado: ${erroModelo}`);
+      console.warn(`[relatorio-gd] modelo ${modelo} recusado: ${erroModelo}`);
     }
   }
   try {
     await d.sendText(fone, livre);
-    return { ok: true, para: fone, aviso: AVISO_TEXTO_LIVRE, textoEnviado: livre };
+    return { ok: true, para: fone, aviso: avisoTextoLivre(modelo), textoEnviado: livre };
   } catch (err) {
     return { ok: false, reason: 'modelo_nao_aprovado', detalhe: `${erroModelo} / ${(err as Error).message}`, para: fone };
   }
