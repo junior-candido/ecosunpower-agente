@@ -31,7 +31,7 @@ import {
 } from './command-center-queries.js';
 import { MODULOS } from './conhecer-views.js';
 import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
-import { can } from './permissions.js';
+import { can, ehPapelTv } from './permissions.js';
 import { blocoMapaUsinas } from './mapa-usinas-views.js';
 import { URL_CSS_COMMAND_CENTER } from './ui/estatico.js';
 
@@ -864,15 +864,150 @@ export function renderCentralAtencaoPage(c: CentralAtencaoDados, user?: DashUser
   });
 }
 
-/** Página do Modo TV — fase I. Por enquanto só diz o que vem, sem número. */
-export function renderModoTvPage(user?: DashUser): string {
-  const body = `<div class="cc-root">
-  ${cabecalhoPagina({
-    titulo: 'Modo TV',
-    trilha: [{ rotulo: 'Command Center', href: '/dashboard/command-center' }, { rotulo: 'Modo TV' }],
-    subtitulo: 'A tela do escritório: geração agora, energia do dia, usinas online, alarmes críticos, vendas do mês e instalações do dia — girando sozinha a cada 30 segundos.',
-  })}
-  ${estadoVazio({ tipo: 'construcao', texto: 'O Modo TV entra depois que o Command Center estiver com todos os números reais (assim a TV nunca mostra número de enfeite).' })}
+// ---------------------------------------------------------------------------
+// Página: Modo TV (fase I / renovação do miolo R26, D6 = a)
+// Tela de parede: 3 visões girando a cada 30 s (visão geral · usinas ·
+// comercial), atalho T = tela cheia, ← → troca na mão. Só números e quadros do
+// Command Center da empresa da sessão — nada de nome de cliente, nada de
+// dinheiro (a rota carrega com PERMISSOES_TV). Casca escondida (menu, barra,
+// rodapé): é uma TV. Recarrega sozinha a cada 5 min pra trazer número novo.
+// ---------------------------------------------------------------------------
+
+const CSS_TV = `
+/* TV: sem menu, barra de cima nem rodapé (:has pinta já no 1º quadro; a classe do script é reserva) */
+.cc-shell:has(#cc-tv) .cc-sb,.cc-shell:has(#cc-tv) .cc-mtop,.cc-shell:has(#cc-tv) .cc-backdrop,.cc-shell:has(#cc-tv) .cc-rodape,
+.cc-shell.cc-tv-shell .cc-sb,.cc-shell.cc-tv-shell .cc-mtop,.cc-shell.cc-tv-shell .cc-backdrop,.cc-shell.cc-tv-shell .cc-rodape{display:none!important}
+.cc-tv{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;padding:28px 36px 22px;gap:18px}
+.cc-tv-topo{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.cc-tv-topo h1{font-family:var(--cc-f-num,'Space Grotesk',system-ui,sans-serif);font-size:30px;font-weight:700;color:var(--cc-text);margin:0}
+.cc-tv-topo .cc-tv-emp{font-size:15px;color:var(--cc-muted)}
+.cc-tv-relogio{font-family:var(--cc-f-num,'Space Grotesk',system-ui,sans-serif);font-size:38px;font-weight:700;color:var(--cc-gold-2);font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.cc-tv-pontos{display:flex;gap:8px;align-items:center}
+.cc-tv-pontos button{width:34px;height:8px;border-radius:99px;border:0;background:var(--cc-line-2);cursor:pointer;padding:0}
+.cc-tv-pontos button[aria-current="true"]{background:var(--cc-gold)}
+.cc-tv-visao{display:none;flex:1;flex-direction:column;gap:18px;animation:ccTvEntra .5s ease}
+.cc-tv-visao.cc-tv-on{display:flex}
+@keyframes ccTvEntra{from{opacity:0}to{opacity:1}}
+@media (prefers-reduced-motion:reduce){.cc-tv-visao{animation:none}}
+.cc-tv-titulo{font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--cc-muted)}
+.cc-tv .cc-kstrip .cc-val{font-size:44px}
+.cc-tv .cc-kstrip .cc-lbl{font-size:15px}
+.cc-tv .cc-kstrip .cc-dl{font-size:14px}
+.cc-tv-grade{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:18px;align-items:start}
+.cc-tv-grade .cc-panel{margin:0}
+.cc-tv .cc-sevs{font-size:18px;gap:22px}
+.cc-tv-rodape{display:flex;align-items:center;gap:14px;font-size:13px;color:var(--cc-faint)}
+.cc-tv-rodape kbd{font-family:inherit;border:1px solid var(--cc-line-2);border-radius:6px;padding:1px 7px;color:var(--cc-muted)}
+.cc-tv-rodape a{color:var(--cc-muted);text-decoration:underline}
+@media (max-width:900px){.cc-tv{padding:18px 16px}.cc-tv-grade{grid-template-columns:minmax(0,1fr)}.cc-tv .cc-kstrip .cc-val{font-size:30px}.cc-tv-relogio{font-size:26px}}
+`;
+
+/** KPIs da TV: só os números que o Command Center já calcula, sem dinheiro. */
+function kpisTv(d: CommandCenterDados, parte: 'geral' | 'comercial'): string {
+  const dd = d.dados;
+  const c = contratadosDe(d);
+  const f = dd?.frota ?? null;
+  const hoje = energiaLegivel(f?.energiaHojeKwh);
+  const mes = energiaLegivel(f?.energiaMesKwh);
+  const lista: KpiInput[] = [];
+  if (parte === 'geral' && c.usinas) {
+    lista.push(
+      { rotulo: 'Geração agora', valor: f?.geracaoAgora?.kw ?? null, casas: 1, unidade: 'kW', detalhe: f?.geracaoAgora ? `${plural(f.geracaoAgora.usinas, 'usina', 'usinas')} ao vivo` : undefined, semDadoTexto: 'sem leitura ao vivo agora' },
+      { rotulo: 'Energia hoje', valor: hoje.valor, casas: hoje.casas, unidade: hoje.unidade, detalhe: f ? 'até agora' : undefined, semDadoTexto: 'sem leitura hoje ainda' },
+      { rotulo: 'Energia no mês', valor: mes.valor, casas: mes.casas, unidade: mes.unidade, detalhe: 'desde o dia 1º', semDadoTexto: 'sem leitura no mês' },
+      { rotulo: 'Usinas no ar', valor: f && f.monitoradas > 0 ? f.comunicando : null, unidade: f ? `/ ${fmtNumero(f.monitoradas)}` : undefined, detalhe: f ? (f.porEstado.sem_comunicacao ? `${fmtNumero(f.porEstado.sem_comunicacao)} sem sinal` : 'todas com sinal') : undefined, semDadoTexto: 'nenhuma usina monitorada' },
+    );
+  }
+  if (c.leads) {
+    lista.push({ rotulo: 'Vendas do mês', valor: dd?.kpisMes.vendas ?? null, destaque: true, detalhe: temNumero(dd?.mudancas24h.vendas) ? `+${fmtNumero(dd!.mudancas24h.vendas)} desde ontem` : 'fechadas no mês' });
+    if (parte === 'comercial') {
+      lista.push(
+        { rotulo: 'Leads do mês', valor: dd?.kpisMes.leads ?? null, detalhe: temNumero(dd?.mudancas24h.leads) ? `+${fmtNumero(dd!.mudancas24h.leads)} desde ontem` : undefined },
+        { rotulo: 'Propostas do mês', valor: dd?.kpisMes.propostas ?? null, detalhe: temNumero(dd?.mudancas24h.propostas) ? `+${fmtNumero(dd!.mudancas24h.propostas)} desde ontem` : undefined },
+      );
+    }
+  }
+  if (parte === 'comercial' && c.usinas) {
+    lista.push({ rotulo: 'Usinas novas no mês', valor: dd?.kpisMes.usinasNovas ?? null, detalhe: 'obras que viraram usina' });
+  }
+  return lista.length ? faixaKpis(lista) : '';
+}
+
+export function renderModoTvPage(user?: DashUser, d?: CommandCenterDados): string {
+  const dados: CommandCenterDados = d ?? { agora: new Date(), nomeUsuario: user?.nome ?? null, dados: null };
+  const dd = dados.dados;
+  const c = contratadosDe(dados);
+  const empresaNome = user?.companyNome && !ehDaCasa(user) ? user.companyNome : 'EcoSunPower';
+  const semDado = !dd
+    ? estadoVazio({ tipo: 'sem_dado', titulo: 'Sem dado agora', texto: 'A TV tenta de novo sozinha em alguns minutos.' })
+    : '';
+
+  const visoes: Array<{ id: string; titulo: string; html: string }> = [];
+  visoes.push({
+    id: 'geral', titulo: 'Visão geral',
+    html: `${kpisTv(dados, 'geral')}
+      ${cartaoSecao({ titulo: 'Avisos agora', dica: 'contagem da Central de Atenção', corpoHtml: legendaSeveridades(dd ? dd.eventos : null, false, ehParcial(dd?.fontes)) })}
+      ${semDado}`,
+  });
+  if (c.usinas) {
+    visoes.push({
+      id: 'usinas', titulo: 'Usinas',
+      html: dd ? `<div class="cc-tv-grade">${geracao(dados)}${usinasAgora(dados)}</div>` : semDado,
+    });
+  }
+  if (c.leads) {
+    visoes.push({ id: 'comercial', titulo: 'Comercial', html: `${kpisTv(dados, 'comercial')}${semDado}` });
+  }
+
+  const tvPuro = ehPapelTv(user);
+  const body = `<div class="cc-root cc-cc cc-tv" id="cc-tv">
+  <header class="cc-tv-topo">
+    <div><h1>${escapeHtml(empresaNome)}</h1><div class="cc-tv-emp">Modo TV · <span id="cc-tv-nome-visao">${escapeHtml(visoes[0].titulo)}</span></div></div>
+    <span class="cc-sp"></span>
+    <nav class="cc-tv-pontos" aria-label="Visões">${visoes.map((v, i) => `<button type="button" data-visao="${i}" aria-label="${escapeHtml(v.titulo)}"${i === 0 ? ' aria-current="true"' : ''}></button>`).join('')}</nav>
+    <div class="cc-tv-relogio" id="cc-tv-relogio">${escapeHtml(new Intl.DateTimeFormat('pt-BR', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }).format(dados.agora))}</div>
+  </header>
+  ${visoes.map((v, i) => `<section class="cc-tv-visao${i === 0 ? ' cc-tv-on' : ''}" data-titulo="${escapeHtml(v.titulo)}" aria-label="${escapeHtml(v.titulo)}">
+    <div class="cc-tv-titulo">${escapeHtml(v.titulo)}</div>
+    ${v.html}
+  </section>`).join('')}
+  <footer class="cc-tv-rodape"><span>${escapeHtml(carimboAoVivo(dados.agora))}</span><span class="cc-sp"></span><span><kbd>T</kbd> tela cheia · <kbd>←</kbd> <kbd>→</kbd> trocar</span>${tvPuro ? '' : '<a href="/dashboard/command-center">sair do Modo TV</a>'}</footer>
 </div>`;
-  return renderLayout({ active: 'tv', title: 'Modo TV', body, dark: true, largo: true, user, tailwind: false });
+
+  const scripts = `<script>
+(function () {
+  var visoes = Array.prototype.slice.call(document.querySelectorAll('.cc-tv-visao'));
+  var pontos = Array.prototype.slice.call(document.querySelectorAll('.cc-tv-pontos button'));
+  var nome = document.getElementById('cc-tv-nome-visao');
+  var atual = 0, GIRO = 30000, timer = null;
+  function mostrar(i) {
+    if (!visoes.length) return;
+    atual = (i + visoes.length) % visoes.length;
+    visoes.forEach(function (v, k) { v.classList.toggle('cc-tv-on', k === atual); });
+    pontos.forEach(function (p, k) { if (k === atual) p.setAttribute('aria-current', 'true'); else p.removeAttribute('aria-current'); });
+    if (nome) nome.textContent = visoes[atual].getAttribute('data-titulo') || '';
+  }
+  function girar() { clearInterval(timer); if (visoes.length > 1) timer = setInterval(function () { mostrar(atual + 1); }, GIRO); }
+  pontos.forEach(function (p) { p.addEventListener('click', function () { mostrar(Number(p.dataset.visao) || 0); girar(); }); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 't' || e.key === 'T') {
+      if (document.fullscreenElement) { if (document.exitFullscreen) document.exitFullscreen(); }
+      else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(function () {});
+    } else if (e.key === 'ArrowRight') { mostrar(atual + 1); girar(); }
+    else if (e.key === 'ArrowLeft') { mostrar(atual - 1); girar(); }
+  });
+  var relogio = document.getElementById('cc-tv-relogio');
+  var fmt = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+  setInterval(function () { if (relogio) relogio.textContent = fmt.format(new Date()); }, 15000);
+  girar();
+  // Número novo a cada 5 minutos (a TV fica ligada o dia inteiro).
+  setTimeout(function () { location.reload(); }, 300000);
+})();
+</script>`;
+
+  const shell = `<script>document.querySelector('.cc-shell') && document.querySelector('.cc-shell').classList.add('cc-tv-shell');</script>`;
+  return renderLayout({
+    active: 'tv', title: 'Modo TV', body, scripts: shell + scripts, dark: true, largo: true, imersivo: true, user, tailwind: false,
+    cabeca: `${CABECA_CC}<style>${CSS_TV}</style>`,
+  });
 }

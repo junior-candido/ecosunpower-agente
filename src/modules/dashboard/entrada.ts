@@ -11,14 +11,17 @@
 //    pro login e criaria laço).
 // Funções puras: sem banco, sem sessão.
 
-import type { DashUser } from './permissions.js';
+import { ehPapelTv, type DashUser } from './permissions.js';
 
 export const ENTRADA = '/dashboard/command-center';
 export const TELA_LOGIN = '/dashboard/login';
+/** R26 (D6 = a): o usuário do papel "TV só-leitura" entra direto no Modo TV. */
+export const TELA_TV = '/dashboard/tv';
 
 /** Tela de entrada de quem está logado (sem sessão → login). */
 export function paginaInicialDe(user: DashUser | undefined): string {
-  return user ? ENTRADA : TELA_LOGIN;
+  if (!user) return TELA_LOGIN;
+  return ehPapelTv(user) ? TELA_TV : ENTRADA;
 }
 
 /** Para onde a logo do menu (e o "← voltar" da vitrine) leva. A casca só é

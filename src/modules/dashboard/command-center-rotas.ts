@@ -15,7 +15,7 @@
 import type { Request, Response } from 'express';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AuthedRequest } from './auth.js';
-import { can, type DashUser } from './permissions.js';
+import { can, ehPapelTv, type DashUser } from './permissions.js';
 import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
 import { bancoDoOperador } from '../tenant-client.js';
 import {
@@ -67,7 +67,12 @@ export function permissoesDe(user: DashUser): PermissoesCC {
 
 interface Carga { dados: DadosCommandCenter | null; contratados: PermissoesCC }
 
-async function carregar(req: Request, supabase: SupabaseClient, user: DashUser, agora: Date): Promise<Carga> {
+/** Modo TV (R26): o que a TV mostra — usinas e comercial, NUNCA financeiro
+ *  (dinheiro não vai pra tela da parede) nem marketing. Vale pro usuário do
+ *  papel TV (que não tem permissão nenhuma de área) e pra casa abrindo a TV. */
+export const PERMISSOES_TV: PermissoesCC = { usinas: true, leads: true, propostas: true, financeiro: false, marketing: false };
+
+async function carregar(req: Request, supabase: SupabaseClient, user: DashUser, agora: Date, permissoes: PermissoesCC = permissoesDe(user)): Promise<Carga> {
   let contratados: PermissoesCC = { ...NENHUM_MODULO };
   try {
     const db = bancoDoOperador(req as AuthedRequest, supabase);
@@ -75,10 +80,10 @@ async function carregar(req: Request, supabase: SupabaseClient, user: DashUser, 
     // no cache da requisição); erro = tudo trancado (fail-closed).
     contratados = blocosContratados(await modulosDaRequisicao(req, db, user.companyId));
     // Cada fonte já se protege sozinha; aqui só pega o que escapar (ex.: cliente quebrado).
-    const dados = await carregarCommandCenter(db, user.companyId, agora, permissoesDe(user), {
+    const dados = await carregarCommandCenter(db, user.companyId, agora, permissoes, {
       contratados,
-      // Conta a pagar PF (pessoal do dono) só pro admin.
-      verContasPF: user.isAdmin,
+      // Conta a pagar PF (pessoal do dono) só pro admin — e nunca na TV.
+      verContasPF: user.isAdmin && permissoes.financeiro,
     });
     return { dados, contratados };
   } catch (err) {
@@ -124,16 +129,43 @@ export function rotaCentralAtencao(supabase: SupabaseClient, agoraFn: () => Date
   };
 }
 
-// Modo TV — fase I. Por enquanto a página explica o que vem (sem número). Só da casa.
-export function rotaModoTv(): Handler {
+// Modo TV — fase I / R26 (D6 = a). Quem abre: a casa (qualquer usuário, pelo
+// botão do Command Center) e o usuário do papel "TV só-leitura" de QUALQUER
+// empresa (a TV mostra a empresa DELE). Tenant comum continua no Command Center.
+// Dado sempre escopado pela empresa da sessão, com PERMISSOES_TV (sem dinheiro).
+// Sem banco (testes antigos) → a tela abre com "—".
+export function rotaModoTv(supabase?: SupabaseClient, agoraFn: () => Date = () => new Date()): Handler {
   return async (req, res) => {
     const user = (req as AuthedRequest).dashUser;
-    if (!ehDaCasa(user)) {
+    if (!user || !(ehDaCasa(user) || ehPapelTv(user))) {
       res.redirect(paginaInicialDe(user));
       return;
     }
-    res.type('text/html').send(renderModoTvPage(user));
+    const agora = agoraFn();
+    const { dados, contratados } = supabase
+      ? await carregar(req, supabase, user, agora, PERMISSOES_TV)
+      : { dados: null, contratados: undefined };
+    res.type('text/html').send(renderModoTvPage(user, {
+      agora, nomeUsuario: user.nome ?? null, dados, contratados, nomeAssistente: nomeDaAssistente(user.companyId),
+    }));
   };
+}
+
+/**
+ * Trava do papel "TV só-leitura" (R26): esse usuário só abre o Modo TV. Toda
+ * outra página GET volta pra /dashboard/tv; POST/JSON → 403 (sair continua).
+ * Registrada no router logo depois da sessão.
+ */
+export function travaPapelTv(req: Request, res: Response, next: () => void): void {
+  const user = (req as AuthedRequest).dashUser;
+  if (!ehPapelTv(user)) { next(); return; }
+  const caminho = String(req.path ?? '').toLowerCase().replace(/\/+$/, '') || '/';
+  if ((req.method === 'GET' || req.method === 'HEAD') && caminho === '/tv') { next(); return; }
+  if (req.method === 'POST' && caminho === '/logout') { next(); return; }
+  if (caminho.startsWith('/estatico/')) { next(); return; }
+  const querJson = String(req.headers?.accept ?? '').includes('application/json');
+  if ((req.method === 'GET' || req.method === 'HEAD') && !querJson) { res.redirect('/dashboard/tv'); return; }
+  res.status(403).json({ ok: false, error: 'Este acesso é só do Modo TV.' });
 }
 
 /**

@@ -137,5 +137,24 @@ export const MUDANCAS_R24: Record<string, MudancaContrato[]> = Object.fromEntrie
 // R26 — Modo TV
 // ════════════════════════════════════════════════════════════════════════
 
+/** R26 (D6 = a): o Modo TV deixa de ser "em construção" e vira a tela de
+ *  parede — 3 visões que giram (os pontinhos data-visao), relógio, CSS do
+ *  Command Center por arquivo no <head> e o script que esconde a casca
+ *  (querySelector('.cc-shell')). Nenhum formulário, nenhum fetch. */
+const R26_TV_DE_VERDADE: MudancaContrato = {
+  motivo: 'R26: Modo TV de verdade (3 visões girando, relógio, sem casca)',
+  entra: {
+    dataAttrs: ['data-visao'], ids: ['cc-tv-nome-visao', 'cc-tv-relogio'], links: [URL_CSS_COMMAND_CENTER],
+    seletores: ['.cc-shell', '.cc-tv-pontos button', '.cc-tv-visao'],
+  },
+};
+/** Os quadros de usinas (os mesmos do Command Center) trazem o link "Abrir
+ *  frota"/"Monitoramento" — que o menu do usuário da TV não tem. */
+const R26_LINK_DA_FROTA: MudancaContrato = { motivo: 'R26: quadros de usinas com o link da frota', entra: { links: ['/dashboard/monitoramento'] } };
 /** R26: trocas por caso de tests/fixtures/casos-tv.ts. */
-export const MUDANCAS_R26: Record<string, MudancaContrato[]> = {};
+export const MUDANCAS_R26: Record<string, MudancaContrato[]> = {
+  'tv-casa': [R26_TV_DE_VERDADE],
+  'tv-sem-dado': [R26_TV_DE_VERDADE],
+  'tv-papel-tv': [R26_TV_DE_VERDADE, R26_LINK_DA_FROTA],
+  'tv-papel-tv-tenant': [R26_TV_DE_VERDADE, R26_LINK_DA_FROTA],
+};

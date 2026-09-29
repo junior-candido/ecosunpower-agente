@@ -112,7 +112,7 @@ import { renderContratosPage, type ContratoCliente } from './contratos-views.js'
 import { renderContratoFormPage, renderDocBloqueadoPage } from './contrato-form-views.js';
 import type { SugestaoIa } from '../closing/revisar-contrato.js';
 import { CLIENTE_STATUSES } from './clientes-queries.js';
-import { can, podeDispararMensagens, usinaPertenceAoOperador, escopoSyncTodos } from './permissions.js';
+import { can, podeDispararMensagens, usinaPertenceAoOperador, escopoSyncTodos, ehPapelTv } from './permissions.js';
 import type { AuthedRequest } from './auth.js';
 import { pastaDaEmpresa, listarPastasDaEmpresa } from './pasta-da-empresa.js';
 import { EMPRESA_CASA as EMPRESA_PADRAO_PASTA } from './canal-envio.js';
@@ -138,7 +138,7 @@ import type { ManutencaoTipo } from './manutencao-motor.js';
 import { criarOS, abrirOSDeManutencao, getOS, salvarOS, addFotoOS, listFotosOS, fotoCountsPorItem, concluirOS } from './os-queries.js';
 import { renderOSPage, renderOSLaudoHtml } from './os-views.js';
 import { hidratarChecklist, resumoOS, type OSTipo } from './os-checklist.js';
-import { rotaCommandCenter, rotaCentralAtencao, rotaModoTv, travaCockpitDaCasa, travaVisaoGeralDaCasa, nomeDaAssistente } from './command-center-rotas.js';
+import { rotaCommandCenter, rotaCentralAtencao, rotaModoTv, travaCockpitDaCasa, travaVisaoGeralDaCasa, travaPapelTv, nomeDaAssistente } from './command-center-rotas.js';
 import { paginaInicialDe, destinoDepoisDoLogin } from './entrada.js';
 import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
 import { rotaMapaJson, rotaLocalizarPagina, rotaLocalizarUma, rotaSalvarPosicao } from './mapa-usinas-rotas.js';
@@ -378,7 +378,8 @@ export function createDashboardRouter(
       );
     }
     // Checkbox "Continuar conectado": marcada (padrão) = cookie 60d; desmarcada = só a sessão.
-    setSessionCookie(res, found.user.id, req.body?.manter === '1');
+    // A TV (papel "TV só-leitura", R26) fica sempre conectada: é uma tela de parede.
+    setSessionCookie(res, found.user.id, req.body?.manter === '1' || ehPapelTv(found.user));
     await touchLastLogin(supabase, found.user.id);
     await audit(supabase, { companyId: found.user.companyId, userId: found.user.id, entidade: 'sessao', acao: 'login' });
     res.redirect(destinoDepoisDoLogin(next, found.user));
@@ -507,6 +508,10 @@ export function createDashboardRouter(
   // ----------------------------------------------------------------------
 
   router.use(criarSessionAuth(supabase));
+
+  // Papel "TV só-leitura" (R26, D6 = a): só abre o Modo TV — antes de qualquer
+  // outra trava ou rota (command-center-rotas.ts#travaPapelTv).
+  router.use(travaPapelTv);
 
   // Segundo portão, CENTRAL: módulo contratado pela EMPRESA (empresa_modulos).
   // Tenant sem o módulo → vitrine /conhecer/<chave> (POST → 403). Lê 1x por
@@ -2143,7 +2148,7 @@ b.onclick=async function(){
   // módulo não contratado aparece trancado. Modo TV segue só da casa.
   router.get('/command-center', rotaCommandCenter(supabase));
   router.get('/atencao', rotaCentralAtencao(supabase));
-  router.get('/tv', rotaModoTv());
+  router.get('/tv', rotaModoTv(supabase));
 
   // Mapa das Usinas (28/09/2026): alfinetes em JSON (company_id da sessão, módulo
   // + papel conferidos na rota), Localizar em lote e alfinete arrastável.
