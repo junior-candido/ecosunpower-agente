@@ -176,7 +176,11 @@ describe('fatia 3e — carimbo de empresa e blindagem', () => {
     // empresa nao permite descarte de lead (migration 125). Este numero SOBE
     // quando nasce uma escrita nova — e tem que ser conferido a mao, que e o
     // ponto da catraca: escrita de lead sem carimbo de empresa nao passa.
-    expect((src.match(/status: '(qualificado|transferido|agendado)', company_id: db\.companyIdDaMensagem \?\? ECOSUN_COMPANY_ID/g) ?? []).length).toBe(4);
+    // 3 desde 28/09/2026: o `agendado` saiu do schedule_visit — a Eva nao marca
+    // mais sozinha; o lead so vira `agendado` no ✅ do admin, por id + empresa
+    // (conferido logo abaixo).
+    expect((src.match(/status: '(qualificado|transferido|agendado)', company_id: db\.companyIdDaMensagem \?\? ECOSUN_COMPANY_ID/g) ?? []).length).toBe(3);
+    expect(src).toMatch(/update\(\{ status: 'agendado'[^}]*\}\)\s*\.eq\('id', p\.leadId\)\.eq\('company_id', p\.companyId\)/);
   });
 
   it('registrarEvento carimba a empresa nos 3 pontos do caminho da mensagem', () => {

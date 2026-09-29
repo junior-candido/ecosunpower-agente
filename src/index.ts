@@ -66,6 +66,7 @@ import { makeCapiReporter, type CapiReporter } from './modules/capi-reporter.js'
 import { ProposalFollowupService } from './modules/proposal-followup.js';
 import { FollowupVivoService } from './modules/vendas/followup-vivo.js';
 import { VisitasService } from './modules/vendas/visitas.js';
+import { AgendamentoPendenteService, repoSupabase as repoPedidosAgenda, quemConfirma, prometeAgendamento, type EmpresaAgenda } from './modules/vendas/agendamento-pendente.js';
 // Fatia 2 — Eva Vendedora: estado de venda, tabela de preços do Junior e precificador sombra.
 import { EstadoVendaService } from './modules/vendas/estado-venda.js';
 import { TabelaPrecosService, makeTabelaHandler } from './modules/vendas/tabela-precos.js';
@@ -146,7 +147,7 @@ import { PastaService } from './modules/relatorios/pasta/service.js';
 import { normalizarSlugPublico } from './modules/relatorios/slug.js';
 import { renderPastaHtml } from './modules/relatorios/pasta/template.js';
 import { buildCtwaPatch, shouldAttributeCtwa, resolveCampaignIdFromAd } from './modules/marketing/ctwa-attribution.js';
-import { carregarEmpresaConfig, carregarKits, empresa, empresaDe, comEmpresaDe, listaMarcasTexto } from './modules/empresa-config.js';
+import { carregarEmpresaConfig, carregarKits, empresa, empresaDe, comEmpresaDe, listaMarcasTexto, ehEcosun } from './modules/empresa-config.js';
 import { agendaDaEmpresa, destinoAdminDaEmpresa, envioProibido } from './modules/tenant-admin-guard.js';
 import { validarModoRls, modoRls } from './modules/tenant-db.js';
 import { variantesTelefone } from './modules/phone.js';
@@ -833,6 +834,91 @@ async function main() {
   // Fatia 2 — Eva Vendedora: estado de venda + tabela de preços + sombra (spec 2026-08-21 §10.2).
   // Date.now() só aqui nas closures do index; os módulos recebem o tempo injetado.
   const estadoVenda = new EstadoVendaService({ client: supabase.getClient(), registrarEvento });
+
+  // AGENDAMENTO SÓ COM O OK DO ADMIN (28/09/2026) — a Eva anota o dia/hora que
+  // o cliente escolheu e o admin DA EMPRESA confirma (✅/📞/❌/🕐). Só depois
+  // do ✅ nasce o evento no Google Agenda. Ver vendas/agendamento-pendente.ts.
+  const empresaAgendaAtual = (): EmpresaAgenda => {
+    const e = empresa();
+    return { companyId: e.companyId, ehEcosun: ehEcosun(e), rtApelido: e.rtApelido, rtGenero: e.rtGenero, nomeAtendente: e.nomeAtendente };
+  };
+  const agendamentoPendente = new AgendamentoPendenteService({
+    repo: repoPedidosAgenda(supabase.getClient()),
+    kv: followupRedis,
+    agenda: calendar
+      ? {
+        isAvailable: (s: string, f: string, cal?: string) => calendar.isAvailable(s, f, cal),
+        createEvent: (i) => calendar.createEvent(i),
+      }
+      : null,
+    agendaDaEmpresa: () => agendaDaEmpresa(config.googleCalendarId ?? null),
+    empresaAtual: empresaAgendaAtual,
+    // Mesma regra do sendAdminWithButtons: botão WABA só na EcoSunPower.
+    temBotoes: () => Boolean(metaWaba) && ehEcosun(),
+    enviarCliente: async (phone, texto) => {
+      if (isSandbox) { console.log(`[sandbox] [agenda-pendente] -> ${phone}: ${texto}`); return; }
+      await sendText(phone, texto);
+    },
+    enviarAdmin: async (texto, botoes) => {
+      const destino = destinoAdminDaEmpresa(config.engineerPhone);
+      if (!destino) return false;
+      if (isSandbox) { console.log(`[sandbox] [agenda-pendente] admin: ${texto} [${botoes.map(b => b.title).join(' | ')}]`); return true; }
+      await sendAdminWithButtons({ metaWaba: metaWaba ?? null, sendText }, destino, texto, botoes, 'Toque pra responder');
+      return true;
+    },
+    destinoAdmin: () => destinoAdminDaEmpresa(config.engineerPhone),
+    registrarNaConversa: async (leadId, companyId, texto) => {
+      const conv = await supabase.getOrCreateConversation(leadId, companyId);
+      await supabase.updateConversation(conv.id, {
+        messages: [...(conv.messages ?? []), { role: 'assistant' as const, content: texto, timestamp: new Date().toISOString() }],
+        message_count: (conv.message_count ?? 0) + 1,
+      });
+    },
+    aoConfirmar: async (p, evento) => {
+      // O que antes acontecia na hora em que a Eva marcava — agora só no ✅.
+      if (p.leadId) {
+        const { error } = await supabase.getClient().from('leads')
+          .update({ status: 'agendado', updated_at: new Date().toISOString() })
+          .eq('id', p.leadId).eq('company_id', p.companyId);
+        if (error) console.warn(`[agenda-pendente] lead ${p.leadId} nao virou 'agendado': ${error.message}`);
+        await supabase.cancelCadence(p.leadId, 'visita_agendada').catch(() => {});
+        void estadoVenda.transicionar({ leadId: p.leadId, para: 'AGENDADO', motivo: 'agendamento confirmado pelo admin', autor: 'junior', agoraMs: Date.now() });
+      }
+      await supabase.logEvent('info', 'calendar', `Visit confirmed by admin for ${p.phone}`, {
+        pedido_id: p.id, event_id: evento?.eventId ?? null, html_link: evento?.htmlLink ?? null,
+        start: p.inicioISO, tipo: p.tipo, company_id: p.companyId,
+      });
+    },
+    log: (nivel, msg, meta) => {
+      if (nivel === 'error') console.error(msg); else if (nivel === 'warn') console.warn(msg); else console.log(msg);
+      if (meta) void supabase.logEvent(nivel, 'agenda-pendente', msg.slice(0, 300), meta).catch(() => {});
+    },
+    agoraMs: () => Date.now(),
+  });
+
+  /** Quem escreveu é o admin DA EMPRESA desta mensagem? EcoSun: os admins da casa; tenant: o telefone_admin dele. */
+  const ehAdminDaEmpresaAtual = (from: string): boolean => {
+    if (ehEcosun()) return isAdminPhone(from);
+    const destino = destinoAdminDaEmpresa(config.engineerPhone);
+    const alvo = (destino ?? '').replace(/\D/g, '');
+    if (!alvo) return false;
+    return variantesTelefone(from).includes(alvo) || variantesTelefone(alvo).includes(String(from).replace(/\D/g, ''));
+  };
+
+  /** Botão/resposta do admin a um pedido de agendamento. true = tratou (não rotear mais). */
+  const tratarRespostaAgendaDoAdmin = async (from: string, text: string): Promise<boolean> => {
+    if (!ehAdminDaEmpresaAtual(from)) return false;
+    let resposta: string | null;
+    try {
+      resposta = await agendamentoPendente.tratarTextoDoAdmin(from, text);
+    } catch (err) {
+      console.error('[agenda-pendente] resposta do admin falhou:', (err as Error).message);
+      resposta = '⚠️ Deu erro ao processar o agendamento. O pedido continua pendente — tente de novo.';
+    }
+    if (!resposta) return false;
+    await sendText(from, resposta);
+    return true;
+  };
   const tabelaPrecos = new TabelaPrecosService({
     client: supabase.getClient(),
     companyId: ECOSUN_COMPANY_ID,
@@ -4351,6 +4437,11 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       return;
     }
 
+    // Pedido de agendamento (28/09/2026): botões ✅/📞/❌/🕐 e a sugestão de
+    // horário do admin DA EMPRESA. Antes do opt-out e do resto — "cancelar" do
+    // admin aqui é desistir da sugestão, não opt-out.
+    if (await tratarRespostaAgendaDoAdmin(from, text)) return;
+
     // Opt-out do CLIENTE — detecta "sair"/"parar"/"stop"/etc antes de qualquer
     // outro handler pra parar de mandar mensagens imediatamente.
     if (await tryHandleClienteOptOut(from, text)) return;
@@ -5543,6 +5634,20 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         baloesParaEnviar = [mensagemHandoffNumero()];
       }
 
+      // TRAVA-AGENDA (28/09/2026): no turno em que o cliente escolheu o horário,
+      // quem fala é o fluxo do pedido (texto fixo "anotei sua preferência... vai
+      // entrar em contato pra confirmar"), nunca a Eva livre — ela já disse
+      // "combinado, te espera quinta" e o horário nem existia. Nos outros turnos
+      // só registra no log se ela prometer horário (observabilidade).
+      if (response.actions.some(a => a.action === 'schedule_visit')) {
+        if (baloesParaEnviar.length > 0) {
+          console.log(`[agenda-pendente] resposta livre da Eva segurada no turno do pedido (${from}): ${baloesParaEnviar.join(' | ').slice(0, 200)}`);
+        }
+        baloesParaEnviar = [];
+      } else if (baloesParaEnviar.some(prometeAgendamento)) {
+        console.warn(`[agenda-pendente] ⚠️ Eva falou em agendado/confirmado sem pedido neste turno (${from}): ${baloesParaEnviar.join(' | ').slice(0, 200)}`);
+      }
+
       // Send response (possibly split across multiple WhatsApp messages)
       if (!isSandbox) {
         for (const part of baloesParaEnviar) {
@@ -5789,6 +5894,12 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         });
 
         const lead = await db.getLeadByPhone(from);
+        // 28/09/2026: se o cliente acabou de pedir horário, o admin já recebeu o
+        // pedido com o resumo e os botões — o dossiê é salvo, mas sem 2º zap.
+        let pedidoAgendaAberto = false;
+        if (lead?.id) {
+          pedidoAgendaAberto = (await agendamentoPendente.listarPendentesDaEmpresa(lead.id).catch(() => [])).length > 0;
+        }
         if (lead) {
           const dossierText = DossierBuilder.format({
             leadNumber: Date.now() % 10000,
@@ -5815,7 +5926,9 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
             company_id: db.companyIdDaMensagem ?? ECOSUN_COMPANY_ID,
           });
 
-          if (!isSandbox) {
+          if (pedidoAgendaAberto) {
+            console.log(`[qualification_complete] ${from} tem pedido de agendamento aberto — dossiê salvo, sem 2º aviso ao admin`);
+          } else if (!isSandbox) {
             // Manda dossier com BOTOES WABA: Junior bate o olho, decide em 1 toque
             // se assume, ve perfil ou deixa Eva continuar tentando fechamento.
             // Antes era texto puro que se perdia no chat. Agora alerta visual.
@@ -5958,6 +6071,12 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       }
 
       case 'schedule_visit': {
+        // 28/09/2026 — A EVA NÃO MARCA MAIS SOZINHA. Aqui ela só ANOTA o dia/hora
+        // que o cliente escolheu e manda o PEDIDO pro admin DA EMPRESA confirmar
+        // (✅ Confirmar e avisar · 📞 Eu mesmo aviso · ❌ Não posso · 🕐 Sugerir).
+        // O evento no Google Agenda, o lead "agendado" e a confirmação ao cliente
+        // só acontecem no ✅ (vendas/agendamento-pendente.ts). Motivo: Meet criado
+        // pela Eva 27/09 23:46 pra 28/09 15h sem o Junior saber.
         const d = action.data as Record<string, unknown>;
         const startISO = d.datetime_iso as string | undefined;
         // visit_type: 'meet' (Google Meet 30min) ou 'on_site' (visita presencial 60min).
@@ -5967,6 +6086,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         const durationMinutes = (d.duration_minutes as number | undefined) ?? (isMeet ? 30 : 60);
         const clientEmail = (d.client_email as string | undefined)?.trim();
         const clientAddress = (d.client_address as string | undefined)?.trim();
+        const resumoLead = (d.lead_summary as string | undefined)?.trim();
         let clientCoordinates = (d.client_coordinates as string | undefined)?.trim();
         // Fall back to coords saved from a shared WhatsApp location
         if (!clientCoordinates) {
@@ -5977,18 +6097,18 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           }
         }
 
-        if (!startISO) {
-          console.warn(`[calendar] schedule_visit without datetime_iso for ${from}`);
-          break;
-        }
-
-        if (!calendar) {
-          console.warn(`[calendar] schedule_visit requested but Calendar integration disabled`);
+        const startMs = startISO ? Date.parse(startISO) : NaN;
+        if (!startISO || Number.isNaN(startMs)) {
+          console.warn(`[agenda-pendente] schedule_visit sem datetime_iso valido para ${from} (${String(startISO)})`);
+          // A resposta da Eva deste turno foi segurada (ver trava abaixo do brain) —
+          // o cliente não pode ficar no vácuo.
+          if (!isSandbox) await sendText(from, 'Qual dia e horário ficam melhores pra você? Atendemos de segunda a sexta, das 8h às 16h.');
           break;
         }
 
         try {
-          const endISO = new Date(new Date(startISO).getTime() + durationMinutes * 60000).toISOString();
+          const inicioISO = new Date(startMs).toISOString();
+          const endISO = new Date(startMs + durationMinutes * 60000).toISOString();
 
           // Business hours check (America/Sao_Paulo): Mon-Fri, 08:00-16:00
           const fmt = new Intl.DateTimeFormat('en-US', {
@@ -5998,173 +6118,85 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
             minute: 'numeric',
             hour12: false,
           });
-          const parts = fmt.formatToParts(new Date(startISO));
+          const parts = fmt.formatToParts(new Date(startMs));
           const weekday = parts.find((p) => p.type === 'weekday')?.value ?? '';
           const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
           const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
 
-          const endParts = fmt.formatToParts(new Date(new Date(startISO).getTime() + durationMinutes * 60000));
+          const endParts = fmt.formatToParts(new Date(startMs + durationMinutes * 60000));
           const endHour = Number(endParts.find((p) => p.type === 'hour')?.value ?? '0');
           const endMinute = Number(endParts.find((p) => p.type === 'minute')?.value ?? '0');
 
           const isWeekday = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].includes(weekday);
-          const startsInRange = (hour > 8) || (hour === 8 && minute >= 0);
-          const endsInRange = (endHour < 16) || (endHour === 16 && endMinute === 0);
           const inBusinessHours = hour >= 8 && (endHour < 16 || (endHour === 16 && endMinute === 0));
 
-          if (!isWeekday || !startsInRange || !endsInRange || !inBusinessHours) {
-            const msg = 'ops, so consigo agendar de segunda a sexta, das 8h as 16h. pode ser outro dia ou horario dentro desse intervalo?';
+          if (!isWeekday || !inBusinessHours || startMs <= Date.now()) {
+            const msg = 'ops, esse horário não dá: atendemos de segunda a sexta, das 8h às 16h. pode ser outro dia ou horário dentro desse intervalo?';
             if (!isSandbox) await sendText(from, msg);
             console.log(`[calendar] Outside business hours for ${from} at ${startISO} (weekday=${weekday}, ${hour}:${minute}-${endHour}:${endMinute})`);
             break;
           }
 
-          const available = await calendar.isAvailable(startISO, endISO);
-
-          if (!available) {
-            const msg = 'opa, o junior ja tem compromisso nesse horario. pode ser outro dia ou horario?';
-            if (!isSandbox) await sendText(from, msg);
-            console.log(`[calendar] Conflict for ${from} at ${startISO} — asked for another time`);
-            break;
+          // Conflito PRÉVIO, só pra não levar ao admin um horário que já está
+          // ocupado. Na agenda DA EMPRESA (antes olhava sempre a global). O ✅
+          // checa de novo antes de criar o evento.
+          const agendaAlvo = agendaDaEmpresa(config.googleCalendarId ?? null);
+          if (calendar && agendaAlvo) {
+            const available = await calendar.isAvailable(inicioISO, endISO, agendaAlvo);
+            if (!available) {
+              const q = quemConfirma(empresaAgendaAtual());
+              const msg = `opa, ${q.o} já tem compromisso nesse horário. pode ser outro dia ou horário?`;
+              if (!isSandbox) await sendText(from, msg);
+              console.log(`[calendar] Conflict for ${from} at ${startISO} — asked for another time`);
+              break;
+            }
           }
 
           const lead = await db.getLeadByPhone(from);
-          const summary = isMeet
-            ? `Meet - ${lead?.name ?? from} - apresentacao estudo`
-            : `Visita tecnica - ${lead?.name ?? from} - ${lead?.city ?? ''}`.trim();
-          const description = [
-            `Tipo: ${isMeet ? 'Google Meet (online)' : 'Visita tecnica presencial'}`,
-            `Cliente: ${lead?.name ?? 'Nao informado'}`,
-            `WhatsApp: ${from}`,
-            `Cidade: ${lead?.city ?? 'Nao informada'}`,
-            `Perfil: ${lead?.profile ?? 'indefinido'}`,
-            lead?.energy_data && typeof lead.energy_data === 'object'
-              ? `Conta: R$ ${(lead.energy_data as Record<string, unknown>).monthly_bill ?? '-'}/mes`
-              : '',
-            clientEmail ? `Email cliente: ${clientEmail}` : '',
-            !isMeet && clientAddress ? `Endereco: ${clientAddress}` : '',
-            !isMeet && clientCoordinates ? `Coordenadas: ${clientCoordinates}` : '',
-            !isMeet && clientCoordinates ? `Maps: https://www.google.com/maps?q=${clientCoordinates}` : '',
-            d.notes ? `\nObservacoes: ${d.notes}` : '',
-          ].filter(Boolean).join('\n');
-
-          // Meet: cria evento COM Google Meet (link gerado automatico), sem location.
-          // Visita: cria evento com location (endereco + maps), sem Meet.
-          const eventLocation = isMeet
-            ? undefined
-            : (clientCoordinates
-              ? (clientAddress ? `${clientAddress} (${clientCoordinates})` : clientCoordinates)
-              : (clientAddress || undefined));
-          // ⚖️ Agenda da EMPRESA da mensagem, nunca a agenda global por default.
-          // Sem agenda configurada NÃO cria evento — o agendamento fica na tabela
-          // `visitas` e no dashboard do tenant (08/09/2026, ver tenant-admin-guard).
-          const agendaAlvo = agendaDaEmpresa(config.googleCalendarId ?? null);
-          const event = agendaAlvo
-            ? await calendar.createEvent({
-              summary,
-              description,
-              startISO,
-              endISO,
-              location: eventLocation,
-              withMeet: isMeet,
-              calendarId: agendaAlvo,
-            })
-            : { eventId: '', htmlLink: '', meetLink: undefined as string | undefined };
-          if (agendaAlvo) {
-            console.log(`[calendar] Event created for ${from}: type=${visitType} ${event.htmlLink} meet=${event.meetLink ?? 'none'} location=${eventLocation ?? 'none'}`);
-          } else {
-            console.log(`[calendar] evento NAO criado: empresa "${empresa().nomeFantasia}" (${empresa().companyId}) sem google_calendar_id. Agendamento registrado no dashboard dela.`);
-          }
-
-          // Se Meet: manda link pro cliente no zap imediatamente.
-          if (isMeet && event.meetLink && !isSandbox) {
-            await sendText(from, `Pronto! 🎥\n\nLink do Meet: ${event.meetLink}\n\nÉ só clicar no horário marcado. Se precisar reagendar é só me chamar.`);
-          }
-
-          await supabase.logEvent('info', 'calendar', `Visit scheduled for ${from}`, {
-            event_id: event.eventId,
-            html_link: event.htmlLink,
-            start: startISO,
-            client_email: clientEmail ?? null,
-            has_location: Boolean(clientAddress),
-          });
-
-          // Lead -> status agendado (sai do limbo). Cadencia automatica pra
-          // este lead deve parar — Eva ja fechou o objetivo principal.
-          await db.upsertLead({ phone: from, status: 'agendado', company_id: db.companyIdDaMensagem ?? ECOSUN_COMPANY_ID }); // [3e]
-          await db.cancelCadence(leadId, 'visita_agendada').catch(() => {});
-          // Follow-up vivo NÃO para aqui: a visita é o começo do próximo ciclo.
-          // Registra pra disparar o toque pós-visita 24h depois do fim.
-          void visitas.registrar({
+          const ed = (lead?.energy_data ?? null) as Record<string, unknown> | null;
+          const conta = ed?.monthly_bill;
+          await agendamentoPendente.registrarPedido({
             leadId: lead?.id ?? leadId,
             phone: from,
             tipo: isMeet ? 'meet' : 'visita',
-            inicioMs: Date.parse(startISO),
-            fimMs: Date.parse(endISO),
-            calendarEventId: event.eventId ?? null,
-            companyId: db.companyIdDaMensagem ?? ECOSUN_COMPANY_ID, // [3e]
+            inicioISO,
+            fimISO: endISO,
+            detalhes: {
+              clientEmail: clientEmail || undefined,
+              clientAddress: clientAddress || undefined,
+              clientCoordinates: clientCoordinates || undefined,
+              notes: typeof d.notes === 'string' && d.notes.trim() ? d.notes.trim().slice(0, 500) : undefined,
+              resumoLead: resumoLead ? resumoLead.slice(0, 600) : undefined,
+              leadNome: lead?.name ?? undefined,
+              leadCidade: lead?.city ?? undefined,
+              leadPerfil: lead?.profile ?? undefined,
+              contaMensal: conta !== undefined && conta !== null && String(conta).trim() ? String(conta) : undefined,
+            },
           });
-          // Fatia 2 — esteira de estado.
-          void estadoVenda.transicionar({ leadId: lead?.id ?? leadId, para: 'AGENDADO', motivo: 'visita agendada', autor: 'eva', agoraMs: Date.now() });
-
-          // Alerta WABA pro Junior — agendamento eh sinal QUENTE, ele precisa
-          // ver na hora pra confirmar logistica e equipamento. NUNCA silencia,
-          // mesmo se lead for null (Calendar foi criado, Junior tem que saber).
-          if (!isSandbox) {
-            const leadName = lead?.name ?? 'cliente';
-            const leadCity = lead?.city ?? null;
-            const dataFmt = new Date(startISO).toLocaleString('pt-BR', {
-              timeZone: 'America/Sao_Paulo',
-              day: '2-digit', month: '2-digit', weekday: 'short',
-              hour: '2-digit', minute: '2-digit',
-            });
-            const tipoLabel = isMeet ? '🎥 Google Meet (30min)' : '🚗 Visita presencial (60min)';
-            const alertBody = [
-              `📅 *${isMeet ? 'Meet agendado' : 'Visita agendada'} — ${leadName}*`,
-              ``,
-              `${tipoLabel}`,
-              `🕒 ${dataFmt}`,
-              isMeet && event.meetLink ? `🔗 ${event.meetLink}` : '',
-              !isMeet && clientAddress ? `📍 ${clientAddress}` : '',
-              `📞 ${from}`,
-              leadCity ? `🏙️ ${leadCity}` : '',
-              ``,
-              `Eva fechou o agendamento. Calendar criado.`,
-            ].filter(Boolean).join('\n');
-
-            // ⚖️ TRAVA LGPD (08/09/2026). Este bloco chamava o metaWaba CRU com
-            // `config.engineerPhone` fixo — o único ponto que escapou da trava de
-            // 31/08, que só cobria o sendText e o sendAdminWithButtons. Resultado:
-            // uma visita da Conquista Solar (lead da Bahia) caiu no zap do dono da
-            // EcoSunPower. Agora o destino vem do guard, e o envio passa pelo
-            // sendAdminWithButtons — que confere de novo antes de sair.
-            const destinoAviso = destinoAdminDaEmpresa(config.engineerPhone);
-            if (!destinoAviso) {
-              console.log(
-                `[schedule_visit] aviso por zap nao enviado: empresa "${empresa().nomeFantasia}" (${empresa().companyId}) sem telefone_admin. O agendamento esta no dashboard dela.`,
-              );
-            } else {
-              // So usa botoes WABA se temos lead.id (botoes precisam do uuid).
-              // Sem lead, texto puro pra nao silenciar.
-              const botoes = lead?.id
-                ? [
-                  { id: `evabt:lead-view:${lead.id}`, title: '👤 Ver perfil' },
-                  { id: `evabt:lead-pause:${lead.id}`, title: '✋ Assumir' },
-                ]
-                : [];
-              await sendAdminWithButtons(
-                { metaWaba, sendText: async (t: string, x: string) => { await sendText(t, x); } },
-                destinoAviso,
-                alertBody.slice(0, 1024),
-                botoes,
-                'Toque pra agir',
-              );
-            }
-          }
+          // Cliente esperando a confirmação não recebe cadência de "e aí?".
+          await db.cancelCadence(leadId, 'pedido_agendamento').catch(() => {});
+          await supabase.logEvent('info', 'calendar', `Pedido de agendamento (aguardando o admin) de ${from}`, {
+            start: inicioISO,
+            tipo: isMeet ? 'meet' : 'visita',
+            client_email: clientEmail ?? null,
+            has_location: Boolean(clientAddress),
+            company_id: empresa().companyId,
+          });
         } catch (err) {
-          console.error(`[calendar] Failed to schedule visit for ${from}:`, err);
-          const msg = 'tive uma dificuldade pra agendar aqui, mas ja anotei. o junior confirma com voce.';
+          console.error(`[agenda-pendente] Falha ao registrar pedido de ${from}:`, err);
+          const q = quemConfirma(empresaAgendaAtual());
+          const msg = `anotei seu pedido, mas tive uma dificuldade aqui. ${q.o} vai entrar em contato com você pra combinar o horário.`;
           if (!isSandbox) await sendText(from, msg);
+          // O cliente ouviu "vai entrar em contato" — o admin TEM que saber.
+          const destinoFalha = destinoAdminDaEmpresa(config.engineerPhone);
+          if (!isSandbox && destinoFalha) {
+            await sendAdminWithButtons(
+              { metaWaba: metaWaba ?? null, sendText },
+              destinoFalha,
+              `⚠️ O cliente ${from} escolheu ${startISO} (${isMeet ? 'Meet' : 'visita'}) mas o pedido não foi gravado (erro). Fale com ele pra combinar.`,
+              [],
+            ).catch(() => {});
+          }
         }
         break;
       }
@@ -8131,6 +8163,24 @@ ${pedido.texto}` : pedido.texto;
     if (parsed.from.includes('-') || parsed.from.length > 15) {
       res.status(200).json({ status: 'ignored_group' });
       return;
+    }
+
+    // Pedido de agendamento de TENANT (28/09/2026): o admin do tenant responde
+    // na instância da assistente dele. Tem que vir ANTES do freio de "gente de
+    // dentro" (ele costuma estar cadastrado como equipe e a mensagem morreria).
+    // Só o telefone_admin DAQUELA empresa passa; o pedido também é conferido
+    // pela empresa dentro do serviço.
+    if (!parsed.fromMe && companyIdDaInstancia && parsed.type === 'text' && parsed.content) {
+      const cidAgenda = companyIdDaInstancia;
+      const instAgenda = await evolutionTenant.instanciaDaEmpresa(cidAgenda).catch(() => undefined);
+      const tratouAgenda = await comEmpresaDe(cidAgenda, () => comCanal(
+        { companyId: cidAgenda, evolutionInstance: instAgenda },
+        () => tratarRespostaAgendaDoAdmin(parsed.from, parsed.content),
+      )).catch((e) => { console.warn(`[agenda-pendente] resposta do admin do tenant falhou: ${(e as Error).message}`); return false; });
+      if (tratouAgenda) {
+        res.status(200).json({ status: 'agenda_admin' });
+        return;
+      }
     }
 
     // EQUIPE NUNCA é lead (B.O. 06/08) — telefone cadastrado em Usuários = interno.
@@ -10837,6 +10887,31 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     };
     setTimeout(() => { void tickFollowupVivo(); }, 3 * 60 * 1000);
     setInterval(() => { void tickFollowupVivo(); }, 15 * 60 * 1000);
+
+    // Pedidos de agendamento esperando o admin (28/09/2026): lembrete ao admin
+    // com 3 h (horário comercial), aviso ao cliente com 24 h, e expiração se o
+    // horário passar. Cada pedido roda no contexto DA EMPRESA dele (marca, admin
+    // e instância certos). Tenant sem instância própria: não fala com o cliente
+    // pelo número da EcoSunPower — pula e loga.
+    const tickAgendaPendente = async () => {
+      try {
+        const r = await agendamentoPendente.processarPendentes(async (cid, fn) => {
+          const inst = cid === ECOSUN_COMPANY_ID ? undefined : await evolutionTenant.instanciaDaEmpresa(cid).catch(() => undefined);
+          if (cid !== ECOSUN_COMPANY_ID && !inst) {
+            console.warn(`[agenda-pendente] empresa ${cid} sem instancia propria — lembrete/aviso do pedido pulado`);
+            return undefined as never;
+          }
+          return comEmpresaDe(cid, () => comCanal({ companyId: cid, evolutionInstance: inst }, fn));
+        });
+        if (r.lembretes || r.avisos || r.expirados) {
+          console.log(`[agenda-pendente] tick: lembretes=${r.lembretes} avisos=${r.avisos} expirados=${r.expirados}`);
+        }
+      } catch (err) {
+        console.error('[agenda-pendente] tick falhou:', (err as Error).message);
+      }
+    };
+    setTimeout(() => { void tickAgendaPendente(); }, 4 * 60 * 1000);
+    setInterval(() => { void tickAgendaPendente(); }, 15 * 60 * 1000);
     console.log('[followup-vivo] Scheduler started (checks every 15 min)');
 
     // Tabela viva: 1x/dia puxa o catálogo das 3 lojas (Belenus/Sol Fácil/Fortlev) e

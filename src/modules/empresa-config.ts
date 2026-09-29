@@ -260,6 +260,11 @@ export function interpolarEmpresa(texto: string, e: EmpresaConfig): string {
     rt_titulo: e.rtTitulo,
     rt_nosso_titulo: `${f ? 'nossa' : 'nosso'} ${e.rtTitulo}`,
     rt_O_titulo: `${f ? 'A' : 'O'} ${e.rtTitulo}`,
+    // Quem CONFIRMA o agendamento, do jeito que o cliente lê (28/09/2026). Na casa
+    // é o dono pelo nome ("o Junior"); no tenant é sempre "nossa equipe" — quem
+    // confirma lá é o admin dele, e o cliente não precisa saber quem é.
+    rt_confirma: ehEcosun(e) ? `${f ? 'a' : 'o'} ${e.rtApelido}` : 'nossa equipe',
+    rt_confirma_O: ehEcosun(e) ? `${f ? 'A' : 'O'} ${e.rtApelido}` : 'Nossa equipe',
     criterio_lead_valor: String(e.criterioLeadValor),
     criterio_lead_kwh: String(e.criterioLeadKwh),
     marcas_texto: listaMarcasTexto(e),

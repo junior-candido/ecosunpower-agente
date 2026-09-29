@@ -40,16 +40,22 @@ export class CalendarService {
     this.defaultTimezone = opts.timezone ?? 'America/Sao_Paulo';
   }
 
-  async isAvailable(startISO: string, endISO: string): Promise<boolean> {
+  /**
+   * `calendarId` (28/09/2026): o conflito tem que ser checado na agenda DA
+   * EMPRESA do agendamento — antes olhava sempre a agenda global (a do dono da
+   * EcoSunPower), mesmo pra visita de tenant. Sem valor, mantém a de sempre.
+   */
+  async isAvailable(startISO: string, endISO: string, calendarId?: string): Promise<boolean> {
+    const alvo = calendarId ?? this.calendarId;
     const res = await this.calendar.freebusy.query({
       requestBody: {
         timeMin: startISO,
         timeMax: endISO,
         timeZone: this.defaultTimezone,
-        items: [{ id: this.calendarId }],
+        items: [{ id: alvo }],
       },
     });
-    const busy = res.data.calendars?.[this.calendarId]?.busy ?? [];
+    const busy = res.data.calendars?.[alvo]?.busy ?? [];
     return busy.length === 0;
   }
 
