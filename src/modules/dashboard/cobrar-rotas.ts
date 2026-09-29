@@ -62,7 +62,10 @@ export function rotaCobrancaUnica(d: DepsCobrar): Handler {
         const db = bancoDoOperador(req, supabase);
         const { data: lead } = await db.from('leads').select('name, email, phone')
           .eq('id', leadId).eq('company_id', companyId).maybeSingle();
-        if (lead) cliente = { nome: (lead as { name?: string }).name ?? undefined, email: (lead as { email?: string }).email ?? undefined, telefone: (lead as { phone?: string }).phone ?? undefined };
+        // R20: lead de OUTRA empresa (ou que não existe) não entra na cobrança.
+        // Antes o id seguia gravado mesmo sem achar o lead.
+        if (!lead) { res.status(404).json({ erro: 'Lead não encontrado.' }); return; }
+        cliente = { nome: (lead as { name?: string }).name ?? undefined, email: (lead as { email?: string }).email ?? undefined, telefone: (lead as { phone?: string }).phone ?? undefined };
       } else if (telefone) {
         // telefone digitado na página → vincula ao lead (variantes do 9º dígito)
         const lead = await acharLeadPorTelefone(bancoDoOperador(req, supabase), companyId, telefone);
@@ -146,10 +149,19 @@ export function rotaCobrancaPar(d: DepsCobrar): Handler {
   };
 }
 
-/** Monta no router do painel (mesmas rotas de antes). */
-export function montarRotasCobrar(router: Router, d: DepsCobrar): void {
-  router.post('/cobrancas', rotaCobrancaUnica(d) as RequestHandler);
-  router.post('/cobrancas/par', rotaCobrancaPar(d) as RequestHandler);
+/**
+ * Monta no router do painel (mesmas rotas de antes). `exigir` é o portão de
+ * papel do router — R20: antes as três rotas não pediam papel nenhum (qualquer
+ * usuário logado, até o papel Campo, gerava link de pagamento). Agora: ver o
+ * financeiro abre a tela; gerar link pede financeiro:editar.
+ */
+export function montarRotasCobrar(
+  router: Router,
+  d: DepsCobrar,
+  exigir: (area: 'financeiro', nivel: 'visualizar' | 'editar') => RequestHandler,
+): void {
+  router.post('/cobrancas', exigir('financeiro', 'editar'), rotaCobrancaUnica(d) as RequestHandler);
+  router.post('/cobrancas/par', exigir('financeiro', 'editar'), rotaCobrancaPar(d) as RequestHandler);
   // Página simples pra gerar uma cobrança (descrição + valor → link).
-  router.get('/cobrar', rotaTelaCobrar(d) as RequestHandler);
+  router.get('/cobrar', exigir('financeiro', 'visualizar'), rotaTelaCobrar(d) as RequestHandler);
 }

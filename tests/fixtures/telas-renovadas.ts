@@ -21,6 +21,7 @@ import { usina, ALERTAS_RESUMO, SPARK_7D, KPIS_EVA } from './casos-monitoramento
 import { telasOnda3 } from './telas-onda3.js';
 import { telasOnda4 } from './telas-onda4.js';
 import { telasCobranca } from './telas-cobranca.js';
+import { telasR20 } from './telas-r20.js';
 import { USER_CASA, leadRow, leadDetalhe, SERVICOS_LEAD, FILTROS_CHEIOS } from './miolo-leads.js';
 import { renderCustoIaPage } from '../../src/modules/dashboard/custo-ia-views.js';
 import { painelCustoIaExemplo } from './casos-custo-ia.js';
@@ -137,6 +138,8 @@ export function telasRenovadas(n: number, user: DashUser = USER_CASA): Record<No
     ...telasOnda4(n, user),
     // Cobrança recorrente (28/09/2026): Assinaturas (casa) + Minha assinatura com faturas (tenant)
     ...telasCobranca(n, user),
+    // R20 — Financeiro II (Notas fiscais, Cobrar cliente)
+    ...telasR20(n, user),
     // Custo de IA (28/09/2026) — tela só da casa
     'custo-ia': renderCustoIaPage(painelCustoIaExemplo(Math.max(2, Math.min(n, 30))), user),
   };

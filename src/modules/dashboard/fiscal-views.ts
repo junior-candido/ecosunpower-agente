@@ -1,17 +1,38 @@
 // src/modules/dashboard/fiscal-views.ts
-// Telas do módulo fiscal (F1): lista de notas, nova nota (preparar), detalhe c/ anexar PDF.
+// Telas do módulo fiscal (F1/F2): lista de notas, nova nota (preparar) e
+// editar, detalhe (emitir, anexar PDF, XML) e configuração do certificado A1.
+// Renovação do miolo — R20 (29/09/2026): padrão Command Center (cc-, tema
+// escuro, sem Tailwind). Mesmos formulários (action/method/enctype/name), o
+// mesmo GET do CNPJ, os mesmos confirm e os mesmos ids que o script da nota
+// usa ($('valor'), $('servico'), $('c-liq')…).
 import { renderLayout } from './views.js';
 import type { DashUser } from './permissions.js';
 import type { NotaLinha } from '../financeiro/fiscal/notas-repo.js';
+import {
+  cabecalhoPagina, cartaoSecao, tabela, pilulaStatus, botao, estadoVazio, faixaKpis, celulaDupla,
+  aviso as avisoCc, type Tom,
+} from './ui/componentes.js';
+import { temaDaTela } from './ui/tema.js';
 
 function escapeHtml(s: string | null | undefined): string {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 }
 
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-const STATUS: Record<string, string> = {
-  rascunho: '📝 Rascunho', preparada: '🕐 Preparada (emitir no portal)', enviada: '📤 Enviada',
-  autorizada: '✅ Autorizada', rejeitada: '❌ Rejeitada', cancelada: '🚫 Cancelada',
+const dataBr = (iso: string) => iso.split('-').reverse().join('/');
+
+/** Situação da nota em pílula (mesmos rótulos de antes, sem emoji). */
+const STATUS: Record<string, { tom: Tom; texto: string }> = {
+  rascunho: { tom: 'sem_dado', texto: 'Rascunho' },
+  preparada: { tom: 'atencao', texto: 'Preparada (emitir no portal)' },
+  enviada: { tom: 'acompanhar', texto: 'Enviada' },
+  autorizada: { tom: 'normal', texto: 'Autorizada' },
+  rejeitada: { tom: 'critico', texto: 'Rejeitada' },
+  cancelada: { tom: 'sem_dado', texto: 'Cancelada' },
+};
+const pilulaNota = (status: string) => {
+  const s = STATUS[status] ?? { tom: 'sem_dado' as Tom, texto: status };
+  return pilulaStatus(s.tom, s.texto);
 };
 
 export interface ServicoOpt { id: string; nome: string; cod_trib_nacional: string; descricao_padrao: string; aliquota_iss: number }
@@ -20,37 +41,124 @@ export interface ConfigInfo {
   ambiente?: 'homologacao' | 'producao'; serie_dps?: string; proximo_ndps?: number; cert_storage_path?: string | null;
 }
 
-const badgeAmbiente = (ambiente: 'homologacao' | 'producao' | undefined) => ambiente === 'producao'
-  ? '<span style="background:#065f46;color:#a7f3d0;border-radius:6px;padding:2px 8px;font-size:12px">PRODUÇÃO</span>'
-  : '<span style="background:#78350f;color:#fde68a;border-radius:6px;padding:2px 8px;font-size:12px">HOMOLOGAÇÃO — teste</span>';
+const badgeAmbiente = (ambiente: 'homologacao' | 'producao' | null | undefined) => ambiente === 'producao'
+  ? pilulaStatus('normal', 'Produção')
+  : pilulaStatus('atencao', 'Homologação — teste');
+
+const CSS_FISCAL = `
+.cc-nf .cc-panel+.cc-panel,.cc-nf .cc-kstrip+.cc-panel,.cc-nf .cc-panel+.cc-nf-rodape{margin-top:16px}
+.cc-nf .cc-kstrip{margin-bottom:16px}
+.cc-nf-estreito{max-width:880px}
+.cc-nf-val{font-family:var(--cc-f-num);font-variant-numeric:tabular-nums;white-space:nowrap}
+.cc-nf-form{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px 14px;align-items:end}
+.cc-nf-form .cc-nf-2{grid-column:span 2}
+.cc-nf-form .cc-nf-3{grid-column:span 3}
+.cc-nf-form .cc-nf-cheia{grid-column:1/-1}
+.cc-nf-doc{display:flex;gap:8px;align-items:stretch}
+.cc-nf-doc input{flex:1;min-width:0}
+.cc-nf-doc .cc-btn{white-space:nowrap;min-height:40px}
+.cc-nf-dica{margin:0;font-size:12.5px;color:var(--cc-muted);line-height:1.5}
+.cc-nf-check{display:flex;gap:10px;align-items:flex-start;font-size:13.5px;color:var(--cc-text-2);line-height:1.4}
+.cc-nf-check input{margin-top:3px;width:16px;height:16px;accent-color:var(--cc-gold)}
+.cc-nf-conta{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:baseline;padding:12px 14px;border:1px dashed var(--cc-line-2);border-radius:12px;font-size:13.5px;color:var(--cc-text-2)}
+.cc-nf-conta b{font-family:var(--cc-f-num);font-variant-numeric:tabular-nums;color:var(--cc-text)}
+.cc-nf-conta .cc-nf-liq{color:var(--cc-ok);font-size:16px}
+.cc-nf-enviar{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.cc-nf-lista{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:max-content minmax(0,1fr);gap:8px 14px;font-size:13.5px}
+.cc-nf-lista dt{color:var(--cc-muted)}
+.cc-nf-lista dd{margin:0;overflow-wrap:anywhere;color:var(--cc-text)}
+.cc-nf code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;background:var(--cc-surface-2);border:1px solid var(--cc-line);border-radius:6px;padding:1px 6px;overflow-wrap:anywhere;word-break:break-all}
+.cc-nf-passo{font-size:13.5px;color:var(--cc-text-2);line-height:1.6;margin:0 0 10px}
+.cc-nf-passo b{color:var(--cc-text)}
+.cc-nf-passo+.cc-nf-lista{margin-bottom:16px}
+.cc-nf-anexar{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:4px}
+.cc-nf-anexar .cc-campo{min-width:200px}
+.cc-nf-acoes{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.cc-nf-acoes form{margin:0}
+.cc-nf-linha{display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:13.5px;color:var(--cc-text-2)}
+.cc-nf-linha form{margin:0}
+.cc-nf-rodape{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.cc-nf-ok{color:var(--cc-ok);font-size:13.5px;margin:0}
+.cc-nf-radios{display:flex;flex-direction:column;gap:8px;border:0;margin:0;padding:0}
+.cc-nf-radios legend{font-size:11.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--cc-muted);margin-bottom:6px;padding:0}
+.cc-nf-radios label{display:flex;gap:10px;align-items:center;font-size:13.5px;color:var(--cc-text-2)}
+.cc-nf-radios input{accent-color:var(--cc-gold);width:16px;height:16px}
+.cc-nf-cfg{display:flex;flex-direction:column;gap:16px}
+.cc-nf-tbl .cc-btn{white-space:nowrap}
+@media (max-width:1100px){.cc-nf-form{grid-template-columns:repeat(2,minmax(0,1fr))}.cc-nf-form .cc-nf-3{grid-column:span 2}}
+@media (max-width:760px){
+  .cc-nf-form{grid-template-columns:minmax(0,1fr)}
+  .cc-nf-form .cc-nf-2,.cc-nf-form .cc-nf-3{grid-column:auto}
+  .cc-nf-doc{flex-direction:column}
+  .cc-nf-doc .cc-btn{justify-content:center;min-height:44px}
+  .cc-nf-lista{grid-template-columns:minmax(0,1fr);gap:2px}
+  .cc-nf-lista dd{margin-bottom:8px}
+  .cc-nf-anexar{flex-direction:column;align-items:stretch}
+  .cc-nf-anexar .cc-btn,.cc-nf-enviar .cc-btn{justify-content:center;width:100%}
+  .cc-nf-enviar form{width:100%}
+}
+`;
+
+function pagina(title: string, user: DashUser | undefined, body: string, scripts?: string, largo = false): string {
+  return renderLayout({
+    active: 'fiscal', title, user, scripts,
+    body: `<div class="cc-root cc-nf${largo ? '' : ' cc-nf-estreito'}">${body}</div>`,
+    tailwind: false, dark: temaDaTela(user, 'escuro') === 'escuro', largo,
+    cabeca: `<style>${CSS_FISCAL}</style>`,
+  });
+}
+
+const TRILHA_NOTAS = [{ rotulo: 'Financeiro', href: '/dashboard/financeiro' }, { rotulo: 'Notas fiscais', href: '/dashboard/fiscal' }];
+
+function avisoTela(aviso?: { tipo: 'ok' | 'erro'; texto: string }): string {
+  return aviso ? avisoCc({ tom: aviso.tipo, texto: aviso.texto }) : '';
+}
+
+// ---------------------------------------------------------------------------
+// Lista
+// ---------------------------------------------------------------------------
 
 export function renderNotasPage(notas: NotaLinha[], config: ConfigInfo | null, user?: DashUser): string {
   const alertaCert = config?.cert_validade
     ? (new Date(config.cert_validade) < new Date(Date.now() + 30 * 864e5)
-      ? `<div class="card" style="border:1px solid #f87171;border-radius:10px;padding:10px;margin-bottom:8px"><b>⚠️ Certificado digital vence em ${config.cert_validade.split('-').reverse().join('/')}</b> — renove o A1 pra manter a emissão.</div>` : '')
-    : '<div class="card" style="border:1px solid #fbbf24;border-radius:10px;padding:10px;margin-bottom:8px">ℹ️ Validade do certificado não cadastrada.</div>';
-  const linhas = notas.map((n) => `
-    <tr class="border-b border-gray-800">
-      <td class="p-2">${escapeHtml(n.numero ?? '—')}</td>
-      <td class="p-2">${n.competencia.split('-').reverse().join('/')}</td>
-      <td class="p-2">${escapeHtml(n.tomador.nome)}</td>
-      <td class="p-2 text-right">${brl(n.valorBruto)}</td>
-      <td class="p-2 text-right">${n.issRetido ? brl(n.valorIss) : '—'}</td>
-      <td class="p-2 text-right font-bold">${brl(n.valorLiquido)}</td>
-      <td class="p-2">${STATUS[n.status] ?? n.status}</td>
-      <td class="p-2"><a class="text-cyan-300" href="/dashboard/fiscal/${n.id}">abrir</a></td>
-    </tr>`).join('');
+      ? avisoCc({ tom: 'erro', texto: `Certificado digital vence em ${dataBr(config.cert_validade)} — renove o A1 pra manter a emissão.` }) : '')
+    : avisoCc({ tom: 'info', texto: 'Validade do certificado não cadastrada.' });
+  const valor = (n: number) => ({ html: `<span class="cc-nf-val">${escapeHtml(brl(n))}</span>` });
+  const lista = notas.length === 0
+    ? estadoVazio({ tipo: 'vazio', titulo: 'Nenhuma nota ainda', texto: 'Clique em "Nova nota" pra preparar a primeira.', icone: 'receipt' })
+    : tabela({
+      colunas: [
+        { titulo: 'Tomador' }, { titulo: 'Nº' }, { titulo: 'Competência' },
+        { titulo: 'Bruto', alinhar: 'dir' }, { titulo: 'ISS retido', alinhar: 'dir' }, { titulo: 'Líquido', alinhar: 'dir' },
+        { titulo: 'Situação' }, { titulo: '', alinhar: 'dir' },
+      ],
+      linhas: notas.map((n) => [
+        { html: celulaDupla(n.tomador.nome, n.tomador.tipo === 'PF' ? 'Pessoa física' : 'Empresa') },
+        n.numero ?? null,
+        dataBr(n.competencia),
+        valor(n.valorBruto),
+        n.issRetido ? valor(n.valorIss) : null,
+        { html: `<b class="cc-nf-val">${escapeHtml(brl(n.valorLiquido))}</b>` },
+        { html: pilulaNota(n.status) },
+        { html: botao({ rotulo: 'Abrir', href: `/dashboard/fiscal/${n.id}`, tamanho: 'sm', tom: 'fantasma' }) },
+      ]),
+      mobile: 'cartoes',
+    });
   const body = `
-<div style="color:#d1d5db">
-<h1 class="text-xl font-bold text-cyan-300 mb-4">🧾 Notas fiscais (NFS-e)</h1>
+${cabecalhoPagina({
+    trilha: TRILHA_NOTAS,
+    titulo: 'Notas fiscais (NFS-e)',
+    subtitulo: 'Prepare a nota, emita (daqui ou no portal do ISS) e ela entra no caixa como conta a receber.',
+    acoesHtml: botao({ rotulo: 'Nova nota', href: '/dashboard/fiscal/nova', tom: 'ouro', icone: 'plus' }),
+  })}
 ${alertaCert}
-<div class="my-3"><a href="/dashboard/fiscal/nova" class="px-3 py-2 rounded bg-cyan-700 text-white">+ Nova nota</a></div>
-<div style="overflow-x:auto"><table class="w-full text-sm">
-<thead><tr class="text-left text-gray-400"><th class="p-2">Nº</th><th class="p-2">Competência</th><th class="p-2">Tomador</th><th class="p-2">Bruto</th><th class="p-2">ISS retido</th><th class="p-2">Líquido</th><th class="p-2">Status</th><th></th></tr></thead>
-<tbody>${linhas || '<tr><td class="p-3 text-gray-500" colspan="8">Nenhuma nota ainda. Clique em "+ Nova nota".</td></tr>'}</tbody>
-</table></div></div>`;
-  return renderLayout({ active: 'fiscal', title: 'Notas fiscais', body, dark: true, user });
+${cartaoSecao({ titulo: 'Notas', dica: notas.length ? `${notas.length} ${notas.length === 1 ? 'nota' : 'notas'}` : undefined, corpoHtml: lista, classe: 'cc-nf-tbl' })}`;
+  return pagina('Notas fiscais', user, body, undefined, true);
 }
+
+// ---------------------------------------------------------------------------
+// Nova / editar
+// ---------------------------------------------------------------------------
 
 export interface NovaNotaPrefill {
   nome?: string; doc?: string; valor?: number; fechamentoId?: string; leadId?: string; erro?: string;
@@ -60,50 +168,61 @@ export interface NovaNotaPrefill {
 }
 
 export function renderNovaNotaPage(servicos: ServicoOpt[], prefill: NovaNotaPrefill, user?: DashUser): string {
-  const opts = servicos.map((s) => `<option value="${s.id}" data-aliq="${s.aliquota_iss}" data-descr="${escapeHtml(s.descricao_padrao)}"${prefill.servicoId === s.id ? ' selected' : ''}>${escapeHtml(s.nome)} (${s.cod_trib_nacional})</option>`).join('');
+  const opts = servicos.map((s) => `<option value="${escapeHtml(s.id)}" data-aliq="${s.aliquota_iss}" data-descr="${escapeHtml(s.descricao_padrao)}"${prefill.servicoId === s.id ? ' selected' : ''}>${escapeHtml(s.nome)} (${escapeHtml(s.cod_trib_nacional)})</option>`).join('');
   const editando = Boolean(prefill.notaId);
   const acao = editando ? `/dashboard/fiscal/${escapeHtml(prefill.notaId!)}/editar` : '/dashboard/fiscal/nova';
-  const titulo = editando ? '🧾 Editar nota (preparada)' : '🧾 Nova nota';
-  const botao = editando ? 'Salvar alterações' : 'Preparar nota';
+  const titulo = editando ? 'Editar nota (preparada)' : 'Nova nota';
+  const botaoEnviar = editando ? 'Salvar alterações' : 'Preparar nota';
+  const campo = (rotulo: string, input: string, cls = '') => `<label class="cc-campo${cls ? ` ${cls}` : ''}"><span>${escapeHtml(rotulo)}</span>${input}</label>`;
+  const semServico = servicos.length === 0
+    ? avisoCc({ tom: 'atencao', texto: 'Nenhum serviço fiscal cadastrado pra esta empresa — sem ele a nota não sai. Fale com o suporte pra cadastrar.' })
+    : '';
+
+  const tomador = `
+  ${campo('Tomador é', `<select name="tipo" id="tipo"><option value="PJ"${prefill.tipo !== 'PF' ? ' selected' : ''}>PJ (CNPJ)</option><option value="PF"${prefill.tipo === 'PF' ? ' selected' : ''}>PF (CPF)</option></select>`)}
+  <label class="cc-campo cc-nf-3"><span>CNPJ/CPF</span><div class="cc-nf-doc"><input name="doc" id="doc" value="${escapeHtml(prefill.doc ?? '')}" inputmode="numeric" required>${botao({ rotulo: 'Buscar dados', icone: 'search', attrs: { id: 'buscar' } })}</div></label>
+  ${campo('Nome/Razão social', `<input name="nome" id="nome" value="${escapeHtml(prefill.nome ?? '')}" required>`, 'cc-nf-cheia')}
+  ${campo('Inscrição municipal (se PJ do DF)', `<input name="im" id="im" value="${escapeHtml(prefill.im ?? '')}">`, 'cc-nf-2')}
+  ${campo('E-mail do tomador', `<input name="email" id="email" type="email" value="${escapeHtml(prefill.email ?? '')}">`, 'cc-nf-2')}`;
+
+  const endereco = `
+  ${campo('Logradouro (rua)', `<input name="logradouro" id="logradouro" value="${escapeHtml(prefill.logradouro ?? prefill.endereco ?? '')}">`, 'cc-nf-3')}
+  ${campo('Número', `<input name="numero" id="numero" value="${escapeHtml(prefill.numero ?? '')}">`)}
+  ${campo('Bairro', `<input name="bairro" id="bairro" value="${escapeHtml(prefill.bairro ?? '')}">`, 'cc-nf-2')}
+  ${campo('CEP', `<input name="cep" id="cep" value="${escapeHtml(prefill.cep ?? '')}" inputmode="numeric">`, 'cc-nf-2')}
+  <input type="hidden" name="cod_mun_ibge" id="cod_mun_ibge" value="${escapeHtml(prefill.codMunIbge ?? '')}">
+  ${campo('Município', `<input name="municipio" id="municipio" value="${escapeHtml(prefill.municipio ?? 'Brasília')}">`, 'cc-nf-3')}
+  ${campo('UF', `<input name="uf" id="uf" value="${escapeHtml(prefill.uf ?? 'DF')}" maxlength="2">`)}
+  <p class="cc-nf-dica cc-nf-cheia">O fisco exige endereço completo quando o tomador é PJ ou o ISS é retido — o "Buscar dados" preenche sozinho.</p>`;
+
+  const servico = `
+  ${campo('Serviço', `<select name="servico_id" id="servico">${opts}</select>`, 'cc-nf-cheia')}
+  ${campo('Descrição na nota', `<textarea name="descricao" id="descricao" rows="2">${escapeHtml(prefill.descricao ?? '')}</textarea>`, 'cc-nf-cheia')}
+  ${campo('Valor do serviço (R$)', `<input name="valor" id="valor" type="text" inputmode="decimal" value="${prefill.valor ?? ''}" placeholder="ex.: 1.500,00" required>`, 'cc-nf-2')}
+  ${campo('Competência', `<input name="competencia" type="date" value="${escapeHtml(prefill.competencia ?? new Date().toISOString().slice(0, 10))}" required>`, 'cc-nf-2')}
+  <label class="cc-nf-check cc-nf-cheia"><input type="checkbox" name="iss_retido" id="retido"${prefill.issRetido ? ' checked' : ''}><span>ISS retido pelo tomador (marca sozinho pra PJ do DF)</span></label>
+  <div class="cc-nf-conta cc-nf-cheia" id="conta">
+    <span>Bruto: <b id="c-bruto">—</b></span>
+    <span><span id="c-aliq">5%</span>: <b id="c-iss">—</b></span>
+    <span>Líquido a receber: <b id="c-liq" class="cc-nf-liq">—</b></span>
+  </div>`;
+
   const body = `
-<div style="color:#d1d5db;max-width:640px">
-<h1 class="text-xl font-bold text-cyan-300 mb-4">${titulo}</h1>
-${prefill.erro ? `<div class="card" style="border:1px solid #f87171;border-radius:10px;padding:8px;margin-bottom:8px">${escapeHtml(prefill.erro)}</div>` : ''}
-<form method="post" action="${acao}" class="space-y-3"${editando ? ' data-edit="1"' : ''}>
+${cabecalhoPagina({
+    trilha: [...TRILHA_NOTAS, { rotulo: editando ? 'Editar nota' : 'Nova nota' }],
+    titulo,
+    subtitulo: editando ? 'A nota ainda não foi emitida — dá pra corrigir antes de emitir.' : 'Preencha quem recebe a nota, o serviço e o valor. A conta do ISS aparece embaixo.',
+  })}
+${prefill.erro ? avisoCc({ tom: 'erro', texto: prefill.erro }) : ''}
+${semServico}
+<form method="post" action="${acao}" class="cc-form"${editando ? ' data-edit="1"' : ''}>
   <input type="hidden" name="fechamento_id" value="${escapeHtml(prefill.fechamentoId ?? '')}">
   <input type="hidden" name="lead_id" value="${escapeHtml(prefill.leadId ?? '')}">
-  <label class="block">Tomador é <select name="tipo" id="tipo" class="bg-gray-800 p-1 rounded"><option value="PJ"${prefill.tipo !== 'PF' ? ' selected' : ''}>PJ (CNPJ)</option><option value="PF"${prefill.tipo === 'PF' ? ' selected' : ''}>PF (CPF)</option></select></label>
-  <label class="block">CNPJ/CPF <input name="doc" id="doc" value="${escapeHtml(prefill.doc ?? '')}" class="bg-gray-800 p-1 rounded w-full" required>
-    <button type="button" id="buscar" class="px-2 py-1 rounded bg-gray-700 mt-1">🔎 Buscar dados</button></label>
-  <label class="block">Nome/Razão social <input name="nome" id="nome" value="${escapeHtml(prefill.nome ?? '')}" class="bg-gray-800 p-1 rounded w-full" required></label>
-  <label class="block">Inscrição municipal (se PJ do DF) <input name="im" id="im" value="${escapeHtml(prefill.im ?? '')}" class="bg-gray-800 p-1 rounded w-full"></label>
-  <div class="grid grid-cols-2 gap-2">
-    <label>Logradouro (rua) <input name="logradouro" id="logradouro" value="${escapeHtml(prefill.logradouro ?? prefill.endereco ?? '')}" class="bg-gray-800 p-1 rounded w-full"></label>
-    <label>Número <input name="numero" id="numero" value="${escapeHtml(prefill.numero ?? '')}" class="bg-gray-800 p-1 rounded w-full"></label>
-  </div>
-  <div class="grid grid-cols-2 gap-2">
-    <label>Bairro <input name="bairro" id="bairro" value="${escapeHtml(prefill.bairro ?? '')}" class="bg-gray-800 p-1 rounded w-full"></label>
-    <label>CEP <input name="cep" id="cep" value="${escapeHtml(prefill.cep ?? '')}" class="bg-gray-800 p-1 rounded w-full" inputmode="numeric"></label>
-  </div>
-  <p class="text-sm" style="color:#94a3b8">O fisco exige endereço completo quando o tomador é PJ ou o ISS é retido — o "Buscar dados" preenche sozinho.</p>
-  <input type="hidden" name="cod_mun_ibge" id="cod_mun_ibge" value="${escapeHtml(prefill.codMunIbge ?? '')}">
-  <div class="grid grid-cols-2 gap-2">
-    <label>Município <input name="municipio" id="municipio" value="${escapeHtml(prefill.municipio ?? 'Brasília')}" class="bg-gray-800 p-1 rounded w-full"></label>
-    <label>UF <input name="uf" id="uf" value="${escapeHtml(prefill.uf ?? 'DF')}" class="bg-gray-800 p-1 rounded w-full" maxlength="2"></label>
-  </div>
-  <label class="block">E-mail do tomador <input name="email" id="email" type="email" value="${escapeHtml(prefill.email ?? '')}" class="bg-gray-800 p-1 rounded w-full"></label>
-  <label class="block">Serviço <select name="servico_id" id="servico" class="bg-gray-800 p-1 rounded w-full">${opts}</select></label>
-  <label class="block">Descrição na nota <textarea name="descricao" id="descricao" class="bg-gray-800 p-1 rounded w-full" rows="2">${escapeHtml(prefill.descricao ?? '')}</textarea></label>
-  <div class="grid grid-cols-2 gap-2">
-    <label>Valor do serviço (R$) <input name="valor" id="valor" type="text" inputmode="decimal" value="${prefill.valor ?? ''}" class="bg-gray-800 p-1 rounded w-full" required></label>
-    <label>Competência <input name="competencia" type="date" value="${escapeHtml(prefill.competencia ?? new Date().toISOString().slice(0, 10))}" class="bg-gray-800 p-1 rounded w-full" required></label>
-  </div>
-  <label class="block"><input type="checkbox" name="iss_retido" id="retido"${prefill.issRetido ? ' checked' : ''}> ISS retido pelo tomador (marca sozinho pra PJ do DF)</label>
-  <div class="card" style="border:1px solid #1b2040;border-radius:10px;padding:10px" id="conta">
-    Bruto: <b id="c-bruto">—</b> · ISS <span id="c-aliq">5%</span>: <b id="c-iss">—</b> · líquido a receber: <b id="c-liq" class="text-emerald-300">—</b>
-  </div>
-  <button class="px-4 py-2 rounded bg-cyan-700 text-white">${botao}</button>
-</form></div>`;
+  ${cartaoSecao({ titulo: 'Quem recebe a nota (tomador)', corpoHtml: `<div class="cc-nf-form">${tomador}</div>` })}
+  ${cartaoSecao({ titulo: 'Endereço do tomador', corpoHtml: `<div class="cc-nf-form">${endereco}</div>` })}
+  ${cartaoSecao({ titulo: 'Serviço e valor', corpoHtml: `<div class="cc-nf-form">${servico}</div>` })}
+  <div class="cc-nf-rodape" style="margin-top:16px">${botao({ rotulo: botaoEnviar, tipo: 'submit', tom: 'ouro', icone: 'check' })}${botao({ rotulo: 'Voltar pras notas', href: '/dashboard/fiscal', tom: 'fantasma' })}</div>
+</form>`;
   const scripts = `
 <script>
 (function(){
@@ -135,128 +254,166 @@ ${prefill.erro ? `<div class="card" style="border:1px solid #f87171;border-radiu
   if (document.querySelector('form[data-edit="1"]')) { conta(); } else { autoRetencao(); }
 })();
 </script>`;
-  return renderLayout({ active: 'fiscal', title: 'Nova nota', body, scripts, dark: true, user });
+  return pagina(editando ? 'Editar nota' : 'Nova nota', user, body, scripts);
 }
+
+// ---------------------------------------------------------------------------
+// Detalhe
+// ---------------------------------------------------------------------------
 
 export function renderNotaDetalhe(n: NotaLinha, config: ConfigInfo | null, user?: DashUser, aviso?: { tipo: 'ok' | 'erro'; texto: string }): string {
   const temCert = Boolean(config?.cert_storage_path);
-  const avisoHtml = aviso
-    ? `<div class="card" style="border:1px solid ${aviso.tipo === 'ok' ? '#34d399' : '#f87171'};border-radius:10px;padding:10px;margin:8px 0">${escapeHtml(aviso.texto)}</div>`
-    : '';
-  const emitir = n.status === 'preparada' ? (temCert ? `
-  <div class="card" style="border:1px solid #0e7490;border-radius:10px;padding:12px;margin:10px 0">
-    <form method="post" action="/dashboard/fiscal/${n.id}/emitir" onsubmit="return confirm('Emitir esta NFS-e agora?')" style="display:inline">
-      <button class="px-4 py-2 rounded bg-cyan-600 text-white font-bold">⚡ Emitir agora</button>
+  const id = escapeHtml(n.id);
+
+  const emitir = n.status === 'preparada' ? (temCert
+    ? cartaoSecao({
+      titulo: 'Emitir daqui',
+      dica: 'a NFS-e sai assinada com o certificado A1',
+      acoesHtml: badgeAmbiente(config?.ambiente),
+      corpoHtml: `<div class="cc-nf-enviar">
+    <form method="post" action="/dashboard/fiscal/${id}/emitir" onsubmit="return confirm('Emitir esta NFS-e agora?')">
+      ${botao({ rotulo: 'Emitir agora', tipo: 'submit', tom: 'ouro', icone: 'zap' })}
     </form>
-    ${badgeAmbiente(config?.ambiente)}
-    ${config?.ambiente !== 'producao' ? '<p class="text-sm mt-2" style="color:#fde68a">⚠️ Ambiente de TESTE — a nota emitida aqui não vale e não mexe no caixa.</p>' : ''}
-  </div>` : `
-  <div class="card" style="border:1px solid #1b2040;border-radius:10px;padding:12px;margin:10px 0">
-    ⚡ Pra emitir daqui direto, <a class="text-cyan-300" href="/dashboard/fiscal/config">cadastre o certificado A1</a>.
-  </div>`) : '';
-  const autorizada = n.status === 'autorizada' && n.chaveAcesso ? `
-  <div class="card" style="border:1px solid #065f46;border-radius:10px;padding:12px;margin:10px 0">
-    <b>✅ NFS-e emitida daqui</b> ${badgeAmbiente(n.ambienteEmissao ?? undefined)}
-    <ul class="text-sm mt-2" style="line-height:1.8">
-      ${n.numero ? `<li>Número: <code>${escapeHtml(n.numero)}</code></li>` : ''}
-      <li>Chave de acesso: <code style="word-break:break-all">${escapeHtml(n.chaveAcesso)}</code></li>
-    </ul>
-    <p class="mt-2"><a class="text-cyan-300" href="/dashboard/fiscal/${n.id}/xml">⬇️ Baixar XML</a></p>
-  </div>` : '';
-  const testeHomolog = n.status === 'preparada' && n.chaveAcesso && n.ambienteEmissao === 'homologacao' ? `
-  <div class="card" style="border:1px solid #78350f;border-radius:10px;padding:12px;margin:10px 0">
-    🧪 <b>Teste de homologação passou</b> — chave <code style="word-break:break-all">${escapeHtml(n.chaveAcesso)}</code>.
-    A nota continua <b>preparada</b> pra emissão de verdade (troque o ambiente pra produção na <a class="text-cyan-300" href="/dashboard/fiscal/config">configuração</a>).
-    <a class="text-cyan-300" href="/dashboard/fiscal/${n.id}/xml">⬇️ XML do teste</a>
-  </div>` : '';
-  const enviadaTravada = n.status === 'enviada' ? `
-  <div class="card" style="border:1px solid #f87171;border-radius:10px;padding:12px;margin:10px 0">
-    📤 <b>Enviada — aguardando confirmação.</b> A conexão pode ter caído no meio do envio.
-    <b>Confira no portal do ISS se a NFS-e saiu.</b> Se NÃO saiu, destrave pra tentar de novo:
-    <form method="post" action="/dashboard/fiscal/${n.id}/voltar" class="mt-2" onsubmit="return confirm('Conferiu no portal que a nota NÃO saiu? Se ela saiu e você emitir de novo, sai NOTA DUPLICADA.')">
-      <button class="px-3 py-2 rounded bg-gray-700 text-white">↩️ Voltar pra preparada (não saiu no portal)</button>
-    </form>
-  </div>` : '';
-  const preparar = n.status === 'preparada' ? `
-  <div class="card" style="border:1px solid #1b2040;border-radius:10px;padding:12px;margin:10px 0">
-    <b>1) Emitir no portal</b> — abra <a class="text-cyan-300" href="https://iss.fazenda.df.gov.br/online/" target="_blank">iss.fazenda.df.gov.br/online</a> e copie:
-    <ul class="text-sm mt-2" style="line-height:1.8">
-      <li>Tomador: <code>${escapeHtml(n.tomador.doc)}</code> — ${escapeHtml(n.tomador.nome)}${n.tomador.im ? ` (IM ${escapeHtml(n.tomador.im)})` : ''}</li>
-      <li>Descrição: <code>${escapeHtml(n.descricao)}</code></li>
-      <li>Valor: <code>${brl(n.valorBruto)}</code> · ISS ${n.issRetido ? '<b>Retido pelo Tomador</b>' : 'devido pelo prestador'}</li>
-      <li>Competência: ${n.competencia.split('-').reverse().join('/')}</li>
-    </ul>
-    <b class="block mt-3">2) Voltar aqui com o PDF</b>
-    <form method="post" action="/dashboard/fiscal/${n.id}/anexar" enctype="multipart/form-data" class="mt-2 space-y-2">
-      <input name="numero" placeholder="Nº da NFS-e (ex.: 84)" class="bg-gray-800 p-1 rounded" required>
-      <input type="file" name="pdf" accept="application/pdf" required>
-      <button class="px-3 py-2 rounded bg-emerald-700 text-white">Anexar e lançar no caixa</button>
-    </form>
-  </div>` : '';
-  const acoesPreparada = n.status === 'preparada' ? `
-<p class="mt-1">
-  <a class="text-cyan-300" href="/dashboard/fiscal/${n.id}/editar">✏️ Editar</a>
-  <form method="post" action="/dashboard/fiscal/${n.id}/excluir" style="display:inline" onsubmit="return confirm('Excluir este rascunho de nota? Não dá pra desfazer.')">
-    <button class="text-rose-400" style="background:none;border:none;cursor:pointer">🗑️ Excluir</button>
+  </div>
+  ${config?.ambiente !== 'producao' ? `<p class="cc-nf-dica" style="margin-top:10px">Ambiente de TESTE — a nota emitida aqui não vale e não mexe no caixa.</p>` : ''}`,
+    })
+    : cartaoSecao({
+      titulo: 'Emitir daqui',
+      corpoHtml: `<div class="cc-nf-linha"><span>Pra emitir daqui direto, cadastre o certificado A1.</span>${botao({ rotulo: 'Cadastrar certificado', href: '/dashboard/fiscal/config', tamanho: 'sm', icone: 'shield' })}</div>`,
+    })) : '';
+
+  const autorizada = n.status === 'autorizada' && n.chaveAcesso ? cartaoSecao({
+    titulo: 'NFS-e emitida daqui',
+    acoesHtml: badgeAmbiente(n.ambienteEmissao ?? undefined),
+    corpoHtml: `<dl class="cc-nf-lista">
+      ${n.numero ? `<dt>Número</dt><dd><code>${escapeHtml(n.numero)}</code></dd>` : ''}
+      <dt>Chave de acesso</dt><dd><code>${escapeHtml(n.chaveAcesso)}</code></dd>
+    </dl>
+    <div class="cc-nf-rodape" style="margin-top:12px">${botao({ rotulo: 'Baixar XML', href: `/dashboard/fiscal/${n.id}/xml`, tamanho: 'sm', icone: 'download' })}</div>`,
+  }) : '';
+
+  const testeHomolog = n.status === 'preparada' && n.chaveAcesso && n.ambienteEmissao === 'homologacao' ? cartaoSecao({
+    titulo: 'Teste de homologação passou',
+    acoesHtml: badgeAmbiente('homologacao'),
+    corpoHtml: `<p class="cc-nf-passo">Chave <code>${escapeHtml(n.chaveAcesso)}</code>. A nota continua <b>preparada</b> pra emissão de verdade (troque o ambiente pra produção na configuração).</p>
+    <div class="cc-nf-rodape">${botao({ rotulo: 'Configuração fiscal', href: '/dashboard/fiscal/config', tamanho: 'sm', icone: 'cog' })}${botao({ rotulo: 'XML do teste', href: `/dashboard/fiscal/${n.id}/xml`, tamanho: 'sm', icone: 'download' })}</div>`,
+  }) : '';
+
+  const enviadaTravada = n.status === 'enviada' ? cartaoSecao({
+    titulo: 'Enviada — aguardando confirmação',
+    acoesHtml: pilulaStatus('critico', 'confira no portal'),
+    corpoHtml: `<p class="cc-nf-passo">A conexão pode ter caído no meio do envio. <b>Confira no portal do ISS se a NFS-e saiu.</b> Se NÃO saiu, destrave pra tentar de novo:</p>
+    <form method="post" action="/dashboard/fiscal/${id}/voltar" onsubmit="return confirm('Conferiu no portal que a nota NÃO saiu? Se ela saiu e você emitir de novo, sai NOTA DUPLICADA.')">
+      ${botao({ rotulo: 'Voltar pra preparada (não saiu no portal)', tipo: 'submit', icone: 'clock' })}
+    </form>`,
+  }) : '';
+
+  const preparar = n.status === 'preparada' ? cartaoSecao({
+    titulo: 'Emitir pelo portal do ISS',
+    dica: 'se preferir não emitir daqui',
+    corpoHtml: `<p class="cc-nf-passo"><b>1) Emitir no portal</b> — abra <a class="cc-link" href="https://iss.fazenda.df.gov.br/online/" target="_blank" rel="noopener">iss.fazenda.df.gov.br/online</a> e copie:</p>
+    <dl class="cc-nf-lista">
+      <dt>Tomador</dt><dd><code>${escapeHtml(n.tomador.doc)}</code> — ${escapeHtml(n.tomador.nome)}${n.tomador.im ? ` (IM ${escapeHtml(n.tomador.im)})` : ''}</dd>
+      <dt>Descrição</dt><dd><code>${escapeHtml(n.descricao)}</code></dd>
+      <dt>Valor</dt><dd><code>${escapeHtml(brl(n.valorBruto))}</code> · ISS ${n.issRetido ? '<b>Retido pelo Tomador</b>' : 'devido pelo prestador'}</dd>
+      <dt>Competência</dt><dd>${escapeHtml(dataBr(n.competencia))}</dd>
+    </dl>
+    <p class="cc-nf-passo"><b>2) Voltar aqui com o PDF</b></p>
+    <form method="post" action="/dashboard/fiscal/${id}/anexar" enctype="multipart/form-data" class="cc-form cc-nf-anexar">
+      <label class="cc-campo"><span>Nº da NFS-e</span><input name="numero" placeholder="ex.: 84" required></label>
+      <label class="cc-campo"><span>PDF da nota</span><input type="file" name="pdf" accept="application/pdf" required></label>
+      ${botao({ rotulo: 'Anexar e lançar no caixa', tipo: 'submit', icone: 'file' })}
+    </form>`,
+  }) : '';
+
+  const acoesPreparada = n.status === 'preparada' ? `<div class="cc-nf-acoes">
+  ${botao({ rotulo: 'Editar', href: `/dashboard/fiscal/${n.id}/editar`, tamanho: 'sm', icone: 'doc-check' })}
+  <form method="post" action="/dashboard/fiscal/${id}/excluir" onsubmit="return confirm('Excluir este rascunho de nota? Não dá pra desfazer.')">
+    ${botao({ rotulo: 'Excluir', tipo: 'submit', tom: 'critico', tamanho: 'sm' })}
   </form>
-</p>` : '';
+</div>` : '';
+
+  const kpis = faixaKpis([
+    { rotulo: 'Valor bruto', valor: n.valorBruto, casas: 2, prefixo: 'R$' },
+    { rotulo: n.issRetido ? 'ISS retido pelo tomador' : 'ISS (você recolhe no DAS)', valor: n.valorIss, casas: 2, prefixo: 'R$' },
+    { rotulo: 'Líquido a receber', valor: n.valorLiquido, casas: 2, prefixo: 'R$', destaque: true },
+  ]);
+
+  const rodape = [
+    n.pdfStoragePath ? botao({ rotulo: 'Baixar PDF', href: `/dashboard/fiscal/${n.id}/pdf`, tamanho: 'sm', icone: 'download' }) : '',
+    n.contaReceberId ? '<p class="cc-nf-ok">Conta a receber criada no caixa.</p>' : '',
+  ].filter(Boolean).join('');
+
   const body = `
-<div style="color:#d1d5db;max-width:640px">
-<h1 class="text-xl font-bold text-cyan-300 mb-2">🧾 Nota ${n.numero ? 'nº ' + escapeHtml(n.numero) : '(preparada)'}</h1>
-<p>${STATUS[n.status] ?? n.status} · ${escapeHtml(n.tomador.nome)} · ${brl(n.valorBruto)} → líquido <b>${brl(n.valorLiquido)}</b>${n.issRetido ? ` (ISS retido ${brl(n.valorIss)})` : ''}</p>
-${avisoHtml}
-${acoesPreparada}
+${cabecalhoPagina({
+    trilha: [...TRILHA_NOTAS, { rotulo: n.numero ? `Nota nº ${n.numero}` : 'Nota preparada' }],
+    titulo: n.numero ? `Nota nº ${n.numero}` : 'Nota (preparada)',
+    seloHtml: pilulaNota(n.status),
+    subtitulo: `${n.tomador.nome} · competência ${dataBr(n.competencia)}`,
+    acoesHtml: acoesPreparada,
+  })}
+${avisoTela(aviso)}
+${kpis}
 ${testeHomolog}
 ${enviadaTravada}
 ${emitir}
 ${autorizada}
 ${preparar}
-${n.pdfStoragePath ? `<p><a class="text-cyan-300" href="/dashboard/fiscal/${n.id}/pdf">📄 Baixar PDF</a></p>` : ''}
-${n.contaReceberId ? '<p class="text-emerald-300">✅ Conta a receber criada no caixa.</p>' : ''}
-<p class="mt-3"><a class="text-gray-400" href="/dashboard/fiscal">← todas as notas</a></p>
-</div>`;
-  return renderLayout({ active: 'fiscal', title: `Nota ${escapeHtml(n.numero ?? '')}`, body, dark: true, user });
+${rodape ? `<div class="cc-nf-rodape" style="margin-top:16px">${rodape}</div>` : ''}
+<div class="cc-nf-rodape" style="margin-top:16px">${botao({ rotulo: '← todas as notas', href: '/dashboard/fiscal', tom: 'fantasma', tamanho: 'sm' })}</div>`;
+  return pagina(`Nota ${n.numero ?? ''}`.trim(), user, body);
 }
 
+// ---------------------------------------------------------------------------
+// Configuração (certificado A1 + ambiente)
+// ---------------------------------------------------------------------------
+
 export function renderConfigFiscalPage(config: ConfigInfo | null, aviso?: { tipo: 'ok' | 'erro'; texto: string }, user?: DashUser): string {
-  const avisoHtml = aviso
-    ? `<div class="card" style="border:1px solid ${aviso.tipo === 'ok' ? '#34d399' : '#f87171'};border-radius:10px;padding:10px;margin-bottom:8px">${escapeHtml(aviso.texto)}</div>`
-    : '';
-  const cert = config?.cert_storage_path
-    ? `✅ Certificado cadastrado${config.cert_validade ? ` — vale até <b>${escapeHtml(config.cert_validade.split('-').reverse().join('/'))}</b>` : ''}`
-    : '❌ Certificado A1 <b>não cadastrado</b> — sem ele a emissão automática não funciona.';
+  const temCert = Boolean(config?.cert_storage_path);
+  const cert = temCert
+    ? `${pilulaStatus('normal', 'Certificado cadastrado')}${config!.cert_validade ? ` <span class="cc-muted">vale até <b>${escapeHtml(dataBr(config!.cert_validade))}</b></span>` : ''}`
+    : `${pilulaStatus('critico', 'Certificado A1 não cadastrado')} <span class="cc-muted">— sem ele a emissão automática não funciona.</span>`;
   const amb = config?.ambiente ?? 'homologacao';
   const bannerTeste = amb !== 'producao'
-    ? '<div class="card" style="border:1px solid #fbbf24;border-radius:10px;padding:10px;margin-bottom:8px">⚠️ Ambiente de <b>TESTE</b> (homologação) — as notas emitidas aqui não valem e não mexem no caixa.</div>'
+    ? avisoCc({ tom: 'atencao', texto: 'Ambiente de TESTE (homologação) — as notas emitidas aqui não valem e não mexem no caixa.' })
     : '';
+  const dados = cartaoSecao({
+    titulo: 'Dados da empresa na nota',
+    acoesHtml: badgeAmbiente(amb),
+    corpoHtml: `<dl class="cc-nf-lista">
+    <dt>Razão social</dt><dd><b>${escapeHtml(config?.razao_social ?? '—')}</b></dd>
+    <dt>CNPJ</dt><dd><code>${escapeHtml(config?.cnpj ?? '—')}</code></dd>
+    <dt>Inscrição municipal</dt><dd><code>${escapeHtml(config?.inscricao_municipal ?? '—')}</code></dd>
+    <dt>Série da DPS</dt><dd><code>${escapeHtml(config?.serie_dps ?? '1')}</code> · próximo nº <code>${escapeHtml(String(config?.proximo_ndps ?? 1))}</code></dd>
+    <dt>Certificado</dt><dd>${cert}</dd>
+  </dl>`,
+  });
   const body = `
-<div style="color:#d1d5db;max-width:640px">
-<h1 class="text-xl font-bold text-cyan-300 mb-4">⚙️ Configuração fiscal (emissão automática)</h1>
-${avisoHtml}
+${cabecalhoPagina({
+    trilha: [...TRILHA_NOTAS, { rotulo: 'Configuração fiscal' }],
+    titulo: 'Configuração fiscal',
+    subtitulo: 'Emissão automática: o ambiente (teste ou de verdade) e o certificado digital A1.',
+  })}
+${avisoTela(aviso)}
 ${bannerTeste}
-<div class="card" style="border:1px solid #1b2040;border-radius:10px;padding:12px;margin-bottom:10px">
-  <ul class="text-sm" style="line-height:1.9">
-    <li>Razão social: <b>${escapeHtml(config?.razao_social ?? '—')}</b></li>
-    <li>CNPJ: <code>${escapeHtml(config?.cnpj ?? '—')}</code> · IM: <code>${escapeHtml(config?.inscricao_municipal ?? '—')}</code></li>
-    <li>Série da DPS: <code>${escapeHtml(config?.serie_dps ?? '1')}</code> · próximo nº: <code>${String(config?.proximo_ndps ?? 1)}</code></li>
-    <li>${cert}</li>
-  </ul>
-</div>
-<form method="post" action="/dashboard/fiscal/config" enctype="multipart/form-data" class="space-y-3">
-  <fieldset class="card" style="border:1px solid #1b2040;border-radius:10px;padding:12px">
-    <legend class="px-1">Ambiente de emissão</legend>
-    <label class="block"><input type="radio" name="ambiente" value="homologacao"${amb !== 'producao' ? ' checked' : ''}> Homologação (teste — nota sem valor)</label>
-    <label class="block"><input type="radio" name="ambiente" value="producao"${amb === 'producao' ? ' checked' : ''}> Produção (nota de verdade)</label>
-  </fieldset>
-  <fieldset class="card" style="border:1px solid #1b2040;border-radius:10px;padding:12px">
-    <legend class="px-1">Certificado A1 (.pfx)</legend>
-    <label class="block">Arquivo .pfx <input type="file" name="pfx" accept=".pfx,.p12" class="block mt-1"></label>
-    <label class="block mt-2">Senha do certificado <input type="password" name="senha" autocomplete="off" class="bg-gray-800 p-1 rounded w-full"></label>
-    <p class="text-sm text-gray-400 mt-2">A senha é guardada cifrada e usada só na hora de assinar. Deixe em branco pra manter o certificado atual.</p>
-  </fieldset>
-  <button class="px-4 py-2 rounded bg-cyan-700 text-white">Salvar</button>
-</form>
-<p class="mt-3"><a class="text-gray-400" href="/dashboard/fiscal">← todas as notas</a></p>
-</div>`;
-  return renderLayout({ active: 'fiscal', title: 'Configuração fiscal', body, dark: true, user });
+${dados}
+<form method="post" action="/dashboard/fiscal/config" enctype="multipart/form-data" class="cc-form cc-nf-cfg" style="margin-top:16px">
+  ${cartaoSecao({
+    titulo: 'Ambiente de emissão',
+    corpoHtml: `<fieldset class="cc-nf-radios"><legend>Onde a nota sai</legend>
+    <label><input type="radio" name="ambiente" value="homologacao"${amb !== 'producao' ? ' checked' : ''}> Homologação (teste — nota sem valor)</label>
+    <label><input type="radio" name="ambiente" value="producao"${amb === 'producao' ? ' checked' : ''}> Produção (nota de verdade)</label>
+  </fieldset>`,
+  })}
+  ${cartaoSecao({
+    titulo: 'Certificado A1 (.pfx)',
+    corpoHtml: `<div class="cc-nf-form">
+    <label class="cc-campo cc-nf-2"><span>Arquivo .pfx</span><input type="file" name="pfx" accept=".pfx,.p12"></label>
+    <label class="cc-campo cc-nf-2"><span>Senha do certificado</span><input type="password" name="senha" autocomplete="off"></label>
+    <p class="cc-nf-dica cc-nf-cheia">A senha é guardada cifrada e usada só na hora de assinar. Deixe em branco pra manter o certificado atual.</p>
+  </div>`,
+  })}
+  <div class="cc-nf-rodape">${botao({ rotulo: 'Salvar', tipo: 'submit', tom: 'ouro', icone: 'check' })}${botao({ rotulo: '← todas as notas', href: '/dashboard/fiscal', tom: 'fantasma' })}</div>
+</form>`;
+  return pagina('Configuração fiscal', user, body);
 }

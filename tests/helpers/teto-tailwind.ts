@@ -99,6 +99,10 @@ export const TELAS_RENOVADAS: string[] = [
   'energia-views.ts',
   'conhecer-views.ts',
 
+  // R20 — Financeiro II (Notas fiscais + Cobrar cliente; Assinaturas já veio no padrão)
+  'fiscal-views.ts',
+  'cobrar-views.ts',
+
 ];
 
 export const RE_TAILWIND = /\b(bg|text|border|ring|from|to)-(white|black|slate|gray|zinc|sky|cyan|amber|emerald|rose|red|green|yellow|indigo|violet)(-\d{2,3})?\b|\b(p|px|py|m|mx|my|mt|mb|gap|space-[xy])-\d|\brounded(-\w+)?\b|\bgrid-cols-\d/;

@@ -148,6 +148,7 @@ import { montarRotasEnergia } from './energia-rotas.js';
 import { criarTravaDeModulo } from './modulos-contratados.js';
 import { bancoDoOperador } from '../tenant-client.js';   // strangler RLS Fase B (flag RLS_TENANT_ROTAS)
 import { montarRotasCobrar } from './cobrar-rotas.js';
+import { vinculosDaNota } from './fiscal-vinculos.js';
 import { guardaClienteDaEmpresa, clienteDaEmpresa, anexoDoCliente, sistemaDaEmpresa } from './clientes-guarda.js';   // R16: /clientes presa à empresa da sessão
 import { criarTravaLeadDaEmpresa } from './trava-lead-empresa.js';
 import { criarTravaPropostaDaEmpresa, leadIdConferido } from './trava-proposta-empresa.js';
@@ -587,7 +588,7 @@ export function createDashboardRouter(
   montarRotasCobrar(router, {
     supabase, cobrancas: supabaseService,
     infinitepayHandle: options.infinitepayHandle, appBaseUrl: options.appBaseUrl,
-  });
+  }, exigir);
 
   // ----- ASSINATURAS — cobrança recorrente (28/09/2026) -----
   // SÓ a casa (soDaCasa): cadastro, faturas de todos os clientes e ações. Antes
@@ -1181,6 +1182,8 @@ export function createDashboardRouter(
       const aliquotaIss = Number(servico.aliquota_iss);
       const issRetido = b.iss_retido === 'on';
       const calc = calcularNota({ valorBruto, aliquotaIss, issRetido });
+      // Só vínculo da empresa da sessão (R20): fechamento/lead de outra empresa viram null.
+      const vinculos = await vinculosDaNota(bancoDoOperador(req, supabase), companyId, { fechamentoId: String(b.fechamento_id ?? ''), leadId: String(b.lead_id ?? '') });
       const ok = await atualizarNotaPreparada(supabase, companyId, notaId, {
         competencia, servicoId,
         descricao: String(b.descricao ?? '').trim() || servico.descricao_padrao,
@@ -1198,8 +1201,7 @@ export function createDashboardRouter(
           codMunIbge: String(b.cod_mun_ibge ?? '').replace(/\D/g, '') || null,
         },
         valorBruto, aliquotaIss, valorIss: calc.valorIss, issRetido, valorLiquido: calc.valorLiquido,
-        fechamentoId: String(b.fechamento_id ?? '').trim() || null,
-        leadId: String(b.lead_id ?? '').trim() || null,
+        ...vinculos,
       });
       if (!ok) { res.redirect(`/dashboard/fiscal/${notaId}`); return; }
       await registrarEvento(supabase, notaId, 'editada', {});
@@ -1233,6 +1235,8 @@ export function createDashboardRouter(
       const aliquotaIss = Number(servico.aliquota_iss);
       const issRetido = b.iss_retido === 'on';
       const calc = calcularNota({ valorBruto, aliquotaIss, issRetido });
+      // Só vínculo da empresa da sessão (R20): fechamento/lead de outra empresa viram null.
+      const vinculos = await vinculosDaNota(bancoDoOperador(req, supabase), companyId, { fechamentoId: String(b.fechamento_id ?? ''), leadId: String(b.lead_id ?? '') });
       const id = await criarNota(supabase, {
         companyId, competencia, servicoId,
         descricao: String(b.descricao ?? '').trim() || servico.descricao_padrao,
@@ -1250,8 +1254,7 @@ export function createDashboardRouter(
           codMunIbge: String(b.cod_mun_ibge ?? '').replace(/\D/g, '') || null,
         },
         valorBruto, aliquotaIss, valorIss: calc.valorIss, issRetido, valorLiquido: calc.valorLiquido,
-        fechamentoId: String(b.fechamento_id ?? '').trim() || null,
-        leadId: String(b.lead_id ?? '').trim() || null,
+        ...vinculos,
         createdBy: req.dashUser!.id,
       });
       await registrarEvento(supabase, id, 'preparada');
@@ -1345,6 +1348,11 @@ export function createDashboardRouter(
       const { anexarPdf, getNota, registrarEvento } = await import('../financeiro/fiscal/notas-repo.js');
       const { engatarNotaNoCaixa } = await import('../financeiro/fiscal/ponte-caixa.js');
       const companyId = req.dashUser!.companyId;
+      // Só nota DESTA empresa e ainda preparada (R20): antes o PDF subia pro
+      // storage antes de qualquer conferência.
+      const antes = await getNota(supabase, companyId, notaId);
+      if (!antes) { res.status(404).send('Nota não achada'); return; }
+      if (antes.status !== 'preparada') { res.redirect(`/dashboard/fiscal/${notaId}`); return; }
       const numeroSanitizado = numero.replace(/[^\w.-]/g, '_');
       const path = `fiscal/${companyId}/${notaId}-nfse-${numeroSanitizado}.pdf`;
       const { error: upErr } = await supabase.storage.from('client-attachments').upload(path, file.buffer, {
