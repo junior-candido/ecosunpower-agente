@@ -258,7 +258,7 @@ export function renderLeadDetailPage(
   // R0: quem está vendo — sem ele o tenant via o menu e o rodapé da EcoSun.
   user: DashUser | undefined,
   // Atendimento: a lista de conversas (coluna 1) e o chat completo do lead.
-  extras: { lista?: ListaConversas; filtros?: FiltrosConversa; mensagens?: MensagemChat[]; envio?: CompositorInput; donoPessoal?: string | null; agendamentos?: PedidoAgendaPainel[]; agendaMsg?: string } = {},
+  extras: { lista?: ListaConversas; filtros?: FiltrosConversa; mensagens?: MensagemChat[]; envio?: CompositorInput; donoPessoal?: string | null; agendamentos?: PedidoAgendaPainel[]; agendaMsg?: string; soMiolo?: boolean } = {},
 ): string {
   void conversa; void docsResultado; void envioResultado;
   return renderAtendimentoPage({
@@ -272,5 +272,6 @@ export function renderLeadDetailPage(
     donoPessoal: extras.donoPessoal,
     agendamentos: extras.agendamentos,
     agendaMsg: extras.agendaMsg,
+    soMiolo: extras.soMiolo,
   });
 }

@@ -229,7 +229,14 @@ export function renderLayout(input: LayoutInput): string {
   // da MARCA da empresa em contexto (migration 120; sem cor cadastrada, âmbar).
   // Tela renovada (tailwind:false): sem o Tailwind do CDN e com o reset de base
   // no lugar, DEPOIS do CSS do painel (onde o Tailwind injetava o dele).
+  // Troca de tela sem clarão: fundo e esquema de cor ANTES de qualquer arquivo (entre
+  // um documento e outro o navegador pintava branco até o CSS chegar) + transição
+  // suave entre páginas do mesmo site (Chrome/Edge; os outros ignoram).
+  const cabecaSemClarao = dark
+    ? '<meta name="color-scheme" content="dark">\n<style>html{background:#0A1729}@view-transition{navigation:auto}</style>'
+    : '<style>@view-transition{navigation:auto}</style>';
   const cabecaEstilos = [
+    cabecaSemClarao,
     comTailwind ? '<script src="https://cdn.tailwindcss.com"></script>' : '',
     FONTES_HEAD,
     `<link rel="stylesheet" href="${URL_CSS_PAINEL}">`,

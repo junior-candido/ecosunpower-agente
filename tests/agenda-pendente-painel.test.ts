@@ -54,3 +54,34 @@ describe('rota POST /leads/:id/agendamento/:pedidoId', () => {
     expect(bloco).toContain('comEmpresaDe(cid, () => comCanal(');
   });
 });
+
+describe('aviso de agendamento na troca suave (miolo)', async () => {
+  const { renderLeadDetailPage } = await import('../src/modules/dashboard/leads-views.js');
+  const { SCRIPT_TROCA } = await import('../src/modules/dashboard/atendimento-views.js');
+  const { USER_CASA, leadDetalhe, SERVICOS_LEAD } = await import('./fixtures/miolo-leads.js');
+  const { listaConversas } = await import('./fixtures/telas-renovadas.js');
+  const lead = leadDetalhe();
+  const agendamentos = [{ id: PED, tipo: 'visita' as const, quando: 'quinta (01/10), às 14h' }];
+  const admin = { ...USER_CASA, isAdmin: true };
+
+  it('vem DENTRO da coluna do chat — no miolo e na página inteira', () => {
+    for (const soMiolo of [true, false]) {
+      const h = renderLeadDetailPage(lead, [], '', '', SERVICOS_LEAD, admin, { lista: listaConversas(3), filtros: {}, agendamentos, soMiolo });
+      const ini = h.indexOf('<section class="cc-at-col cc-at-chat"');
+      const fim = h.indexOf('</section>', ini);
+      const aviso = h.indexOf('Agendamento aguardando sua confirmação');
+      expect(aviso, `soMiolo=${soMiolo}`).toBeGreaterThan(ini);
+      expect(aviso).toBeLessThan(fim);
+      expect(h.slice(ini, fim)).toContain(`/agendamento/${PED}`);
+    }
+  });
+
+  it('sem style inline (CSS no arquivo do Atendimento) e botões sem recarregar no script da troca', async () => {
+    const h = blocoAgendaPendente(LEAD, agendamentos, true);
+    expect(h).not.toContain('style=');
+    const { CSS_ATENDIMENTO } = await import('../src/modules/dashboard/ui/css-atendimento.js');
+    expect(CSS_ATENDIMENTO).toContain('.cc-at-agenda{');
+    expect(SCRIPT_TROCA).toContain("closest('.cc-at-agenda')");
+    expect(SCRIPT_TROCA).toContain('agendamento');
+  });
+});
