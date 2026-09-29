@@ -113,14 +113,14 @@ import { renderContratosPage, type ContratoCliente } from './contratos-views.js'
 import { renderContratoFormPage, renderDocBloqueadoPage } from './contrato-form-views.js';
 import type { SugestaoIa } from '../closing/revisar-contrato.js';
 import { CLIENTE_STATUSES } from './clientes-queries.js';
-import { can, podeDispararMensagens, usinaPertenceAoOperador, escopoSyncTodos } from './permissions.js';
+import { can, podeDispararMensagens, usinaPertenceAoOperador, escopoSyncTodos, ehPapelTv } from './permissions.js';
 import type { AuthedRequest } from './auth.js';
 import { pastaDaEmpresa, listarPastasDaEmpresa } from './pasta-da-empresa.js';
 import { EMPRESA_CASA as EMPRESA_PADRAO_PASTA } from './canal-envio.js';
 import type { BlogGenerator, BlogDraft } from '../blog-generator.js';
 import { renderBlogDraftsPage, renderBlogIndisponivel, renderBlogRevisarPage, renderBlogLayout } from './blog-views.js';
 import { renderEmailPage, renderEmailLayout, renderEmailIndisponivel } from './email-views.js';
-import { renderMedicaoPage } from './medicao-views.js';
+import { renderMedicaoTela } from './medicao-views.js';
 import {
   renderDemonstrativosLista, renderDemonstrativoCliente, renderConferenciaPdf, renderDigitar, renderEnviarPdf,
   renderConfirmarEnvioRelatorio, type ResultadoLeituraPdf,
@@ -139,7 +139,9 @@ import type { ManutencaoTipo } from './manutencao-motor.js';
 import { criarOS, abrirOSDeManutencao, getOS, salvarOS, addFotoOS, listFotosOS, fotoCountsPorItem, concluirOS } from './os-queries.js';
 import { renderOSPage, renderOSLaudoHtml } from './os-views.js';
 import { hidratarChecklist, resumoOS, type OSTipo } from './os-checklist.js';
-import { rotaCommandCenter, rotaCentralAtencao, rotaModoTv } from './command-center-rotas.js';
+import { rotaCommandCenter, rotaCentralAtencao, rotaModoTv, travaCockpitDaCasa, travaVisaoGeralDaCasa, travaPapelTv, nomeDaAssistente } from './command-center-rotas.js';
+import { paginaInicialDe, destinoDepoisDoLogin } from './entrada.js';
+import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
 import { rotaMapaJson, rotaLocalizarPagina, rotaLocalizarUma, rotaSalvarPosicao } from './mapa-usinas-rotas.js';
 import { blocoMiniMapaUsina } from './mapa-usinas-views.js';
 import { montarRotasEnergia } from './energia-rotas.js';
@@ -166,7 +168,7 @@ function renderImportLeadsJunhoPage(r: ResultadoImport, didApply: boolean): stri
   const banner = didApply
     ? `<div style="background:#064e3b;border:1px solid #34d399;border-radius:12px;padding:16px;margin-bottom:20px">
          ✅ <strong>Importado!</strong> ${r.gravados} gravados · ${r.pulados} pulados · ${r.erros} erros.
-         Os "cadência Eva" entram na fila no próximo ciclo do cron. <a href="/dashboard/cockpit" style="color:#34d399">Ver dashboard →</a>
+         Os "cadência Eva" entram na fila no próximo ciclo do cron. <a href="/dashboard/command-center" style="color:#34d399">Ver dashboard →</a>
        </div>`
     : `<div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:16px;margin-bottom:20px">
          🔍 <strong>Prévia</strong> — ${r.gravados} prontos · ${r.pulados} pulados · ${r.erros} erros. Nada gravado ainda.
@@ -375,9 +377,11 @@ export function createDashboardRouter(
   router.post('/login', async (req: Request, res: Response) => {
     const login = String(req.body?.login ?? '').trim();
     const senha = String(req.body?.senha ?? '');
+    // R5 (D1 = a): sem `next` do painel → a entrada (Command Center), decidida
+    // depois de saber quem entrou (destinoDepoisDoLogin). O `next` segue valendo.
     const next = typeof req.body?.next === 'string' && req.body.next.startsWith('/dashboard')
       ? req.body.next
-      : '/dashboard/cockpit';
+      : undefined;
 
     // [Fase 2 A1] Login MULTI-EMPRESA: candidatos de todas as empresas (EcoSun
     // primeiro — comportamento antigo preservado), a senha desempata.
@@ -392,10 +396,11 @@ export function createDashboardRouter(
       );
     }
     // Checkbox "Continuar conectado": marcada (padrão) = cookie 60d; desmarcada = só a sessão.
-    setSessionCookie(res, found.user.id, req.body?.manter === '1');
+    // A TV (papel "TV só-leitura", R26) fica sempre conectada: é uma tela de parede.
+    setSessionCookie(res, found.user.id, req.body?.manter === '1' || ehPapelTv(found.user));
     await touchLastLogin(supabase, found.user.id);
     await audit(supabase, { companyId: found.user.companyId, userId: found.user.id, entidade: 'sessao', acao: 'login' });
-    res.redirect(next.startsWith('/dashboard') ? next : '/dashboard/cockpit');
+    res.redirect(destinoDepoisDoLogin(next, found.user));
   });
 
   router.post('/logout', (_req: Request, res: Response) => {
@@ -484,7 +489,7 @@ export function createDashboardRouter(
     setSessionCookie(res, tok.userId, false);
     await touchLastLogin(supabase, tok.userId);
     await audit(supabase, { companyId: tok.companyId, userId: tok.userId, entidade: 'sessao', acao: tok.tipo === 'convite' ? 'senha_criada_convite' : 'senha_redefinida' });
-    res.redirect('/dashboard/cockpit');
+    res.redirect(paginaInicialDe(u));
   });
 
   router.get('/esqueci-senha', async (_req: Request, res: Response) => {
@@ -521,6 +526,10 @@ export function createDashboardRouter(
   // ----------------------------------------------------------------------
 
   router.use(criarSessionAuth(supabase));
+
+  // Papel "TV só-leitura" (R26, D6 = a): só abre o Modo TV — antes de qualquer
+  // outra trava ou rota (command-center-rotas.ts#travaPapelTv).
+  router.use(travaPapelTv);
 
   // Segundo portão, CENTRAL: módulo contratado pela EMPRESA (empresa_modulos).
   // Tenant sem o módulo → vitrine /conhecer/<chave> (POST → 403). Lê 1x por
@@ -566,9 +575,9 @@ export function createDashboardRouter(
   // empresa → 404. Ver trava-proposta-empresa.ts e tests/propostas-trava-empresa.test.ts.
   router.use('/propostas', criarTravaPropostaDaEmpresa(supabase));
 
-  // Raiz redireciona pro cockpit (visao geral 1-tela). Era /home antes.
-  router.get('/', (_req, res) => {
-    res.redirect('/dashboard/cockpit');
+  // Raiz → a entrada (R5, D1 = a): Command Center para todos. Era o Cockpit.
+  router.get('/', (req, res) => {
+    res.redirect(paginaInicialDe((req as AuthedRequest).dashUser));
   });
 
   // ----- COBRANÇAS (InfinitePay) — gera link de pagamento pro cliente -----
@@ -1146,7 +1155,10 @@ b.onclick=async function(){
       const { empresaDe } = await import('../empresa-config.js');
       const companyId = req.dashUser!.companyId;
       const aviso = typeof req.query.ok === 'string' ? 'Salvo. A assistente já está usando este texto.' : undefined;
-      res.type('html').send(telaConhecimento(itensDaEmpresa(companyId), empresaDe(companyId).nomeAtendente, req.dashUser, aviso));
+      // R21 (segurança/marca): empresaDe() de um tenant que o cache não conhece cai
+      // nos padrões da casa ("Eva"). Tenant usa o nome CADASTRADO dele ou "assistente".
+      const nome = companyId === ECOSUN_COMPANY_ID ? empresaDe(companyId).nomeAtendente : (nomeDaAssistente(companyId) ?? 'assistente');
+      res.type('html').send(telaConhecimento(itensDaEmpresa(companyId), nome, req.dashUser, aviso));
     } catch (err) {
       console.error('[conhecimento]', err);
       res.status(500).send(`Erro: ${escapeHtmlSimple((err as Error).message)}`);
@@ -1192,12 +1204,7 @@ b.onclick=async function(){
     const resumo = escolhido
       ? await resumoDoAparelho(client, escolhido, companyId, horas)
       : { aparelho: null, agora: null, demanda: null, janelas: [], consumoDiaKwh: null, injecaoDiaKwh: null, minutosSemReceber: null };
-    res.type('text/html').send(renderLayout({
-      active: 'medicao',
-      title: 'Medição',
-      body: renderMedicaoPage(aparelhos, resumo, horas),
-      user: req.dashUser,
-    }));
+    res.type('text/html').send(renderMedicaoTela(aparelhos, resumo, horas, req.dashUser));
   });
 
   // GESTÃO DE ENERGIA G1 (energia-rotas.ts): lista, cadastro do medidor, "Energia
@@ -2206,7 +2213,7 @@ b.onclick=async function(){
   router.get('/predio', async (req: AuthedRequest, res) => {
     if (!ehAdminEcosun(req.dashUser)) { res.status(403).send('Sem permissão'); return; }
     const { renderPredioPage } = await import('./predio-views.js');
-    res.type('html').send(renderPredioPage());
+    res.type('html').send(renderPredioPage(req.dashUser));
   });
 
   router.get('/api/predio', async (req: AuthedRequest, res) => {
@@ -2432,7 +2439,7 @@ b.onclick=async function(){
   // módulo não contratado aparece trancado. Modo TV segue só da casa.
   router.get('/command-center', rotaCommandCenter(supabase));
   router.get('/atencao', rotaCentralAtencao(supabase));
-  router.get('/tv', rotaModoTv());
+  router.get('/tv', rotaModoTv(supabase));
 
   // Mapa das Usinas (28/09/2026): alfinetes em JSON (company_id da sessão, módulo
   // + papel conferidos na rota), Localizar em lote e alfinete arrastável.
@@ -2442,9 +2449,18 @@ b.onclick=async function(){
   router.post('/monitoramento/localizar/:id', rotaLocalizarUma(supabase));
   router.post('/monitoramento/:id/posicao', rotaSalvarPosicao(supabase));
 
+  // Cockpit ANTIGO (saiu do menu no R5): só da casa. A consulta dele não filtra
+  // empresa e o SYNC AGORA sincroniza as usinas de todas — tenant no GET vai
+  // pro Command Center dele; POST/JSON → 403 (command-center-rotas.ts).
+  router.use('/cockpit', travaCockpitDaCasa);
+
   // Cockpit: 1 tela dark neon com KPIs + gauges + funil + atividade + top leads.
   // Auto-refresh 30s (gauges) + 5min (page completa). ECharts via CDN.
   router.get('/cockpit', async (req: Request, res: Response) => {
+    // R25 (faxina): /cockpit redireciona pra entrada (Command Center). O Cockpit
+    // antigo continua abrindo SÓ com ?antigo=1 (link discreto no rodapé do
+    // Command Center, só casa) até o Junior decidir aposentar de vez.
+    if (req.query.antigo !== '1') { res.redirect(302, paginaInicialDe((req as AuthedRequest).dashUser)); return; }
     try {
       const { getCockpitData } = await import('./cockpit-queries.js');
       const { renderCockpitPage } = await import('./cockpit-views.js');
@@ -2557,7 +2573,8 @@ b.onclick=async function(){
   });
 
   // Home: KPIs + grafico mensal. ?mes=YYYY-MM filtra os cards por um mês passado.
-  router.get('/home', async (req: Request, res: Response) => {
+  // R24 (segurança): só da casa — a consulta não filtra empresa; tenant → Command Center.
+  router.get('/home', travaVisaoGeralDaCasa, async (req: Request, res: Response) => {
     try {
       const agora = new Date();
       const mesParam = String(req.query.mes ?? '').match(/^(\d{4})-(\d{2})$/);
@@ -4747,6 +4764,13 @@ b.onclick=async function(){
     if (!leadId || !TIPOS.includes(tipo)) {
       return res.status(400).json({ ok: false, error: 'leadId/tipo invalido' });
     }
+    // R22 (segurança): o lead tem que ser da empresa da sessão — antes qualquer
+    // usuário com usinas:editar silenciava a sugestão do cliente de OUTRA empresa
+    // só sabendo o id (a memória é gravada pelo serviço, sem RLS).
+    if (!UUID_RE.test(leadId)) return res.status(400).json({ ok: false, error: 'leadId/tipo invalido' });
+    const { data: leadDaSessao } = await bancoDoOperador(req, supabase).from('leads').select('id')
+      .eq('id', leadId).eq('company_id', req.dashUser!.companyId).maybeSingle();
+    if (!leadDaSessao) return res.status(404).json({ ok: false, error: 'Cliente não encontrado.' });
     const agora = new Date();
     await supabaseService.upsertSugestaoMemoria({
       leadId, sistemaId: null, tipo, acao: 'dispensada',
@@ -4951,8 +4975,11 @@ b.onclick=async function(){
   //    devolve { mensagem, waBase }. Não grava nada.
   //  - CONFIRMAR (`enviado=1` + `mensagem`): grava na timeline + (tipos mapeados)
   //    abre abordagem encerrada pra Eva não re-mandar. Devolve { ok:true }.
-  router.post('/pos-venda/:leadId/acao', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+  // R22 (segurança): a fase CONFIRMAR grava atividade/abordagem — pede editar
+  // (antes bastava visualizar) e o id tem que ser UUID (senão virava 500).
+  router.post('/pos-venda/:leadId/acao', exigir('usinas', 'editar'), async (req: AuthedRequest, res: Response) => {
     const leadId = String(req.params.leadId);
+    if (!UUID_RE.test(leadId)) { res.status(400).json({ error: 'id inválido' }); return; }
     const tipo = String(req.body.tipo ?? '') as 'parabens' | 'relatorio' | 'limpeza' | 'depoimento' | 'upgrade' | 'contato';
     const enviado = req.body.enviado === '1' || req.body.enviado === 'true';
     const TIPOS_OK = ['parabens', 'relatorio', 'limpeza', 'depoimento', 'upgrade', 'contato'];
@@ -6712,7 +6739,7 @@ b.onclick=async function(){
         '<div style="font-family:sans-serif;text-align:center;padding:60px 20px;color:#334155">'
         + '<h2>🔒 Em breve para a sua empresa</h2>'
         + '<p>Esta área ainda está sendo preparada no ambiente multi-empresa.</p>'
-        + '<a href="/dashboard/cockpit">← voltar ao painel</a></div>',
+        + '<a href="/dashboard/command-center">← voltar ao painel</a></div>',
       );
       return;
     }
@@ -7931,18 +7958,18 @@ b.onclick=async function(){
   });
 
   // ============================================
-  // Cérebro do Elo: tela viva full-screen (sem sidebar, feita pra
-  // apresentação) + "Pergunte ao Elo" ancorado no snapshot real.
+  // Cérebro do Elo: tela viva (desde o R23 dentro da casca, modo imersivo)
+  // + "Pergunte ao Elo" ancorado no snapshot real. Só da casa (soEcosunPorEnquanto).
   // ============================================
 
-  router.get('/cerebro', exigir('relatorios', 'visualizar'), async (_req: Request, res: Response) => {
+  router.get('/cerebro', exigir('relatorios', 'visualizar'), async (req: Request, res: Response) => {
     try {
       const { montarSnapshotElo } = await import('./cerebro-data.js');
       const { montarFalasElo } = await import('./cerebro-elo.js');
       const { renderCerebroPage } = await import('./cerebro-views.js');
       const snap = await montarSnapshotElo(supabaseService);
       const falas = montarFalasElo(snap);
-      res.type('text/html').send(renderCerebroPage(snap, falas));
+      res.type('text/html').send(renderCerebroPage(snap, falas, (req as AuthedRequest).dashUser));
     } catch (err) {
       console.error('[dashboard/cerebro]', err);
       res.status(500).type('text/html').send(`<h2>Erro Cérebro</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);

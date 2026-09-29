@@ -2,8 +2,13 @@
 // Tela "Recados da equipe": o que gente DE DENTRO mandou no número público da
 // assistente. A assistente não trata isso como lead (ver contatos-internos.ts),
 // mas nada se perde — cai aqui pra empresa ler.
+//
+// Renovação do miolo — R21 (28/09/2026): tabela cc- (vira cartão no celular),
+// tema escuro, sem Tailwind. Mesmo dado, mesmo escape (mensagem vem de fora).
 import type { Recado } from '../contatos-internos.js';
-import { renderLayout, escapeHtml } from './views.js';
+import { escapeHtml } from './views.js';
+import { cabecalhoPagina, cartaoSecao, estadoVazio } from './ui/componentes.js';
+import { renderComercial, TRILHA_COMERCIAL } from './comercial-casca.js';
 
 function quando(iso: string): string {
   const d = new Date(iso);
@@ -14,26 +19,31 @@ function quando(iso: string): string {
 /** Só as linhas — separado da moldura pra poder testar o escape sem montar a página. */
 export function linhasRecados(recados: Recado[]): string {
   if (recados.length === 0) {
-    return '<tr><td class="p-3 text-gray-500" colspan="4">Nenhum recado ainda. Aqui aparece o que a equipe manda no número da assistente — ela guarda tudo e não trata como cliente.</td></tr>';
+    return '<tr><td colspan="4">Nenhum recado ainda. Aqui aparece o que a equipe manda no número da assistente — ela guarda tudo e não trata como cliente.</td></tr>';
   }
   // O texto vem do WhatsApp (gente de fora escreve): escapar SEMPRE.
   return recados.map((r) => `
-    <tr class="border-b border-gray-800">
-      <td class="p-2 whitespace-nowrap">${quando(r.criado_em)}</td>
-      <td class="p-2">${escapeHtml(r.nome)}</td>
-      <td class="p-2 text-gray-400 whitespace-nowrap">${escapeHtml(r.telefone)}</td>
-      <td class="p-2">${escapeHtml(r.mensagem)}</td>
+    <tr>
+      <td class="cc-n" data-label="Quando">${escapeHtml(quando(r.criado_em))}</td>
+      <td data-label="Quem">${escapeHtml(r.nome)}</td>
+      <td class="cc-n" data-label="Telefone">${escapeHtml(r.telefone)}</td>
+      <td data-label="Recado"><span class="cc-cm-msg">${escapeHtml(r.mensagem)}</span></td>
     </tr>`).join('');
 }
 
 export function telaRecados(recados: Recado[], user?: unknown): string {
-  const body = `
-<div style="color:#d1d5db">
-<h1 class="text-xl font-bold text-cyan-300 mb-1">📥 Recados da equipe</h1>
-<p class="text-sm text-gray-400 mb-4">Mensagens de quem é <b>de dentro</b> e escreveu no número da assistente. Ela anota e não trata como cliente — nada aqui vira lead.</p>
-<div style="overflow-x:auto"><table class="w-full text-sm">
-<thead><tr class="text-left text-gray-400"><th class="p-2">Quando</th><th class="p-2">Quem</th><th class="p-2">Telefone</th><th class="p-2">Recado</th></tr></thead>
+  const tabela = recados.length === 0
+    ? estadoVazio({ tipo: 'vazio', titulo: 'Nenhum recado ainda', texto: 'Aqui aparece o que a equipe manda no número da assistente — ela guarda tudo e não trata como cliente.' })
+    : `<div class="cc-tbl-wrap cc-tbl-cartoes"><table class="cc-tbl">
+<thead><tr><th>Quando</th><th>Quem</th><th>Telefone</th><th>Recado</th></tr></thead>
 <tbody>${linhasRecados(recados)}</tbody>
-</table></div></div>`;
-  return renderLayout({ active: 'recados', title: 'Recados da equipe', body, dark: true, user: user as never });
+</table></div>`;
+  const body = `
+    ${cabecalhoPagina({
+      trilha: [TRILHA_COMERCIAL, { rotulo: 'Recados da equipe' }],
+      titulo: 'Recados da equipe',
+      subtitulo: 'Mensagens de quem é de dentro e escreveu no número da assistente. Ela anota e não trata como cliente — nada aqui vira lead.',
+    })}
+    ${cartaoSecao({ titulo: 'Recados', dica: recados.length ? `${recados.length} recado(s), do mais novo pro mais antigo` : undefined, corpoHtml: tabela })}`;
+  return renderComercial({ active: 'recados', title: 'Recados da equipe', body, user });
 }

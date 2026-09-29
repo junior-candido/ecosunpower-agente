@@ -15,17 +15,20 @@ const tenant: DashUser = {
 };
 
 describe('entrada.ts â€” tela de entrada e link da logo', () => {
-  it('EcoSun continua na Home (por enquanto)', () => {
-    expect(paginaInicialDe(casa)).toBe('/dashboard/home');
+  // TROCA DELIBERADA (renovacao do miolo R5, decisao D1 = a - ok do Junior no PR):
+  // o R0 deixou a EcoSun na Home "por enquanto"; no R5 a entrada de TODOS virou o
+  // Command Center (sem sessao -> login). O resto do R0 continua igual.
+  it('EcoSun entra no Command Center (R5)', () => {
+    expect(paginaInicialDe(casa)).toBe('/dashboard/command-center');
   });
   it('tenant vai para o Command Center dele', () => {
     expect(paginaInicialDe(tenant)).toBe('/dashboard/command-center');
   });
-  it('sem usuÃ¡rio (tela legada) fica como sempre: Home', () => {
-    expect(paginaInicialDe(undefined)).toBe('/dashboard/home');
+  it('sem sessao -> login (R5)', () => {
+    expect(paginaInicialDe(undefined)).toBe('/dashboard/login'); // R5: sem sessao -> login
   });
   it('a logo leva para a mesma entrada', () => {
-    expect(linkDaLogo(casa)).toBe('/dashboard/home');
+    expect(linkDaLogo(casa)).toBe('/dashboard/command-center'); // R5
     expect(linkDaLogo(tenant)).toBe('/dashboard/command-center');
   });
 });
@@ -36,9 +39,9 @@ describe('casca â€” link da logo', () => {
     expect(h).toMatch(/<a href="\/dashboard\/command-center" class="cc-sb-logo"/);
     expect(h).not.toMatch(/<a href="\/dashboard\/home" class="cc-sb-logo"/);
   });
-  it('EcoSun: logo continua na Home', () => {
+  it('EcoSun: logo leva ao Command Center (R5)', () => {
     const h = renderLayout({ active: 'home', title: 'X', body: '', user: casa });
-    expect(h).toMatch(/<a href="\/dashboard\/home" class="cc-sb-logo"[^>]*>\s*<img[^>]*alt="EcoSunPower"/);
+    expect(h).toMatch(/<a href="\/dashboard\/command-center" class="cc-sb-logo"[^>]*>\s*<img[^>]*alt="EcoSunPower"/);
   });
 });
 
@@ -66,7 +69,7 @@ describe('vitrine /conhecer â€” contraste e botÃ£o', () => {
   });
   it('EcoSun: "â† voltar" continua na Home', () => {
     const hc = telaConhecer('marketing', 'X', casa);
-    expect(hc.slice(hc.indexOf('<main'))).toContain('href="/dashboard/home"');
+    expect(hc.slice(hc.indexOf('<main'), hc.indexOf('</main>'))).toContain('href="/dashboard/command-center"'); // R5
   });
   it('tela de "interesse registrado" segue a mesma regra', () => {
     const e = telaConhecerEnviado('marketing', tenant);

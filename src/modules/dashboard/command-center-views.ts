@@ -31,8 +31,12 @@ import {
 } from './command-center-queries.js';
 import { MODULOS } from './conhecer-views.js';
 import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
-import { can } from './permissions.js';
+import { can, ehPapelTv } from './permissions.js';
 import { blocoMapaUsinas } from './mapa-usinas-views.js';
+import { URL_CSS_COMMAND_CENTER } from './ui/estatico.js';
+
+/** CSS do Command Center/Central por ARQUIVO no <head> (sem piscada — R5). */
+const CABECA_CC = `<link rel="stylesheet" href="${URL_CSS_COMMAND_CENTER}">`;
 
 export interface CommandCenterDados {
   agora: Date;
@@ -466,9 +470,10 @@ export function graficoCurva(curva: readonly PontoCurva[]): string {
   </div>`;
 }
 
-function geracao(d: CommandCenterDados): string {
+/** `tv`: a mesma peça na TV (R26) — sem link, sem dica de mouse, sem o "dia a dia". */
+function geracao(d: CommandCenterDados, tv = false): string {
   const f = d.dados?.frota ?? null;
-  const acoes = `<a class="cc-link" href="/dashboard/monitoramento">Monitoramento ${icone('right', 'xs')}</a>`;
+  const acoes = tv ? '' : `<a class="cc-link" href="/dashboard/monitoramento">Monitoramento ${icone('right', 'xs')}</a>`;
   if (!f) {
     return cartaoSecao({
       titulo: 'Geração do portfólio', dica: 'real × esperada · 30 dias', classe: 'cc-a-gen', acoesHtml: acoes,
@@ -494,7 +499,7 @@ function geracao(d: CommandCenterDados): string {
   const desvio = temEsperada ? Math.round(((real - esp) / esp) * 1000) / 10 : null;
   const desvioHtml = `<div><span class="cc-lbl-s">Desvio</span><div class="cc-big${desvio === null ? ' cc-faint' : desvio < -10 ? ' cc-txt-crit' : desvio < 0 ? ' cc-txt-warn' : ' cc-txt-ok'}">${desvio === null ? SEM_DADO : `${desvio > 0 ? '+' : ''}${escapeHtml(fmtNumero(desvio, 1))}%`}</div></div>`;
 
-  const legenda = `<div class="cc-chart-leg"><span><i class="cc-sw-real"></i>Real</span>${temEsperada ? '<span><i class="cc-sw-esp"></i>Esperada (média de sol da região)</span>' : ''}<span class="cc-sp"></span><span class="cc-faint cc-hide-m">Passe o mouse numa barra para ver o dia</span></div>`;
+  const legenda = `<div class="cc-chart-leg"><span><i class="cc-sw-real"></i>Real</span>${temEsperada ? '<span><i class="cc-sw-esp"></i>Esperada (média de sol da região)</span>' : ''}<span class="cc-sp"></span>${tv ? '' : '<span class="cc-faint cc-hide-m">Passe o mouse numa barra para ver o dia</span>'}</div>`;
   const nota = temEsperada
     ? (completos.length < comReal.length ? '<p class="cc-nota">A esperada só aparece nos dias em que todas as usinas que mandaram dado têm a potência cadastrada.</p>' : '')
     : '<p class="cc-nota">Só a geração real: falta a potência (kWp) de alguma usina no cadastro, então a esperada ficaria errada.</p>';
@@ -518,7 +523,7 @@ function geracao(d: CommandCenterDados): string {
       ${graficoCurva(f.curva)}
       ${legenda}
       ${nota}
-      <details class="cc-det"><summary>Ver os números dia a dia</summary>${tabelaDias}</details>`,
+      ${tv ? '' : `<details class="cc-det"><summary>Ver os números dia a dia</summary>${tabelaDias}</details>`}`,
   });
 }
 
@@ -533,9 +538,9 @@ const ROTULO_ESTADO: Record<EstadoUsina, string> = {
   normal: 'Normal', atencao: 'Atenção', critico: 'Crítico', sem_comunicacao: 'Sem comunicação', sem_monitoramento: 'Leitura manual',
 };
 
-function usinasAgora(d: CommandCenterDados): string {
+function usinasAgora(d: CommandCenterDados, tv = false): string {
   const f = d.dados?.frota ?? null;
-  const acoes = `<a class="cc-link" href="/dashboard/monitoramento">Abrir frota ${icone('right', 'xs')}</a>`;
+  const acoes = tv ? '' : `<a class="cc-link" href="/dashboard/monitoramento">Abrir frota ${icone('right', 'xs')}</a>`;
   if (!f) {
     return cartaoSecao({
       titulo: 'Usinas agora', dica: 'por estado e cidade', classe: 'cc-a-map', acoesHtml: acoes,
@@ -563,7 +568,7 @@ function usinasAgora(d: CommandCenterDados): string {
     acoesHtml: acoes,
     corpoHtml: `<div class="cc-mapwrap">
         <div><span class="cc-lbl-s">Por cidade · cor do pior estado</span><ul class="cc-cidades">${cidades}${resto}</ul>
-          <p class="cc-nota"><a class="cc-link" href="#cc-mapa-usinas">Ver no mapa ${icone('right', 'xs')}</a></p></div>
+          ${tv ? '' : `<p class="cc-nota"><a class="cc-link" href="#cc-mapa-usinas">Ver no mapa ${icone('right', 'xs')}</a></p>`}</div>
         <div class="cc-mleg">
           ${leg('normal')}${leg('atencao')}${leg('critico')}${leg('sem_comunicacao')}
           <hr>
@@ -739,13 +744,16 @@ export function renderCommandCenterPage(d: CommandCenterDados, user?: DashUser):
     </div>
     ${mapa}
     ${departamentos(d)}
-    <div class="cc-foot">${casa ? `${icone('tv', 'sm')}Modo TV: a tela do escritório vai girar entre visão geral, usinas e comercial. ` : ''}<span class="cc-sp"></span>Todo número é clicável e leva ao detalhe.</div>
+    <div class="cc-foot">${casa ? `${icone('tv', 'sm')}Modo TV: a tela do escritório vai girar entre visão geral, usinas e comercial. ` : ''}<span class="cc-sp"></span>Todo número é clicável e leva ao detalhe.${
+      // R5 (D2 = a): o Cockpit saiu do menu; link discreto só da casa. R25: o
+      // /cockpit redireciona; o antigo só abre com ?antigo=1 (até o Junior decidir).
+      casa ? ` <a class="cc-cockpit-antigo" href="/dashboard/cockpit?antigo=1">Cockpit antigo</a>` : ''}</div>
   </div>
 </div>
-<style>${CSS_COMMAND_CENTER}</style>`;
+`;
 
   return renderLayout({
-    active: 'command_center', title: 'Command Center', body, dark: true, largo: true, user, tailwind: false,
+    active: 'command_center', title: 'Command Center', body, dark: true, largo: true, user, tailwind: false, cabeca: CABECA_CC,
     selos: d.dados ? selosDoMenu(d.dados.eventos, d.dados.fontes) : undefined,
   });
 }
@@ -850,157 +858,177 @@ export function renderCentralAtencaoPage(c: CentralAtencaoDados, user?: DashUser
     </div>
   </div>
 </div>
-<style>${CSS_COMMAND_CENTER}</style>`;
+`;
 
   return renderLayout({
-    active: 'atencao', title: 'Central de Atenção', body, dark: true, largo: true, user, tailwind: false,
+    active: 'atencao', title: 'Central de Atenção', body, dark: true, largo: true, user, tailwind: false, cabeca: CABECA_CC,
     selos: dd ? selosDoMenu(dd.eventos, dd.fontes) : undefined,
   });
 }
 
-/** Página do Modo TV — fase I. Por enquanto só diz o que vem, sem número. */
-export function renderModoTvPage(user?: DashUser): string {
-  const body = `<div class="cc-root">
-  ${cabecalhoPagina({
-    titulo: 'Modo TV',
-    trilha: [{ rotulo: 'Command Center', href: '/dashboard/command-center' }, { rotulo: 'Modo TV' }],
-    subtitulo: 'A tela do escritório: geração agora, energia do dia, usinas online, alarmes críticos, vendas do mês e instalações do dia — girando sozinha a cada 30 segundos.',
-  })}
-  ${estadoVazio({ tipo: 'construcao', texto: 'O Modo TV entra depois que o Command Center estiver com todos os números reais (assim a TV nunca mostra número de enfeite).' })}
-</div>`;
-  return renderLayout({ active: 'tv', title: 'Modo TV', body, dark: true, largo: true, user, tailwind: false });
-}
+// ---------------------------------------------------------------------------
+// Página: Modo TV (fase I / renovação do miolo R26, D6 = a)
+// Tela de parede: 3 visões girando a cada 30 s (visão geral · usinas ·
+// comercial), atalho T = tela cheia, ← → troca na mão. Só números e quadros do
+// Command Center da empresa da sessão — nada de nome de cliente, nada de
+// dinheiro (a rota carrega com PERMISSOES_TV). Casca escondida (menu, barra,
+// rodapé): é uma TV. Recarrega sozinha a cada 5 min pra trazer número novo.
+// ---------------------------------------------------------------------------
 
-// CSS específico das páginas (o resto vem do design system em ui/estilo.ts).
-const CSS_COMMAND_CENTER = `
-.cc-cc .cc-hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.12fr);border-radius:20px;overflow:hidden;border:1px solid rgba(251,191,36,.22);
-  background:linear-gradient(120deg,#12304f 0%,#0f2640 45%,#0f2138 100%);box-shadow:0 20px 50px rgba(0,0,0,.28);margin-bottom:18px;position:relative}
-.cc-cc .cc-hero::after{content:"";position:absolute;right:-120px;top:-160px;width:420px;height:420px;border-radius:50%;background:radial-gradient(circle,rgba(240,165,0,.16),transparent 65%);pointer-events:none}
-.cc-cc .cc-hero-l{padding:24px 28px}
-.cc-cc .cc-who{display:flex;align-items:center;gap:12px;margin-bottom:14px}
-.cc-cc .cc-eva-av{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;flex:none;background:linear-gradient(135deg,#0369a1,#16304F);border:1px solid rgba(251,191,36,.45);color:#fbbf24}
-.cc-cc .cc-hero-l h2{font-size:30px;font-weight:600;letter-spacing:-.02em;line-height:1.1;color:#fff}
-.cc-cc .cc-hero-l>p{margin:10px 0 0;color:var(--cc-text-2);font-size:15px;line-height:1.55;max-width:560px}
-.cc-cc .cc-hero-l>p b{color:#fff;font-weight:600}
-.cc-cc .cc-changed{margin-top:16px}
-.cc-cc .cc-changed .cc-lbl-s{margin-bottom:8px;display:block}
-.cc-cc .cc-hero-r{padding:20px 22px;border-left:1px solid var(--cc-line);background:rgba(6,16,30,.28);display:flex;flex-direction:column;gap:10px;position:relative;z-index:1}
-.cc-cc .cc-hh{display:flex;align-items:center;gap:10px;margin-bottom:2px}
-.cc-cc .cc-hero-r .cc-empty{flex:1;align-items:center}
-
-/* linha 1 = altura da curva; a sobra da coluna da Central vai pra linha 2 (sem buraco entre os painéis) */
-.cc-cc .cc-board{display:grid;grid-template-columns:minmax(0,1fr) 452px;grid-template-rows:auto 1fr;grid-template-areas:"gen att" "map att";gap:18px;margin-top:18px;align-items:start}
-.cc-cc .cc-a-gen{grid-area:gen}.cc-cc .cc-a-map{grid-area:map}
-.cc-cc .cc-a-att{grid-area:att;background:linear-gradient(180deg,#132b47 0%,#0f2138 60%);border-color:rgba(150,185,225,.16);box-shadow:0 18px 44px rgba(0,0,0,.25);display:flex;flex-direction:column}
-/* A Central não empurra a altura do quadro: acompanha a coluna da esquerda (mín. 560 px) e rola por dentro. */
-.cc-cc .cc-board .cc-a-att{contain:size;min-height:560px;align-self:stretch}
-.cc-cc .cc-board .cc-a-att .cc-evs{flex:1;min-height:0;overflow:auto;padding-right:4px;margin-right:-4px}
-.cc-cc .cc-a-genmap{grid-column:1;grid-row:1/span 2;align-self:stretch;justify-content:center;padding:32px 40px}
-.cc-cc .cc-a-genmap .cc-btn-tranc{margin-top:10px}
-.cc-cc .cc-a-att .cc-ph h3{font-size:18px}
-.cc-cc .cc-gsum{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}
-.cc-cc .cc-gsum>div{padding:10px 12px;border-radius:10px;background:rgba(0,0,0,.16);border:1px solid var(--cc-line)}
-.cc-cc .cc-gsum .cc-big{font-size:20px;margin-top:3px}
-.cc-cc .cc-gsum .cc-big small{font-size:12px;color:var(--cc-muted);font-weight:500}
-.cc-cc .cc-txt-crit{color:var(--cc-crit)!important}.cc-cc .cc-txt-warn{color:var(--cc-warn)!important}.cc-cc .cc-txt-ok{color:var(--cc-ok)!important}
-.cc-cc .cc-nota{font-size:12px;color:var(--cc-muted);margin:8px 0 0}
-.cc-cc .cc-det{margin-top:10px;font-size:12.5px;color:var(--cc-muted)}
-.cc-cc .cc-det summary{cursor:pointer;color:var(--cc-text-2)}
-.cc-cc .cc-det .cc-tbl-wrap{max-height:260px;overflow:auto;margin-top:8px}
-.cc-cc .cc-mapwrap{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:18px;align-items:start}
-.cc-cc .cc-cidades{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:7px;font-size:13px}
-.cc-cc .cc-cidades li{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:10px;background:rgba(255,255,255,.028);border:1px solid var(--cc-line)}
-.cc-cc .cc-cidades .cc-cid{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--cc-text-2)}
-.cc-cc .cc-cidades b{font-family:var(--cc-f-num);font-weight:600}
-.cc-cc .cc-mleg{display:flex;flex-direction:column;gap:9px;font-size:13px}
-.cc-cc .cc-ln{display:flex;align-items:center;gap:9px}
-.cc-cc .cc-ln b{margin-left:auto;font-family:var(--cc-f-num);font-weight:600;color:var(--cc-text)}
-.cc-cc .cc-ln b.cc-txt{color:var(--cc-text-2)}
-.cc-cc .cc-mleg .cc-bar{margin:-2px 0 2px 17px}
-.cc-cc .cc-bar-normal i{background:var(--cc-ok)}.cc-cc .cc-bar-atencao i{background:var(--cc-warn)}
-.cc-cc .cc-bar-critico i{background:var(--cc-crit)}.cc-cc .cc-bar-sem_comunicacao i{background:var(--cc-off)}
-.cc-cc .cc-mleg hr{border:0;border-top:1px solid var(--cc-line);margin:4px 0}
-.cc-cc .cc-sevs{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:14px}
-.cc-cc .cc-sev{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 7px;border-radius:8px;background:rgba(0,0,0,.2);border:1px solid var(--cc-line);color:var(--cc-text-2)}
-.cc-cc a.cc-sev:hover{border-color:rgba(251,191,36,.4)}
-.cc-cc .cc-sev b{font-family:var(--cc-f-num);color:var(--cc-text)}
-
-.cc-cc .cc-a-mapa{margin-top:18px}
-.cc-cc .cc-depts{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;margin-top:18px}
-.cc-cc .cc-dept{padding:16px 16px 12px;border-radius:14px;background:var(--cc-surface);border:1px solid var(--cc-line);display:flex;flex-direction:column;transition:border-color .15s,transform .15s}
-.cc-cc .cc-dept:hover{border-color:rgba(251,191,36,.35);transform:translateY(-1px)}
-.cc-cc .cc-dh{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13.5px;color:var(--cc-text-2)}
-.cc-cc .cc-dh .cc-ic{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;background:var(--cc-surface-3);color:var(--cc-gold-2)}
-.cc-cc .cc-dh .cc-go{margin-left:auto;color:var(--cc-faint)}
-.cc-cc .cc-dept .cc-big{font-size:26px;margin-top:12px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cc-cc .cc-dept .cc-big small{font-size:13px;color:var(--cc-muted);font-weight:500;font-family:var(--cc-f-text)}
-.cc-cc .cc-dept .cc-big small.cc-pre{font-size:15px;color:var(--cc-text-2);margin-right:2px}
-.cc-cc .cc-s1{font-size:12.5px;color:var(--cc-muted);margin-top:6px;min-height:36px}
-.cc-cc .cc-st{margin-top:10px;font-size:12px;display:flex;align-items:center;gap:6px;color:var(--cc-text-2);min-width:0}
-.cc-cc .cc-st .cc-dot{flex:none}
-.cc-cc .cc-st-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.cc-cc .cc-foot{margin-top:26px;display:flex;align-items:center;gap:10px;font-size:12px;color:var(--cc-faint)}
-
-/* Vitrine: bloco de módulo fora do plano (cadeado, sem número) */
-.cc-cc .cc-tranc{display:flex;flex-direction:column;gap:9px;align-items:flex-start;border-style:dashed;border-color:rgba(251,191,36,.28)}
-.cc-cc .cc-tranc-h{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:13.5px;color:var(--cc-text)}
-.cc-cc .cc-tranc-h b{font-weight:600}
-.cc-cc .cc-tranc-ic{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;flex:none;background:rgba(251,191,36,.10);color:var(--cc-gold-2)}
-.cc-cc .cc-tranc-tag{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--cc-faint)}
-.cc-cc .cc-tranc p{margin:0;font-size:12.5px;line-height:1.45;color:var(--cc-muted);max-width:52ch}
-.cc-cc .cc-tranc-g{list-style:none;margin:2px 0 4px;padding:0;display:flex;flex-direction:column;gap:7px;font-size:13px;color:var(--cc-text-2)}
-.cc-cc .cc-tranc-g li{display:flex;align-items:center;gap:8px}
-.cc-cc .cc-tranc-g .cc-i{color:var(--cc-ok);flex:none}
-.cc-cc .cc-btn-tranc{white-space:normal;height:auto;min-height:32px;padding:6px 12px;line-height:1.25;margin-top:auto}
-.cc-cc .cc-kpi.cc-kpi-tranc{grid-column:span 2;border-top:0;border-bottom:0;border-right:0;border-left:1px dashed var(--cc-line-2);background:rgba(251,191,36,.03)}
-.cc-cc .cc-kpi.cc-kpi-tranc:first-child{border-left:0}
-.cc-cc .cc-kpi.cc-tranc-linha{grid-column:1/-1;flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px 16px;border-left:0;border-top:1px dashed var(--cc-line-2);padding:12px 18px}
-.cc-cc .cc-kpi.cc-tranc-linha p{flex:1;min-width:220px;max-width:none}
-.cc-cc .cc-kpi.cc-tranc-linha .cc-btn-tranc{margin-top:0}
-.cc-cc .cc-dept.cc-dept-tranc{background:rgba(251,191,36,.03)}
-.cc-cc .cc-dept.cc-dept-tranc:hover{transform:none}
-.cc-cc .cc-panel-tranc{padding:26px 28px}
-.cc-cc .cc-panel-tranc .cc-tranc-h{font-size:17px}
-
-/* Central de Atenção — página */
-.cc-att-page .cc-kstrip-sev{margin-bottom:18px}
-.cc-att-page .cc-att-grid{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:18px;align-items:start}
-.cc-att-page .cc-filtros{margin-bottom:14px;align-items:center}
-.cc-att-page .cc-grupo-sev{margin-bottom:18px}
-.cc-att-page .cc-grupo-t{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px;margin:0 0 10px;color:var(--cc-text)}
-.cc-att-page .cc-fontes-l{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px;font-size:13px}
-.cc-att-page .cc-fontes-l li{display:flex;align-items:center;gap:9px;color:var(--cc-text-2)}
-.cc-att-page .cc-fontes-l li>span:nth-child(2){flex:1;min-width:0}
-.cc-att-page .cc-fontes-off li{color:var(--cc-muted)}
-
-@media (max-width:1280px){
-  .cc-cc .cc-board{grid-template-columns:minmax(0,1fr) 400px}
-  .cc-cc .cc-depts{grid-template-columns:repeat(3,minmax(0,1fr))}
-  .cc-cc .cc-kstrip-cc{--n:4!important}
-  .cc-cc .cc-kstrip-cc .cc-kpi:nth-child(n+5){border-top:1px solid var(--cc-line)}
-  .cc-cc .cc-kstrip-cc .cc-kpi:nth-child(5){border-left:0}
-}
-@media (max-width:980px){
-  .cc-cc .cc-board{grid-template-columns:minmax(0,1fr);grid-template-areas:"att" "gen" "map"}
-  .cc-cc .cc-board .cc-a-att{contain:none;min-height:0}
-  .cc-cc .cc-board .cc-a-att .cc-evs{overflow:visible;padding-right:0;margin-right:0}
-  .cc-cc .cc-a-genmap{grid-column:auto;grid-row:auto}
-  .cc-att-page .cc-att-grid{grid-template-columns:minmax(0,1fr)}
-}
-@media (max-width:760px){
-  /* Celular: a Central de Atenção sobe logo depois do resumo do dia (spec §16). */
-  .cc-cc:not(.cc-att-page) .cc-wrap{display:flex;flex-direction:column;gap:16px}
-  .cc-cc:not(.cc-att-page) .cc-wrap>*{margin:0!important}
-  .cc-cc .cc-board{display:contents}
-  .cc-cc .cc-hero{order:1} .cc-cc .cc-a-att{order:2} .cc-cc .cc-kstrip-cc{order:3} .cc-cc .cc-a-gen{order:4}
-  .cc-cc .cc-a-map{order:5} .cc-cc .cc-a-genmap{order:4} .cc-cc .cc-a-mapa{order:6} .cc-cc .cc-depts{order:7} .cc-cc .cc-foot{order:8}
-  .cc-cc .cc-hero{grid-template-columns:minmax(0,1fr)} .cc-cc .cc-hero-r{border-left:0;border-top:1px solid var(--cc-line)}
-  .cc-cc .cc-hero-l{padding:20px} .cc-cc .cc-hero-l h2{font-size:24px}
-  .cc-cc .cc-gsum{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .cc-cc .cc-mapwrap{grid-template-columns:minmax(0,1fr)}
-  .cc-cc .cc-depts{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .cc-cc .cc-depts .cc-dept:last-child{grid-column:1/-1}
-  .cc-cc .cc-dept .cc-big{white-space:normal}
-  .cc-cc .cc-foot{display:none}
-}
+const CSS_TV = `
+/* TV: sem menu, barra de cima nem rodapé (:has pinta já no 1º quadro; a classe do script é reserva) */
+.cc-shell:has(#cc-tv) .cc-sb,.cc-shell:has(#cc-tv) .cc-mtop,.cc-shell:has(#cc-tv) .cc-backdrop,.cc-shell:has(#cc-tv) .cc-rodape,
+.cc-shell.cc-tv-shell .cc-sb,.cc-shell.cc-tv-shell .cc-mtop,.cc-shell.cc-tv-shell .cc-backdrop,.cc-shell.cc-tv-shell .cc-rodape{display:none!important}
+.cc-tv{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;padding:28px 36px 22px;gap:18px}
+.cc-tv-topo{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.cc-tv-topo h1{font-family:var(--cc-f-num,'Space Grotesk',system-ui,sans-serif);font-size:30px;font-weight:700;color:var(--cc-text);margin:0}
+.cc-tv-topo .cc-tv-emp{font-size:15px;color:var(--cc-muted)}
+.cc-tv-relogio{font-family:var(--cc-f-num,'Space Grotesk',system-ui,sans-serif);font-size:38px;font-weight:700;color:var(--cc-gold-2);font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.cc-tv-pontos{display:flex;gap:8px;align-items:center}
+.cc-tv-pontos button{width:34px;height:8px;border-radius:99px;border:0;background:var(--cc-line-2);cursor:pointer;padding:0}
+.cc-tv-pontos button[aria-current="true"]{background:var(--cc-gold)}
+.cc-tv-visao{display:none;flex:1;flex-direction:column;gap:18px;animation:ccTvEntra .5s ease}
+.cc-tv-visao.cc-tv-on{display:flex}
+@keyframes ccTvEntra{from{opacity:0}to{opacity:1}}
+@media (prefers-reduced-motion:reduce){.cc-tv-visao{animation:none}}
+.cc-tv-titulo{font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--cc-muted)}
+.cc-tv .cc-kstrip .cc-val{font-size:44px}
+.cc-tv .cc-kstrip .cc-lbl{font-size:15px}
+.cc-tv .cc-kstrip .cc-dl{font-size:14px}
+.cc-tv-grade{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:18px;align-items:start}
+.cc-tv-grade .cc-panel{margin:0}
+.cc-tv .cc-sevs{gap:14px;flex-wrap:wrap}
+.cc-tv .cc-sev{font-size:20px;padding:10px 16px}
+.cc-tv-rodape{display:flex;align-items:center;gap:14px;font-size:13px;color:var(--cc-faint)}
+.cc-tv-rodape kbd{font-family:inherit;border:1px solid var(--cc-line-2);border-radius:6px;padding:1px 7px;color:var(--cc-muted)}
+.cc-tv-rodape a,.cc-tv-sair button{color:var(--cc-muted);text-decoration:underline;background:none;border:0;font:inherit;cursor:pointer;padding:0}
+.cc-tv-sair{margin:0}
+@media (max-width:900px){.cc-tv{padding:18px 16px}.cc-tv-grade{grid-template-columns:minmax(0,1fr)}.cc-tv .cc-kstrip .cc-val{font-size:30px}.cc-tv-relogio{font-size:26px}}
 `;
+
+/** KPIs da TV: só os números que o Command Center já calcula, sem dinheiro. */
+function kpisTv(d: CommandCenterDados, parte: 'geral' | 'comercial'): string {
+  const dd = d.dados;
+  const c = contratadosDe(d);
+  const f = dd?.frota ?? null;
+  const hoje = energiaLegivel(f?.energiaHojeKwh);
+  const mes = energiaLegivel(f?.energiaMesKwh);
+  const lista: KpiInput[] = [];
+  if (parte === 'geral' && c.usinas) {
+    lista.push(
+      { rotulo: 'Geração agora', valor: f?.geracaoAgora?.kw ?? null, casas: 1, unidade: 'kW', detalhe: f?.geracaoAgora ? `${plural(f.geracaoAgora.usinas, 'usina', 'usinas')} ao vivo` : undefined, semDadoTexto: 'sem leitura ao vivo agora' },
+      { rotulo: 'Energia hoje', valor: hoje.valor, casas: hoje.casas, unidade: hoje.unidade, detalhe: f ? 'até agora' : undefined, semDadoTexto: 'sem leitura hoje ainda' },
+      { rotulo: 'Energia no mês', valor: mes.valor, casas: mes.casas, unidade: mes.unidade, detalhe: 'desde o dia 1º', semDadoTexto: 'sem leitura no mês' },
+      { rotulo: 'Usinas no ar', valor: f && f.monitoradas > 0 ? f.comunicando : null, unidade: f ? `/ ${fmtNumero(f.monitoradas)}` : undefined, detalhe: f ? (f.porEstado.sem_comunicacao ? `${fmtNumero(f.porEstado.sem_comunicacao)} sem sinal` : 'todas com sinal') : undefined, semDadoTexto: 'nenhuma usina monitorada' },
+    );
+  }
+  if (c.leads) {
+    lista.push({ rotulo: 'Vendas do mês', valor: dd?.kpisMes.vendas ?? null, destaque: true, detalhe: temNumero(dd?.mudancas24h.vendas) ? `+${fmtNumero(dd!.mudancas24h.vendas)} desde ontem` : 'fechadas no mês' });
+    if (parte === 'comercial') {
+      lista.push(
+        { rotulo: 'Leads do mês', valor: dd?.kpisMes.leads ?? null, detalhe: temNumero(dd?.mudancas24h.leads) ? `+${fmtNumero(dd!.mudancas24h.leads)} desde ontem` : undefined },
+        { rotulo: 'Propostas do mês', valor: dd?.kpisMes.propostas ?? null, detalhe: temNumero(dd?.mudancas24h.propostas) ? `+${fmtNumero(dd!.mudancas24h.propostas)} desde ontem` : undefined },
+      );
+    }
+  }
+  if (parte === 'comercial' && c.usinas) {
+    lista.push({ rotulo: 'Usinas novas no mês', valor: dd?.kpisMes.usinasNovas ?? null, detalhe: 'obras que viraram usina' });
+  }
+  return lista.length ? faixaKpis(lista) : '';
+}
+
+export function renderModoTvPage(user?: DashUser, d?: CommandCenterDados): string {
+  const dados: CommandCenterDados = d ?? { agora: new Date(), nomeUsuario: user?.nome ?? null, dados: null };
+  const dd = dados.dados;
+  const c = contratadosDe(dados);
+  const empresaNome = user?.companyNome && !ehDaCasa(user) ? user.companyNome : 'EcoSunPower';
+  const semDado = !dd
+    ? estadoVazio({ tipo: 'sem_dado', titulo: 'Sem dado agora', texto: 'A TV tenta de novo sozinha em alguns minutos.' })
+    : '';
+
+  const visoes: Array<{ id: string; titulo: string; html: string }> = [];
+  visoes.push({
+    id: 'geral', titulo: 'Visão geral',
+    html: `${kpisTv(dados, 'geral')}
+      ${cartaoSecao({ titulo: 'Avisos agora', dica: 'contagem da Central de Atenção', corpoHtml: legendaSeveridades(dd ? dd.eventos : null, false, ehParcial(dd?.fontes)) })}
+      ${semDado}`,
+  });
+  if (c.usinas) {
+    visoes.push({
+      id: 'usinas', titulo: 'Usinas',
+      // cada quadro num <div> próprio: as classes do Command Center (cc-a-gen/cc-a-map)
+      // posicionam na grade de lá e empilhariam os dois aqui.
+      html: dd ? `<div class="cc-tv-grade"><div>${geracao(dados, true)}</div><div>${usinasAgora(dados, true)}</div></div>` : semDado,
+    });
+  }
+  if (c.leads) {
+    visoes.push({ id: 'comercial', titulo: 'Comercial', html: `${kpisTv(dados, 'comercial')}${semDado}` });
+  }
+
+  const tvPuro = ehPapelTv(user);
+  const body = `<div class="cc-root cc-cc cc-tv" id="cc-tv">
+  <header class="cc-tv-topo">
+    <div><h1>${escapeHtml(empresaNome)}</h1><div class="cc-tv-emp">Modo TV · <span id="cc-tv-nome-visao">${escapeHtml(visoes[0].titulo)}</span></div></div>
+    <span class="cc-sp"></span>
+    <nav class="cc-tv-pontos" aria-label="Visões">${visoes.map((v, i) => `<button type="button" data-visao="${i}" aria-label="${escapeHtml(v.titulo)}"${i === 0 ? ' aria-current="true"' : ''}></button>`).join('')}</nav>
+    <div class="cc-tv-relogio" id="cc-tv-relogio">${escapeHtml(new Intl.DateTimeFormat('pt-BR', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }).format(dados.agora))}</div>
+  </header>
+  ${visoes.map((v, i) => `<section class="cc-tv-visao${i === 0 ? ' cc-tv-on' : ''}" data-titulo="${escapeHtml(v.titulo)}" aria-label="${escapeHtml(v.titulo)}">
+    <div class="cc-tv-titulo">${escapeHtml(v.titulo)}</div>
+    ${v.html}
+  </section>`).join('')}
+  <footer class="cc-tv-rodape"><span>${escapeHtml(carimboAoVivo(dados.agora))}</span><span class="cc-sp"></span><span><kbd>T</kbd> tela cheia · <kbd>←</kbd> <kbd>→</kbd> trocar</span>${tvPuro
+    // O usuário da TV não tem menu: um "sair" discreto (mesmo POST do menu).
+    ? '<form method="POST" action="/dashboard/logout" class="cc-tv-sair"><button type="submit">sair</button></form>'
+    : '<a href="/dashboard/command-center">sair do Modo TV</a>'}</footer>
+</div>`;
+
+  const scripts = `<script>
+(function () {
+  var visoes = Array.prototype.slice.call(document.querySelectorAll('.cc-tv-visao'));
+  var pontos = Array.prototype.slice.call(document.querySelectorAll('.cc-tv-pontos button'));
+  var nome = document.getElementById('cc-tv-nome-visao');
+  var atual = 0, GIRO = 30000, timer = null;
+  function mostrar(i) {
+    if (!visoes.length) return;
+    atual = (i + visoes.length) % visoes.length;
+    visoes.forEach(function (v, k) { v.classList.toggle('cc-tv-on', k === atual); });
+    pontos.forEach(function (p, k) { if (k === atual) p.setAttribute('aria-current', 'true'); else p.removeAttribute('aria-current'); });
+    if (nome) nome.textContent = visoes[atual].getAttribute('data-titulo') || '';
+  }
+  function girar() { clearInterval(timer); if (visoes.length > 1) timer = setInterval(function () { mostrar(atual + 1); }, GIRO); }
+  pontos.forEach(function (p) { p.addEventListener('click', function () { mostrar(Number(p.dataset.visao) || 0); girar(); }); });
+  document.addEventListener('keydown', function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+    if (e.key === 't' || e.key === 'T') {
+      var el = document.documentElement;
+      var cheio = document.fullscreenElement || document.webkitFullscreenElement;
+      var p = cheio
+        ? (document.exitFullscreen ? document.exitFullscreen() : document.webkitExitFullscreen && document.webkitExitFullscreen())
+        : (el.requestFullscreen ? el.requestFullscreen() : el.webkitRequestFullscreen && el.webkitRequestFullscreen());
+      if (p && p.catch) p.catch(function () {});
+    } else if (e.key === 'ArrowRight') { mostrar(atual + 1); girar(); }
+    else if (e.key === 'ArrowLeft') { mostrar(atual - 1); girar(); }
+  });
+  var relogio = document.getElementById('cc-tv-relogio');
+  var fmt = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+  setInterval(function () { if (relogio) relogio.textContent = fmt.format(new Date()); }, 15000);
+  girar();
+  // Número novo a cada 5 minutos (a TV fica ligada o dia inteiro). Só recarrega
+  // se a página responder (no meio de um Implantar a TV não fica presa numa
+  // tela de erro — tenta de novo em 1 minuto).
+  function recarregar() {
+    fetch(location.href, { credentials: 'same-origin', cache: 'no-store' })
+      .then(function (r) { if (r.ok && !r.redirected) location.reload(); else setTimeout(recarregar, 60000); })
+      .catch(function () { setTimeout(recarregar, 60000); });
+  }
+  setTimeout(recarregar, 300000);
+})();
+</script>`;
+
+  const shell = `<script>document.querySelector('.cc-shell') && document.querySelector('.cc-shell').classList.add('cc-tv-shell');</script>`;
+  return renderLayout({
+    active: 'tv', title: 'Modo TV', body, scripts: shell + scripts, dark: true, largo: true, imersivo: true, user, tailwind: false,
+    cabeca: `${CABECA_CC}<style>${CSS_TV}</style>`,
+  });
+}

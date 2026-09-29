@@ -9,8 +9,17 @@
 //
 // HTML puro, sem biblioteca de gráfico: o desenho é SVG montado aqui. Menos
 // dependência, carrega em qualquer celular.
+//
+// Renovação do miolo — R22 (28/09/2026): mesmo GET do aparelho (device + horas),
+// mesmos números; visual cc- do Command Center (KPIs, painel, tema escuro, sem
+// Tailwind, CSS no <head>). O gráfico continua SVG, com as cores por classe
+// (azul = consumo, verde = injeção) e eixos nos tokens.
 
 import type { ResumoMedicao, Aparelho } from './medicao-queries.js';
+import { renderLayout } from './views.js';
+import { cabecalhoPagina, cartaoSecao, estadoVazio, pilulaStatus } from './ui/componentes.js';
+import { temaDaTela } from './ui/tema.js';
+import type { DashUser } from './permissions.js';
 
 function esc(s: unknown): string {
   return String(s ?? '')
@@ -31,12 +40,7 @@ function w(n: number): string {
 }
 
 function card(rotulo: string, valor: string, nota = '', destaque = false): string {
-  return `
-    <div style="flex:1;min-width:150px;background:${destaque ? '#0f172a' : '#fff'};border:1px solid ${destaque ? '#0f172a' : '#e2e8f0'};border-radius:12px;padding:14px 16px">
-      <div style="font-size:12px;color:${destaque ? '#94a3b8' : '#64748b'};margin-bottom:4px">${esc(rotulo)}</div>
-      <div style="font-size:22px;font-weight:700;color:${destaque ? '#fff' : '#0f172a'};font-variant-numeric:tabular-nums">${esc(valor)}</div>
-      ${nota ? `<div style="font-size:11px;color:${destaque ? '#64748b' : '#94a3b8'};margin-top:3px">${esc(nota)}</div>` : ''}
-    </div>`;
+  return `<div class="cc-kpi${destaque ? ' cc-kpi-hl' : ''}"><div class="cc-lbl">${esc(rotulo)}</div><div class="cc-val">${esc(valor)}</div><div class="cc-dl">${nota ? esc(nota) : "&nbsp;"}</div></div>`;
 }
 
 /**
@@ -62,7 +66,7 @@ export function escalaDoGrafico(valores: number[], alturaUtil: number) {
 /** Gráfico de barras das janelas de 15 min. SVG, sem biblioteca. */
 function grafico(janelas: ResumoMedicao['janelas']): string {
   if (janelas.length === 0) {
-    return `<p style="color:#94a3b8;padding:20px 0">Ainda sem leitura suficiente para o gráfico.</p>`;
+    return estadoVazio({ tipo: 'sem_dado', compacto: true, titulo: 'Ainda sem leitura suficiente para o gráfico' });
   }
   const L = 900, A = 240, pad = { t: 14, r: 12, b: 26, l: 52 };
   const util = A - pad.t - pad.b;
@@ -80,15 +84,15 @@ function grafico(janelas: ResumoMedicao['janelas']): string {
     const topo = Math.min(yV, yZero);
     const alt = Math.abs(yV - yZero);
     if (alt < 0.4) return '';
-    return `<rect x="${x.toFixed(1)}" y="${topo.toFixed(1)}" width="${larguraB.toFixed(1)}" height="${alt.toFixed(1)}" fill="${cor}"/>`;
+    return `<rect class="${cor}" x="${x.toFixed(1)}" y="${topo.toFixed(1)}" width="${larguraB.toFixed(1)}" height="${alt.toFixed(1)}"/>`;
   };
 
   const barras = janelas.map((j, i) => {
     const x = pad.l + i * larg + larg * 0.12;
     const lb = larg * 0.76;
     // Consumo em azul, injeção em verde — cor de energia que volta pra rede.
-    const corPico = j.mediaW < 0 ? '#bbf7d0' : '#dbeafe';
-    const corMedia = j.mediaW < 0 ? '#16a34a' : '#2563eb';
+    const corPico = j.mediaW < 0 ? 'cc-md-pico-inj' : 'cc-md-pico';
+    const corMedia = j.mediaW < 0 ? 'cc-md-inj' : 'cc-md-cons';
     return barra(x, lb, j.picoW, corPico) + barra(x, lb, j.mediaW, corMedia) +
       `<rect x="${x.toFixed(1)}" y="${pad.t}" width="${lb.toFixed(1)}" height="${util}" fill="transparent">
          <title>${esc(hora(j.inicio))} — média ${esc(w(j.mediaW))} · pico ${esc(w(j.picoW))}</title>
@@ -99,7 +103,7 @@ function grafico(janelas: ResumoMedicao['janelas']): string {
   const rotulos = janelas.map((j, i) => {
     if (i % passo !== 0) return '';
     const x = pad.l + i * larg + larg / 2;
-    return `<text x="${x.toFixed(1)}" y="${A - 8}" font-size="10" fill="#94a3b8" text-anchor="middle">${esc(hora(j.inicio))}</text>`;
+    return `<text x="${x.toFixed(1)}" y="${A - 8}" font-size="10" class="cc-md-eixo" text-anchor="middle">${esc(hora(j.inicio))}</text>`;
   }).join('');
 
   // Referências: topo (maior consumo), zero e fundo (maior injeção).
@@ -111,48 +115,74 @@ function grafico(janelas: ResumoMedicao['janelas']): string {
     const yy = y(r.v);
     const zero = r.v === 0;
     return `
-      <line x1="${pad.l}" y1="${yy.toFixed(1)}" x2="${L - pad.r}" y2="${yy.toFixed(1)}" stroke="${zero ? '#cbd5e1' : '#eef2f6'}" stroke-width="${zero ? 1.5 : 1}"/>
-      <text x="${pad.l - 6}" y="${(yy + 3).toFixed(1)}" font-size="10" fill="#94a3b8" text-anchor="end">${esc(w(r.v))}</text>`;
+      <line class="${zero ? 'cc-md-zero' : 'cc-md-ref'}" x1="${pad.l}" y1="${yy.toFixed(1)}" x2="${L - pad.r}" y2="${yy.toFixed(1)}"/>
+      <text class="cc-md-eixo" x="${pad.l - 6}" y="${(yy + 3).toFixed(1)}" font-size="10" text-anchor="end">${esc(w(r.v))}</text>`;
   }).join('');
 
+  const cor = (c: string) => `<i class="cc-md-leg ${c}"></i>`;
   const legenda = temInjecao
-    ? `<span><span style="display:inline-block;width:10px;height:10px;background:#2563eb;border-radius:2px;margin-right:5px"></span>consumo (média de 15 min)</span>
-       <span><span style="display:inline-block;width:10px;height:10px;background:#16a34a;border-radius:2px;margin-right:5px"></span>injetado na rede</span>
-       <span><span style="display:inline-block;width:10px;height:10px;background:#dbeafe;border-radius:2px;margin-right:5px"></span>pico instantâneo</span>`
-    : `<span><span style="display:inline-block;width:10px;height:10px;background:#2563eb;border-radius:2px;margin-right:5px"></span>média de 15 min <em>(o que a distribuidora mede)</em></span>
-       <span><span style="display:inline-block;width:10px;height:10px;background:#dbeafe;border-radius:2px;margin-right:5px"></span>pico instantâneo</span>`;
+    ? `<span>${cor('cc-md-cons')}consumo (média de 15 min)</span>
+       <span>${cor('cc-md-inj')}injetado na rede</span>
+       <span>${cor('cc-md-pico')}pico instantâneo</span>`
+    : `<span>${cor('cc-md-cons')}média de 15 min <em>(o que a distribuidora mede)</em></span>
+       <span>${cor('cc-md-pico')}pico instantâneo</span>`;
 
   return `
-    <div style="overflow-x:auto">
-      <svg viewBox="0 0 ${L} ${A}" style="width:100%;min-width:520px;height:auto">
+    <div class="cc-md-graf">
+      <svg viewBox="0 0 ${L} ${A}" role="img" aria-label="Potência por janela de 15 minutos">
         ${refs}${barras}${rotulos}
       </svg>
     </div>
-    <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:#64748b;margin-top:6px">${legenda}</div>
-    ${temInjecao ? `<p style="font-size:12px;color:#16a34a;margin:8px 0 0">Abaixo da linha do zero é energia que <strong>saiu</strong> da casa para a rede.</p>` : ''}`;
+    <div class="cc-md-legenda">${legenda}</div>
+    ${temInjecao ? `<p class="cc-md-nota-inj">Abaixo da linha do zero é energia que <strong>saiu</strong> da casa para a rede.</p>` : ''}`;
 }
+
+const CSS_MEDICAO = `
+.cc-md .cc-kstrip{margin-bottom:16px}
+.cc-md-sel{display:flex;gap:10px;align-items:flex-end;margin-bottom:16px}
+.cc-md-sel .cc-campo{flex:0 1 320px}
+.cc-md-faixas{display:flex;gap:6px}
+.cc-md-graf{overflow-x:auto}
+.cc-md-graf svg{width:100%;min-width:520px;height:auto;display:block}
+.cc-md-cons{fill:#3b82f6;background:#3b82f6}
+.cc-md-inj{fill:#22c55e;background:#22c55e}
+.cc-md-pico{fill:rgba(59,130,246,.3);background:rgba(59,130,246,.3)}
+.cc-md-pico-inj{fill:rgba(34,197,94,.3);background:rgba(34,197,94,.3)}
+.cc-md-eixo{fill:var(--cc-faint)}
+.cc-md-ref{stroke:var(--cc-line);stroke-width:1}
+.cc-md-zero{stroke:var(--cc-line-2);stroke-width:1.5}
+.cc-md-legenda{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--cc-muted);margin-top:8px}
+.cc-md-leg{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.cc-md-nota-inj{font-size:12.5px;color:var(--cc-ok);margin:8px 0 0}
+.cc-md-porque p{margin:0;color:var(--cc-text-2);font-size:14px;line-height:1.55}
+.cc-md .cc-panel+.cc-panel{margin-top:16px}
+@media (max-width:760px){.cc-md-sel .cc-campo{flex:1 1 100%}}
+`;
 
 export function renderMedicaoPage(
   aparelhos: Aparelho[],
   r: ResumoMedicao,
   horas: number,
 ): string {
+  const cab = (subtitulo?: string, seloHtml?: string) => cabecalhoPagina({
+    trilha: [{ rotulo: 'Usinas' }, { rotulo: 'Medição' }],
+    titulo: 'Medição',
+    subtitulo,
+    seloHtml,
+  });
   if (aparelhos.length === 0) {
-    return `
-    <div style="max-width:920px;margin:0 auto">
-      <h1 style="font-size:24px;font-weight:700;color:#0f172a;margin-bottom:6px">🔌 Medição</h1>
-      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:24px;margin-top:16px">
-        <p style="color:#0f172a;font-weight:600;margin:0 0 6px">Nenhum medidor mandou leitura ainda.</p>
-        <p style="color:#64748b;margin:0">O aparelho precisa do script de envio rodando, com o token do servidor. O procedimento está em <code>docs/kit-medicao</code>.</p>
-      </div>
+    return `<div class="cc-root cc-md">
+      ${cab('O que o medidor mostra: a demanda de 15 minutos que a distribuidora cobra.')}
+      ${estadoVazio({ tipo: 'sem_dado', titulo: 'Nenhum medidor mandou leitura ainda.', texto: 'O aparelho precisa do script de envio rodando, com o token do servidor (passo a passo do kit de medição).' })}
     </div>`;
   }
 
   const seletor = aparelhos.length > 1
-    ? `<form method="GET" style="margin:0 0 16px">
-         <select name="device" onchange="this.form.submit()" style="padding:8px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px">
+    ? `<form method="GET" class="cc-form cc-md-sel">
+         <label class="cc-campo"><span>Aparelho</span>
+         <select name="device" onchange="this.form.submit()">
            ${aparelhos.map((a) => `<option value="${esc(a.deviceId)}"${a.deviceId === r.aparelho?.deviceId ? ' selected' : ''}>${esc(a.apelido || a.deviceId)}</option>`).join('')}
-         </select>
+         </select></label>
          <input type="hidden" name="horas" value="${horas}">
        </form>`
     : '';
@@ -161,9 +191,10 @@ export function renderMedicaoPage(
   const statusTexto = r.minutosSemReceber === null
     ? 'sem leitura'
     : r.minutosSemReceber < 3 ? 'recebendo agora' : `última há ${r.minutosSemReceber} min`;
+  const selo = pilulaStatus(r.minutosSemReceber === null ? 'sem_dado' : atrasado ? 'critico' : 'normal', statusTexto);
 
   const cards = r.agora
-    ? `<div style="display:flex;gap:12px;flex-wrap:wrap;margin:0 0 20px">
+    ? `<div class="cc-kstrip" style="--n:${2 + (r.demanda ? 2 : 0) + (r.consumoDiaKwh !== null ? 1 : 0) + (r.injecaoDiaKwh ? 1 : 0) - 1}">
          ${card('Agora', w(r.agora.potenciaW), `às ${hora(r.agora.medidoEm)}`)}
          ${r.demanda ? card('Demanda de 15 min', w(r.demanda.demandaW), `maior janela · ${hora(r.demanda.janelaInicio)}`, true) : ''}
          ${r.demanda ? card('Pico instantâneo', w(r.demanda.picoInstantaneoW), 'que a conta de luz não mostra') : ''}
@@ -173,7 +204,7 @@ export function renderMedicaoPage(
     : '';
 
   const eletrico = r.agora
-    ? `<div style="display:flex;gap:12px;flex-wrap:wrap;margin:0 0 22px">
+    ? `<div class="cc-kstrip" style="--n:4">
          ${card('Tensão', r.agora.tensao !== null ? r.agora.tensao.toFixed(1).replace('.', ',') + ' V' : '—')}
          ${card('Corrente', r.agora.corrente !== null ? r.agora.corrente.toFixed(2).replace('.', ',') + ' A' : '—')}
          ${card('Fator de potência', r.agora.fatorPotencia !== null ? r.agora.fatorPotencia.toFixed(2).replace('.', ',') : '—')}
@@ -182,36 +213,36 @@ export function renderMedicaoPage(
     : '';
 
   const faixas = [6, 24, 72].map((h) =>
-    `<a href="?device=${encodeURIComponent(r.aparelho?.deviceId ?? '')}&horas=${h}" style="padding:6px 14px;border-radius:8px;font-size:13px;text-decoration:none;${h === horas ? 'background:#0f172a;color:#fff' : 'background:#fff;color:#475569;border:1px solid #e2e8f0'}">${h}h</a>`
-  ).join(' ');
+    `<a class="cc-chip${h === horas ? ' cc-chip-on' : ''}" href="?device=${encodeURIComponent(r.aparelho?.deviceId ?? '')}&horas=${h}">${h}h</a>`
+  ).join('');
 
-  return `
-  <div style="max-width:920px;margin:0 auto">
-    <h1 style="font-size:24px;font-weight:700;color:#0f172a;margin-bottom:6px">🔌 Medição</h1>
-    <p style="color:#64748b;margin-bottom:16px">
-      ${esc(r.aparelho?.apelido || r.aparelho?.deviceId || '')} ·
-      <span style="color:${atrasado ? '#b91c1c' : '#16a34a'};font-weight:600">${esc(statusTexto)}</span>
-    </p>
-
+  const nomeAparelho = r.aparelho?.apelido || r.aparelho?.deviceId || '';
+  return `<div class="cc-root cc-md">
+    ${cab(nomeAparelho || undefined, selo)}
     ${seletor}
     ${cards}
     ${eletrico}
-
-    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px 18px">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px">
-        <strong style="color:#0f172a;font-size:15px">Potência por janela de 15 minutos</strong>
-        <div style="display:flex;gap:6px">${faixas}</div>
-      </div>
-      ${grafico(r.janelas)}
-    </div>
-
-    <div style="background:#f8fafc;border-left:3px solid #2563eb;border-radius:0 8px 8px 0;padding:12px 16px;margin-top:16px">
-      <div style="font-size:12px;letter-spacing:.6px;text-transform:uppercase;font-weight:700;color:#2563eb;margin-bottom:4px">Por que a janela de 15 minutos</div>
-      <p style="margin:0;color:#475569;font-size:14px;line-height:1.55">
+    ${cartaoSecao({
+      titulo: 'Potência por janela de 15 minutos',
+      acoesHtml: `<div class="cc-md-faixas">${faixas}</div>`,
+      corpoHtml: grafico(r.janelas),
+    })}
+    ${cartaoSecao({
+      titulo: 'Por que a janela de 15 minutos',
+      classe: 'cc-md-porque',
+      corpoHtml: `<p>
         A distribuidora mede demanda pela <strong>média de 15 minutos</strong>, não pelo pico instantâneo.
         O medidor dela <strong>alisa o pico</strong> — então o cliente paga por uma média que nunca viu.
-        Aqui as duas aparecem lado a lado: a barra escura é o que ele paga, a clara é o que realmente aconteceu.
-      </p>
-    </div>
+        Aqui as duas aparecem lado a lado: a barra forte é o que ele paga, a clara é o que realmente aconteceu.
+      </p>`,
+    })}
   </div>`;
+}
+
+/** A tela inteira (casca + miolo) — antes o router montava a casca. */
+export function renderMedicaoTela(aparelhos: Aparelho[], r: ResumoMedicao, horas: number, user: DashUser | undefined): string {
+  return renderLayout({
+    active: 'medicao', title: 'Medição', body: renderMedicaoPage(aparelhos, r, horas), user,
+    tailwind: false, dark: temaDaTela(user, 'escuro') === 'escuro', cabeca: `<style>${CSS_MEDICAO}</style>`,
+  });
 }

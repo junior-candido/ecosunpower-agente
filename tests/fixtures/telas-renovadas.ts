@@ -19,6 +19,7 @@ import { CASOS_PASTAS } from './casos-pastas.js';
 import { renderFinanceiroPage } from '../../src/modules/dashboard/financeiro-views.js';
 import { usina, ALERTAS_RESUMO, SPARK_7D, KPIS_EVA } from './casos-monitoramento.js';
 import { telasOnda3 } from './telas-onda3.js';
+import { telasOnda4 } from './telas-onda4.js';
 import { telasCobranca } from './telas-cobranca.js';
 import { USER_CASA, leadRow, leadDetalhe, SERVICOS_LEAD, FILTROS_CHEIOS } from './miolo-leads.js';
 import { renderCustoIaPage } from '../../src/modules/dashboard/custo-ia-views.js';
@@ -66,7 +67,7 @@ function mensagens(n: number) {
   return Array.from({ length: n }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: `Mensagem fictícia número ${i} da conversa.`, timestamp: hora(n - i) }));
 }
 
-function dadosCC(n: number): DadosCommandCenter {
+export function dadosCC(n: number): DadosCommandCenter {
   const agora = new Date();
   const usinas: UsinaLinha[] = Array.from({ length: Math.max(2, n) }, (_, i) => ({
     id: `u${i}`, apelido: `Usina ${i}`, potencia_kwp: 10, cidade: 'Gama', uf: 'DF', ativo: true,
@@ -132,6 +133,8 @@ export function telasRenovadas(n: number, user: DashUser = USER_CASA): Record<No
     monitoramento: renderMonitoramentoPage(frota(n), {}, casa ? ALERTAS_RESUMO : undefined, casa ? SPARK_7D : undefined, casa ? KPIS_EVA : undefined, user),
     // Onda 3 (R13–R19): cada fatia tem o seu arquivo tests/fixtures/telas-rNN.ts
     ...telasOnda3(n, user),
+    // Onda 4 (R5, R21–R26): tests/fixtures/telas-onda4.ts
+    ...telasOnda4(n, user),
     // Cobrança recorrente (28/09/2026): Assinaturas (casa) + Minha assinatura com faturas (tenant)
     ...telasCobranca(n, user),
     // Custo de IA (28/09/2026) — tela só da casa

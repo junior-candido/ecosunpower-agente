@@ -5,6 +5,8 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { contratoDaTela, aplicarMudancas } from './helpers/contrato-tela.js';
+// R5 (Onda 4): o Cockpit saiu do menu — sai o link /dashboard/cockpit das telas da casa.
+import { r5Menu } from './fixtures/mudancas-onda4.js';
 // Trocas registradas: sai o Tailwind do CDN (telas leves) e os gráficos leem o tema (.cc-shell).
 import { TELAS_LEVES, menuTenantSemAssinaturas } from './fixtures/mudancas-telas-leves.js';
 import { TEMA_GRAFICOS } from './fixtures/mudancas-onda2.js';
@@ -16,7 +18,7 @@ describe('Financeiro (visão) — contrato da tela não muda', () => {
   for (const [nome, render] of Object.entries(CASOS_FINANCEIRO)) {
     it(`contrato: ${nome}`, () => {
       const h = render();
-      expect(contratoDaTela(h)).toEqual(aplicarMudancas(CONTRATO[nome], ...menuTenantSemAssinaturas(h), TELAS_LEVES, TEMA_GRAFICOS));
+      expect(contratoDaTela(h)).toEqual(aplicarMudancas(CONTRATO[nome], ...r5Menu(CONTRATO[nome]), ...menuTenantSemAssinaturas(h), TELAS_LEVES, TEMA_GRAFICOS));
     });
   }
 });

@@ -22,6 +22,7 @@ import { carregarEmpresaConfig, comEmpresaDe, _resetEstadoParaTeste } from '../s
 import { TELAS_RENOVADAS } from './helpers/teto-tailwind.js';
 import { telasRenovadas } from './fixtures/telas-renovadas.js';
 import { CLASSES_ONDA3 } from './fixtures/telas-onda3.js';
+import { CLASSES_ONDA4 } from './fixtures/telas-onda4.js';
 import { USER_CASA, USER_TENANT } from './fixtures/miolo-leads.js';
 
 const TAILWIND = 'cdn.tailwindcss.com';
@@ -102,7 +103,8 @@ describe('renderLayout — sem data URI grande nem CSS comum embutido', () => {
     const h = renderLayout({ active: 'home', title: 'X', body: '', user: USER_CASA });
     expect(h).not.toContain('data:image');
     expect(h.split(`src="${URL_LOGO_CASA}"`).length - 1).toBe(2);
-    expect(h).toMatch(/<a href="\/dashboard\/home"[^>]*>\s*<img src="[^"]+" alt="EcoSunPower"/);
+    // TROCA DELIBERADA (renovação do miolo R5, decisão D1 = a — ok do Junior no PR): a logo leva ao Command Center (a entrada de todos).
+    expect(h).toMatch(/<a href="\/dashboard\/command-center"[^>]*>\s*<img src="[^"]+" alt="EcoSunPower"/);
   });
 
   it('tenant sem logo: NUNCA recebe a logo da EcoSun (nem por URL)', () => {
@@ -183,6 +185,8 @@ describe('telas renovadas não carregam o Tailwind (e não precisam dele)', () =
           'coluna-status', 'card-usina', 'orbita-frota', 'ponto-usina', 'sol-pulso', 'sol-central', 'anel',
           // Onda 3 (R13–R19): ganchos de JS/teste antigo de cada fatia (tests/fixtures/telas-rNN.ts)
           ...CLASSES_ONDA3,
+          // Onda 4 (R5, R21–R26): tests/fixtures/telas-onda4.ts
+          ...CLASSES_ONDA4,
         ]);
         // mu-* = Mapa das Usinas (#330): CSS próprio por arquivo (ui/mapa-cliente.ts).
         const corpo = h.slice(h.indexOf('<body'));

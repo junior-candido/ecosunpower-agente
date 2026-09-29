@@ -7,13 +7,15 @@
 // DA SESSÃO. Acesso a cada bloco = papel do usuário E módulo contratado
 // (empresa_modulos, lido 1x por requisição, fail-closed). O que a empresa não
 // contratou aparece trancado (vitrine). Aberto pro tenant desde 28/09/2026
-// (primeiro: Conquista Solar). Modo TV continua só da casa. Sem sessão (ou sem
-// permissão) vai pro Cockpit — a entrada do tenant —, nunca pra /home.
+// (primeiro: Conquista Solar). Modo TV continua só da casa.
+// R5 (nova entrada, D1 = a): quem não pode ver vai pra paginaInicialDe(user) —
+// sem sessão → login; tenant no Modo TV → Command Center dele. Nunca pro
+// Cockpit (saiu do menu e é só da casa) nem pra /home.
 
 import type { Request, Response } from 'express';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AuthedRequest } from './auth.js';
-import { can, type DashUser } from './permissions.js';
+import { can, ehPapelTv, type DashUser } from './permissions.js';
 import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
 import { bancoDoOperador } from '../tenant-client.js';
 import {
@@ -23,8 +25,11 @@ import {
 import { modulosDaRequisicao } from './modulos-contratados.js';
 import { todasEmpresasConhecidas } from '../empresa-config.js';
 import { renderCommandCenterPage, renderCentralAtencaoPage, renderModoTvPage } from './command-center-views.js';
+import { paginaInicialDe } from './entrada.js';
 
 type Handler = (req: Request, res: Response) => Promise<void>;
+
+const SEM_ACESSO_CC = '<p style="font-family:sans-serif;padding:40px">Esta área ainda não está disponível para a sua empresa.</p>';
 
 /** Command Center e Central de Atenção abertos pro tenant (dado escopado + vitrine). */
 export const CC_ABERTO_A_TENANTS = true;
@@ -62,7 +67,12 @@ export function permissoesDe(user: DashUser): PermissoesCC {
 
 interface Carga { dados: DadosCommandCenter | null; contratados: PermissoesCC }
 
-async function carregar(req: Request, supabase: SupabaseClient, user: DashUser, agora: Date): Promise<Carga> {
+/** Modo TV (R26): o que a TV mostra — usinas e comercial, NUNCA financeiro
+ *  (dinheiro não vai pra tela da parede) nem marketing. Vale pro usuário do
+ *  papel TV (que não tem permissão nenhuma de área) e pra casa abrindo a TV. */
+export const PERMISSOES_TV: PermissoesCC = { usinas: true, leads: true, propostas: true, financeiro: false, marketing: false };
+
+async function carregar(req: Request, supabase: SupabaseClient, user: DashUser, agora: Date, permissoes: PermissoesCC = permissoesDe(user)): Promise<Carga> {
   let contratados: PermissoesCC = { ...NENHUM_MODULO };
   try {
     const db = bancoDoOperador(req as AuthedRequest, supabase);
@@ -70,10 +80,10 @@ async function carregar(req: Request, supabase: SupabaseClient, user: DashUser, 
     // no cache da requisição); erro = tudo trancado (fail-closed).
     contratados = blocosContratados(await modulosDaRequisicao(req, db, user.companyId));
     // Cada fonte já se protege sozinha; aqui só pega o que escapar (ex.: cliente quebrado).
-    const dados = await carregarCommandCenter(db, user.companyId, agora, permissoesDe(user), {
+    const dados = await carregarCommandCenter(db, user.companyId, agora, permissoes, {
       contratados,
-      // Conta a pagar PF (pessoal do dono) só pro admin.
-      verContasPF: user.isAdmin,
+      // Conta a pagar PF (pessoal do dono) só pro admin — e nunca na TV.
+      verContasPF: user.isAdmin && permissoes.financeiro,
     });
     return { dados, contratados };
   } catch (err) {
@@ -86,7 +96,10 @@ export function rotaCommandCenter(supabase: SupabaseClient, agoraFn: () => Date 
   return async (req, res) => {
     const user = (req as AuthedRequest).dashUser;
     if (!podeVer(user)) {
-      res.redirect('/dashboard/cockpit');
+      // Sem sessão → login. Logado sem acesso → 403 (redirecionar pra entrada
+      // seria laço: a entrada É o Command Center desde o R5).
+      if (user) { res.status(403).type('text/html').send(SEM_ACESSO_CC); return; }
+      res.redirect(paginaInicialDe(user));
       return;
     }
     const agora = agoraFn();
@@ -101,7 +114,10 @@ export function rotaCentralAtencao(supabase: SupabaseClient, agoraFn: () => Date
   return async (req, res) => {
     const user = (req as AuthedRequest).dashUser;
     if (!podeVer(user)) {
-      res.redirect('/dashboard/cockpit');
+      // Sem sessão → login. Logado sem acesso → 403 (redirecionar pra entrada
+      // seria laço: a entrada É o Command Center desde o R5).
+      if (user) { res.status(403).type('text/html').send(SEM_ACESSO_CC); return; }
+      res.redirect(paginaInicialDe(user));
       return;
     }
     const agora = agoraFn();
@@ -113,14 +129,73 @@ export function rotaCentralAtencao(supabase: SupabaseClient, agoraFn: () => Date
   };
 }
 
-// Modo TV — fase I. Por enquanto a página explica o que vem (sem número). Só da casa.
-export function rotaModoTv(): Handler {
+// Modo TV — fase I / R26 (D6 = a). Quem abre: a casa (qualquer usuário, pelo
+// botão do Command Center) e o usuário do papel "TV só-leitura" de QUALQUER
+// empresa (a TV mostra a empresa DELE). Tenant comum continua no Command Center.
+// Dado sempre escopado pela empresa da sessão, com PERMISSOES_TV (sem dinheiro).
+// Sem banco (testes antigos) → a tela abre com "—".
+export function rotaModoTv(supabase?: SupabaseClient, agoraFn: () => Date = () => new Date()): Handler {
   return async (req, res) => {
     const user = (req as AuthedRequest).dashUser;
-    if (!ehDaCasa(user)) {
-      res.redirect('/dashboard/cockpit');
+    if (!user || !(ehDaCasa(user) || ehPapelTv(user))) {
+      res.redirect(paginaInicialDe(user));
       return;
     }
-    res.type('text/html').send(renderModoTvPage(user));
+    const agora = agoraFn();
+    // Usuário da TV: PERMISSOES_TV. Pessoa da casa abrindo a TV: nunca vê mais
+    // do que o papel dela já vê (interseção) — e nunca dinheiro.
+    const meu = permissoesDe(user);
+    const perm: PermissoesCC = ehPapelTv(user) ? PERMISSOES_TV : {
+      usinas: PERMISSOES_TV.usinas && meu.usinas, leads: PERMISSOES_TV.leads && meu.leads,
+      propostas: PERMISSOES_TV.propostas && meu.propostas, financeiro: false, marketing: false,
+    };
+    const { dados, contratados } = supabase
+      ? await carregar(req, supabase, user, agora, perm)
+      : { dados: null, contratados: undefined };
+    res.type('text/html').send(renderModoTvPage(user, {
+      agora, nomeUsuario: user.nome ?? null, dados, contratados, nomeAssistente: nomeDaAssistente(user.companyId),
+    }));
   };
 }
+
+/**
+ * Trava do papel "TV só-leitura" (R26): esse usuário só abre o Modo TV. Toda
+ * outra página GET volta pra /dashboard/tv; POST/JSON → 403 (sair continua).
+ * Registrada no router logo depois da sessão.
+ */
+export function travaPapelTv(req: Request, res: Response, next: () => void): void {
+  const user = (req as AuthedRequest).dashUser;
+  if (!ehPapelTv(user)) { next(); return; }
+  const caminho = String(req.path ?? '').toLowerCase().replace(/\/+$/, '') || '/';
+  if ((req.method === 'GET' || req.method === 'HEAD') && caminho === '/tv') { next(); return; }
+  // (o /logout e o /estatico são registrados ANTES da sessão — nem chegam aqui)
+  const querJson = String(req.headers?.accept ?? '').includes('application/json');
+  if ((req.method === 'GET' || req.method === 'HEAD') && !querJson) { res.redirect('/dashboard/tv'); return; }
+  res.status(403).json({ ok: false, error: 'Este acesso é só do Modo TV.' });
+}
+
+/**
+ * Trava do Cockpit antigo (R5): a rota continua viva, mas SÓ para a casa.
+ * A consulta do Cockpit (cockpit-queries.ts) não filtra empresa — lê os leads,
+ * conversas e campanhas de todas — e o tenant caía nela depois do login. O
+ * "SYNC AGORA" (POST /cockpit/sync) sincronizava as usinas de TODAS as
+ * empresas. Tenant: GET de página → Command Center dele; POST ou JSON → 403.
+ * Registrada no router com router.use('/cockpit', …) antes das rotas.
+ */
+export function travaTelaDaCasa(req: Request, res: Response, next: () => void): void {
+  const user = (req as AuthedRequest).dashUser;
+  if (ehDaCasa(user)) { next(); return; }
+  const querJson = String(req.headers?.accept ?? '').includes('application/json');
+  if ((req.method === 'GET' || req.method === 'HEAD') && !querJson) {
+    res.redirect(paginaInicialDe(user));
+    return;
+  }
+  res.status(403).json({ ok: false, error: 'Área indisponível para a sua empresa.' });
+}
+
+/** Cockpit antigo: só da casa (ver travaTelaDaCasa). */
+export const travaCockpitDaCasa = travaTelaDaCasa;
+/** Visão geral (/home, R24): a consulta (fetchDashboardKpis e os gráficos
+ *  mensais) é da casa e não filtra empresa — o tenant, que nem tem o item no
+ *  menu, caía nela digitando o endereço e via os números da casa. */
+export const travaVisaoGeralDaCasa = travaTelaDaCasa;

@@ -40,6 +40,19 @@ export interface DashUser {
   assistentePausada?: { linkPagar: string | null; estagio?: 1 | 2; admin?: boolean };
 }
 
+// Modo TV (renovação do miolo R26, decisão D6 = a — SEM migration): a TV do
+// escritório entra com um usuário comum cujo PAPEL se chama "TV só-leitura"
+// (variações: "TV", "TV somente leitura"). Esse papel não tem permissão de
+// área nenhuma e o painel só deixa ele abrir /dashboard/tv (travaPapelTv) —
+// números e quadros do Command Center da empresa DELE, sem nome de cliente,
+// sem dinheiro. O papel é uma linha em dashboard_roles (dado, não estrutura).
+export const PAPEL_TV = 'TV só-leitura';
+export function ehPapelTv(user: DashUser | null | undefined): boolean {
+  if (!user || user.isAdmin) return false;
+  const nome = String(user.roleNome ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  return /^tv(\b|$)/.test(nome);
+}
+
 export function can(user: DashUser | null | undefined, area: Area, nivel: Nivel): boolean {
   if (!user) return false;
   if (user.isAdmin) return true;

@@ -6,7 +6,9 @@ const snap: any = { comercial:{leads:42,negociacao:8,ganhos:5,propostas:12}, ate
 describe('renderCerebroPage', () => {
   it('e um documento full-screen com os numeros reais embutidos', () => {
     const html = renderCerebroPage(snap, ['Oi, eu sou o Elo.']);
-    expect(html).toContain('<!DOCTYPE html>');
+    // TROCA DELIBERADA (renovação do miolo R23 — ok do Junior no PR): o Cérebro entrou
+    // na casca do painel, que emite <!doctype html> (minúsculo). Continua documento completo.
+    expect(html).toMatch(/<!doctype html>/i);
     expect(html).toContain('42');            // Comercial leads
     expect(html).toContain('30');            // usinas
     expect(html).toContain('Pergunte ao Elo'); // caixa de pergunta

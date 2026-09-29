@@ -73,6 +73,32 @@ export const TELAS_RENOVADAS: string[] = [
 
   // Cobrança recorrente (28/09/2026) — Financeiro › Assinaturas (lista + detalhe), nasceu no padrão cc-
   'assinaturas-views.ts',
+
+  // ── Onda 4 (R5, R21–R26): cada fatia acrescenta SÓ debaixo do seu marcador ──
+  // R21 — Comercial II (contratos, Fechou!, contrato do lead, recados, lojas, conhecimento)
+  'comercial-casca.ts',
+  'contratos-views.ts',
+  'vendas-views.ts',
+  'contrato-form-views.ts',
+  'recados-views.ts',
+  'lojas-views.ts',
+  'conhecimento-views.ts',
+
+  // R22 — Operação II (pós-venda, medição)
+  'pos-venda-views.ts',
+  'medicao-views.ts',
+
+  // R23 — Prédio Vivo e Cérebro dentro da casca (modo imersivo)
+  'predio-views.ts',
+  'cerebro-views.ts',
+
+  // R24 — Visão geral (/home)
+  'views.ts#renderHomePage',
+
+  // R25 — Faxina: telas que já eram estilo próprio e ainda carregavam o Tailwind
+  'energia-views.ts',
+  'conhecer-views.ts',
+
 ];
 
 export const RE_TAILWIND = /\b(bg|text|border|ring|from|to)-(white|black|slate|gray|zinc|sky|cyan|amber|emerald|rose|red|green|yellow|indigo|violet)(-\d{2,3})?\b|\b(p|px|py|m|mx|my|mt|mb|gap|space-[xy])-\d|\brounded(-\w+)?\b|\bgrid-cols-\d/;
