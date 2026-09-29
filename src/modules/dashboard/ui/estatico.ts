@@ -17,6 +17,7 @@ import type { Request, Response } from 'express';
 import { CSS_DESIGN_SYSTEM } from './estilo.js';
 import { LOGO_NEGATIVA_WIDE_BASE64 } from './logo-negativa-wide.js';
 import { CSS_MAPA_USINAS, JS_MAPA_USINAS, JS_MAPA_USINA } from './mapa-cliente.js';
+import { CSS_ATENDIMENTO } from './css-atendimento.js';
 
 /** Classes que telas ANTIGAS ainda usam dentro do corpo (moravam no <style> do layout). */
 const CSS_LEGADO_LAYOUT = `
@@ -120,6 +121,9 @@ const ARQUIVOS: ReadonlyMap<string, ArquivoEstatico> = new Map([
   ['mapa-usinas.css', arquivo('mapa-usinas', 'css', Buffer.from(CSS_MAPA_USINAS, 'utf-8'))],
   ['mapa-usinas.js', arquivo('mapa-usinas', 'js', Buffer.from(JS_MAPA_USINAS, 'utf-8'))],
   ['mapa-usina.js', arquivo('mapa-usina', 'js', Buffer.from(JS_MAPA_USINA, 'utf-8'))],
+  // Atendimento (Leads › Conversas e ficha do lead): a grade de 3 colunas. No
+  // <head>, não no fim do <body> — senão a tela pisca sem as colunas (28/09).
+  ['atendimento.css', arquivo('atendimento', 'css', Buffer.from(CSS_ATENDIMENTO, 'utf-8'))],
 ]);
 
 export const URL_CSS_PAINEL = ARQUIVOS.get('painel.css')!.url;
@@ -129,6 +133,7 @@ export const URL_LOGO_CASA = ARQUIVOS.get('logo-casa.png')!.url;
 export const URL_CSS_MAPA_USINAS = ARQUIVOS.get('mapa-usinas.css')!.url;
 export const URL_JS_MAPA_USINAS = ARQUIVOS.get('mapa-usinas.js')!.url;
 export const URL_JS_MAPA_USINA = ARQUIVOS.get('mapa-usina.js')!.url;
+export const URL_CSS_ATENDIMENTO = ARQUIVOS.get('atendimento.css')!.url;
 
 const NOME_ARQUIVO = /^([a-z-]+)\.([0-9a-f]{10})\.(css|js|png)$/;
 

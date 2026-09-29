@@ -228,15 +228,14 @@ export function renderLeadsListPage(
     ${painelInsights}
     ${avisoAlertas}
     ${cartaoSecao({ titulo: 'Leads', dica: 'Filtre por etapa ou busque por nome', acoesHtml: busca, corpoHtml: `${chips}<div class="cc-leads-gap"></div>${tabelaHtml}${pag}` })}
-  </div>
-  <style>
+  </div>`;
+  return renderLayout({ active: 'leads', title: 'Leads', body, user, tailwind: false, dark: temaDaTela(user, 'claro') === 'escuro', largo: true, cabeca: `<style>
     .cc-leads .cc-leads-gap{height:16px}
     .cc-leads .cc-panel+.cc-panel,.cc-leads .cc-aviso+.cc-panel,.cc-leads .cc-panel+.cc-aviso{margin-top:16px}
     .cc-leads .cc-busca{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
     .cc-leads .cc-busca input[name=q]{width:260px}
     @media (max-width:760px){ .cc-leads .cc-busca{width:100%} .cc-leads .cc-busca input[name=q]{flex:1;width:auto;min-width:0} }
-  </style>`;
-  return renderLayout({ active: 'leads', title: 'Leads', body, user, tailwind: false, dark: temaDaTela(user, 'claro') === 'escuro', largo: true });
+  </style>` });
 }
 
 // ---------------------------------------------------------------------------
