@@ -22,7 +22,7 @@ const adapters: Partial<Record<MarcaInversor, MonitoringAdapter>> = {
   nep: nepAdapter,
   abb: abbAdapter,
   foxess: foxessAdapter,         // LIVE 27/06 — validado em prod (30 inversores Q1-2500-E)
-  goodwe: goodweAdapter,         // SEMS Portal (API interna, e-mail+senha) — validado ao vivo 01/07
+  goodwe: goodweAdapter,         // SEMS+ (API interna, e-mail+senha) — SEMS antigo desligado 23/09; migrado 29/09
   solis: solisAdapter,           // API oficial SolisCloud (KeyId+KeySecret, HMAC) — validado ao vivo 01/07
   sungrow: sungrowAdapter,       // OpenAPI OAuth2 texto plano (app só-Monitoring) — validado ao vivo 03/07
   saj: sajAdapter,               // elekeeper (assinatura MD5+SHA1, senha AES-ECB) — validado ao vivo 29/07 (85 plantas SunBright)

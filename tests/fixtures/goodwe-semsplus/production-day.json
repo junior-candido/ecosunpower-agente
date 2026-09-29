@@ -1,0 +1,10 @@
+{
+ "code": "00000",
+ "description": "成功",
+ "traceId": "t-prod",
+ "data": {
+  "proSystemTotalStats": 20.8,
+  "profitProStats": 0,
+  "currency": "USD"
+ }
+}

@@ -26,10 +26,9 @@ export function rotuloMarca(marca: MarcaInversor | string): string {
   return ROTULO[marca] ?? String(marca);
 }
 
-// Dica do que fazer, por marca. GoodWe: o portal SEMS antigo foi descontinuado
-// (dados param em 23/09) — é a integração que precisa mudar, não a usina.
-function dicaPortalParado(marca: string): string {
-  if (marca === 'goodwe') return 'integração precisa de atualização';
+// Dica do que fazer. (GoodWe teve dica própria enquanto o SEMS antigo estava
+// fora do ar — 23/09 a 29/09; o adapter já fala com o SEMS+, então vale a geral.)
+function dicaPortalParado(_marca: string): string {
   return 'pode ser o inversor sem internet ou a integração com o portal';
 }
 

@@ -16,6 +16,7 @@ import { solisAdapter } from '../src/modules/monitoring/adapters/solis.js';
 import { sungrowAdapter } from '../src/modules/monitoring/adapters/sungrow.js';
 import { solarEdgeAdapter } from '../src/modules/monitoring/adapters/solaredge.js';
 import { clearAllTokens } from '../src/modules/monitoring/util/token-cache.js';
+import { limparCachesGoodwe } from '../src/modules/monitoring/adapters/goodwe.js';
 
 function resJson(status: number, jsonBody: unknown): Response {
   return {
@@ -26,7 +27,7 @@ function resJson(status: number, jsonBody: unknown): Response {
   } as Response;
 }
 
-beforeEach(() => clearAllTokens());
+beforeEach(() => { clearAllTokens(); limparCachesGoodwe(); });
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -119,23 +120,21 @@ describe('Deye', () => {
 });
 
 describe('GoodWe', () => {
-  it('janela que falha depois de uma que deu certo → falhaParcial', async () => {
+  it('dia que falha depois de um que deu certo → fora de geracoes + falhaParcial', async () => {
     const fetchMock = vi.fn(async (url: string, init: any) => {
       const u = String(url);
-      if (u.includes('CrossLogin')) return resJson(200, { hasError: false, code: 0, data: { uid: 'u', timestamp: 1, token: 't' } });
-      if (u.includes('QueryPowerStationMonitor')) return resJson(200, { hasError: false, code: 0, data: { list: [] } });
+      if (u.includes('/auth/cross-login')) return resJson(200, { code: '00000', data: { uid: 'u', timestamp: 1, token: 't', api: 'https://us-gateway.semsportal.com/web/sems' } });
+      if (u.includes('stationPage')) return resJson(200, { code: '00000', data: { dataList: [] } });
       const body = JSON.parse(init.body);
-      if (body.date === '2026-09-10') {
-        return resJson(200, { hasError: false, code: 0, data: { lines: [{ name: 'PVGeneration', unit: 'kWh', xy: [{ x: '2026-09-05', y: 7 }] }] } });
-      }
-      return resJson(400, { hasError: true, msg: 'bad' });
+      if (body.startTime.startsWith('2026-09-05')) return resJson(200, { code: '00000', data: { proSystemTotalStats: 7 } });
+      return resJson(400, { code: 'B0001', description: 'bad' });
     });
     vi.stubGlobal('fetch', fetchMock);
-    const r = await goodweAdapter.fetchGeneration({ email: 'a@b.com', password: 'x', site_id: 'ps' }, '2026-08-01', '2026-09-10');
+    const r = await goodweAdapter.fetchGeneration({ email: 'a@b.com', password: 'x', site_id: 'ps' }, '2026-09-05', '2026-09-06');
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.geracoes).toEqual([{ data: '2026-09-05', geracao_kwh: 7 }]);
-    expect(r.falhaParcial).toBeTruthy();
+    expect(r.falhaParcial).toBe('1 de 2 dias não respondeu (06/09)');
   });
 });
 
