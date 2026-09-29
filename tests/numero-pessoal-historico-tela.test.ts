@@ -47,7 +47,7 @@ describe('pedirHistoricoCompleto (Evolution v2)', () => {
     // os outros ajustes do dono ficam como estavam
     expect(JSON.parse(f.mock.calls[1][1].body)).toEqual({ rejectCall: true, msgCall: 'Não atendo ligação', groupsIgnore: true, alwaysOnline: false, readMessages: false, readStatus: true, syncFullHistory: true });
     const wh = JSON.parse(f.mock.calls[2][1].body).webhook;
-    expect(wh.events).toEqual(['MESSAGES_UPSERT', 'MESSAGES_SET']);
+    expect(wh.events).toEqual(['MESSAGES_UPSERT', 'MESSAGES_SET', 'MESSAGES_UPDATE', 'PRESENCE_UPDATE', 'LABELS_ASSOCIATION', 'LABELS_EDIT']);
     expect(wh.headers).toEqual({ 'x-webhook-token': 'tok' });
     expect(wh.url).toBe('https://painel.exemplo/webhook');
     // a apikey só vai no cabeçalho

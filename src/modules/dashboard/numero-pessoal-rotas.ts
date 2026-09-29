@@ -12,10 +12,11 @@ import type { Request, Response } from 'express';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AuthedRequest } from './auth.js';
 import { numeroPessoalDoDono, instanciaLivreParaPessoal, nomeInstanciaPessoal, CASA } from '../numero-pessoal.js';
-import { estadoConexao, obterQrConexao, criarInstancia, pedirHistoricoCompleto, type ConexaoEvolutionDeps, type QrConexao } from '../evolution-conexao.js';
+import { estadoConexao, obterQrConexao, criarInstancia, pedirHistoricoCompleto, apontarWebhook, type ConexaoEvolutionDeps, type QrConexao } from '../evolution-conexao.js';
 import { resumoDoPessoal, DIAS_HISTORICO, type ImportadorHistorico } from '../numero-pessoal-historico.js';
 import { mesmaOrigem } from './atendimento-rotas.js';
 import { renderWhatsappPessoalPage, resultadoWhatsappPessoal } from './whatsapp-pessoal-views.js';
+import { lerMapeamento, salvarMapeamento, mapeamentoDoFormulario, type EtiquetaWhatsapp } from '../etiquetas-funil.js';
 import { audit } from './audit.js';
 
 export interface DepsNumeroPessoal {
@@ -29,6 +30,8 @@ export interface DepsNumeroPessoal {
   webhookToken?: string;
   /** Importador do histórico (o mesmo do webhook): progresso + puxar o que a Evolution guardou. */
   historico?: Pick<ImportadorHistorico, 'progresso' | 'puxarDoServidor' | 'recomecar' | 'cancelar'>;
+  /** W4: etiquetas do WhatsApp Business da instância do dono (Evolution findLabels). */
+  etiquetasDaInstancia?: (instancia: string) => Promise<EtiquetaWhatsapp[]>;
 }
 
 const primeiroNome = (s: string | null | undefined) => String(s ?? '').trim().split(/\s+/)[0] || null;
@@ -47,16 +50,19 @@ export function criarRotasNumeroPessoal(deps: DepsNumeroPessoal) {
     const r = req as AuthedRequest;
     if (!daCasa(r, res)) return;
     const np = await numeroPessoalDoDono(deps.supabase, CASA, r.dashUser.id);
-    const [estado, resumo] = await Promise.all([
+    const [estado, resumo, etiquetas, mapeamento] = await Promise.all([
       np && deps.evolution ? estadoConexao(deps.evolution, np.instancia).catch(() => 'desconhecido' as const) : Promise.resolve(null),
       np ? resumoDoPessoal(deps.supabase, np) : Promise.resolve(null),
+      np && deps.etiquetasDaInstancia ? deps.etiquetasDaInstancia(np.instancia).catch(() => null) : Promise.resolve(null),
+      np ? lerMapeamento(deps.supabase, np) : Promise.resolve([]),
     ]);
     res.type('html').send(renderWhatsappPessoalPage({
       user: r.dashUser,
-      numero: np ? { instancia: np.instancia, ativo: np.ativo, donoNome: np.dono_nome } : null,
+      numero: np ? { instancia: np.instancia, ativo: np.ativo, donoNome: np.dono_nome, marcarLida: np.marcar_lida_ao_abrir !== false } : null,
       estado,
       historico: np ? { resumo, progresso: deps.historico?.progresso(np.instancia) ?? null, dias: DIAS_HISTORICO, disponivel: !!deps.evolution && !!deps.historico } : undefined,
       resultado: resultadoWhatsappPessoal(r.query?.ok ?? r.query?.erro),
+      etiquetas: np && deps.etiquetasDaInstancia ? { disponiveis: etiquetas, mapeamento } : undefined,
       sugestao: nomeInstanciaPessoal(r.dashUser.id),
     }));
   }
@@ -101,6 +107,46 @@ export function criarRotasNumeroPessoal(deps: DepsNumeroPessoal) {
     if (!ativo) deps.historico?.cancelar(np.instancia);
     await audit(deps.supabase, { companyId: CASA, userId: r.dashUser.id, entidade: 'whatsapp_pessoal', acao: ativo ? 'religou' : 'desligou', valorNovo: np.instancia });
     res.redirect(303, `/dashboard/whatsapp/pessoal?ok=${ativo ? 'religado' : 'desligado'}`);
+  }
+
+  /**
+   * W3 — POST /whatsapp/pessoal/leitura { marcar: '1' | '0' }: liga/desliga o
+   * "marcar como lida ao abrir" (só o dono). Aproveita e reaponta os avisos da
+   * instância (✓✓ e "digitando…" precisam dos eventos novos).
+   */
+  async function leitura(req: Request, res: Response): Promise<void> {
+    const r = req as AuthedRequest;
+    if (!daCasa(r, res)) return;
+    if (!mesmaOrigem(r)) { res.status(403).send('origem não permitida'); return; }
+    const np = await numeroPessoalDoDono(deps.supabase, CASA, r.dashUser.id);
+    if (!np) { res.redirect(303, '/dashboard/whatsapp/pessoal'); return; }
+    const marcar = String(r.body?.marcar ?? '') === '1';
+    const { error } = await deps.supabase.from('whatsapp_numeros_pessoais').update({ marcar_lida_ao_abrir: marcar, atualizado_em: new Date().toISOString() })
+      .eq('id', np.id).eq('company_id', CASA).eq('dono_user_id', r.dashUser.id);
+    if (error) { res.redirect(303, '/dashboard/whatsapp/pessoal?erro=leitura_sem_migration'); return; }
+    if (deps.evolution && deps.webhookUrl) await apontarWebhook(deps.evolution, np.instancia, deps.webhookUrl, deps.webhookToken).catch(() => 'falhou');
+    await audit(deps.supabase, { companyId: CASA, userId: r.dashUser.id, entidade: 'whatsapp_pessoal', acao: marcar ? 'leitura_ligada' : 'leitura_desligada', valorNovo: np.instancia });
+    res.redirect(303, `/dashboard/whatsapp/pessoal?ok=${marcar ? 'leitura_ligada' : 'leitura_desligada'}`);
+  }
+
+  /**
+   * W4 — POST /whatsapp/pessoal/etiquetas { etapa_<id>: labelId }: qual etiqueta
+   * do WhatsApp vale para cada etapa do funil (só o dono; etiquetas conferidas
+   * com as que existem no WhatsApp dele). Reaponta os avisos (LABELS_*).
+   */
+  async function etiquetas(req: Request, res: Response): Promise<void> {
+    const r = req as AuthedRequest;
+    if (!daCasa(r, res)) return;
+    if (!mesmaOrigem(r)) { res.status(403).send('origem não permitida'); return; }
+    const np = await numeroPessoalDoDono(deps.supabase, CASA, r.dashUser.id);
+    if (!np || !deps.etiquetasDaInstancia) { res.redirect(303, '/dashboard/whatsapp/pessoal'); return; }
+    const disponiveis = await deps.etiquetasDaInstancia(np.instancia).catch(() => null);
+    if (!disponiveis) { res.redirect(303, '/dashboard/whatsapp/pessoal?erro=etiquetas_sem_whatsapp#wp-etiquetas'); return; }
+    const pares = mapeamentoDoFormulario((r.body ?? {}) as Record<string, unknown>, disponiveis);
+    if (!(await salvarMapeamento(deps.supabase, np, pares))) { res.redirect(303, '/dashboard/whatsapp/pessoal?erro=etiquetas_sem_migration#wp-etiquetas'); return; }
+    if (deps.evolution && deps.webhookUrl) await apontarWebhook(deps.evolution, np.instancia, deps.webhookUrl, deps.webhookToken).catch(() => 'falhou');
+    await audit(deps.supabase, { companyId: CASA, userId: r.dashUser.id, entidade: 'whatsapp_pessoal', acao: 'etiquetas_funil', valorNovo: pares.map((p) => `${p.etapa}=${p.label_nome ?? p.label_id}`).join(', ').slice(0, 500) });
+    res.redirect(303, '/dashboard/whatsapp/pessoal?ok=etiquetas_salvas#wp-etiquetas');
   }
 
   async function estado(req: Request, res: Response): Promise<void> {
@@ -179,6 +225,7 @@ export function criarRotasNumeroPessoal(deps: DepsNumeroPessoal) {
   }
 
   return {
+    leitura, etiquetas,
     pagina, criar, estado, qr, buscarHistorico, historicoJson,
     desligar: (req: Request, res: Response) => ligar(req, res, false),
     religar: (req: Request, res: Response) => ligar(req, res, true),

@@ -103,3 +103,63 @@ export const ENTRA_SEM_RECARREGAR: MudancaContrato = {
     seletores: ['#cc-at-topo', '#responder', '.cc-at-aviso-envio', '.cc-at-janela', '.cc-at-msg-h', '.cc-at-vazio', 'input[name=chave]', 'textarea[name=texto]'],
   },
 };
+
+// ---------------------------------------------------------------------------
+// W1 (28/09/2026) — mídia no WhatsApp: foto, PDF/documento, áudio e vídeo.
+// ---------------------------------------------------------------------------
+
+/** Foto do chat amplia na própria tela (a janelinha é criada pelo script). */
+export const ENTRA_AMPLIAR: MudancaContrato = {
+  motivo: 'Junior: foto em miniatura que amplia no chat',
+  entra: { dataAttrs: ['data-ampliar'], seletores: ['[data-ampliar]', 'button', 'img'] },
+};
+
+/**
+ * Anexar foto, PDF/documento, áudio (arquivo ou gravado) e vídeo — com prévia
+ * antes de enviar, legenda, arrastar/colar e envio sem recarregar. Mesmas
+ * regras do texto (no número da Eva, só dentro da janela de 24 h).
+ */
+export const ENTRA_MIDIA: MudancaContrato = {
+  motivo: 'Junior: enviar foto, PDF, áudio e vídeo pelo painel (prévia + legenda)',
+  entra: {
+    formularios: [{
+      method: 'POST', action: `/dashboard/leads/${ID}/responder-midia`, enctype: 'multipart/form-data',
+      campos: [{ name: 'arquivo', type: 'file' }, { name: 'chave', type: 'hidden' }, { name: 'legenda', type: 'text' }],
+    }],
+    ids: ['cc-at-anexo-prev', 'cc-at-arquivo', 'cc-at-gravar', 'cc-at-legenda'],
+    seletores: ['#cc-at-gravar', '#conversa', 'form[data-envio-midia]'],
+    dataAttrs: ['data-envio-midia'],
+  },
+};
+
+// ---------------------------------------------------------------------------
+// W2 (28/09/2026) — responder CITANDO e REAGIR com emoji.
+// ---------------------------------------------------------------------------
+
+/**
+ * Cada mensagem com id do WhatsApp ganha "⋯" (Responder / reagir 👍❤️😂😮😢🙏);
+ * "Responder" põe "Respondendo a …" em cima do campo e o id da citada no
+ * campo oculto `citando` (texto e arquivo). Reações e citações aparecem no balão.
+ */
+export const ENTRA_CITAR_REAGIR: MudancaContrato = {
+  motivo: 'Junior: responder citando uma mensagem e reagir com emoji',
+  sai: {
+    formularios: [
+      { method: 'POST', action: `/dashboard/leads/${ID}/responder`, enctype: '', campos: [{ name: 'chave', type: 'hidden' }, { name: 'texto', type: 'textarea' }] },
+      { method: 'POST', action: `/dashboard/leads/${ID}/responder-midia`, enctype: 'multipart/form-data', campos: [{ name: 'arquivo', type: 'file' }, { name: 'chave', type: 'hidden' }, { name: 'legenda', type: 'text' }] },
+    ],
+  },
+  entra: {
+    formularios: [
+      { method: 'POST', action: `/dashboard/leads/${ID}/responder`, enctype: '', campos: [{ name: 'chave', type: 'hidden' }, { name: 'citando', type: 'hidden' }, { name: 'texto', type: 'textarea' }] },
+      { method: 'POST', action: `/dashboard/leads/${ID}/responder-midia`, enctype: 'multipart/form-data', campos: [{ name: 'arquivo', type: 'file' }, { name: 'chave', type: 'hidden' }, { name: 'citando', type: 'hidden' }, { name: 'legenda', type: 'text' }] },
+    ],
+    fetches: ['URLR'],
+    ids: ['cc-at-citando', 'cc-at-citando-txt'],
+    dataAttrs: ['data-acoes', 'data-msg', 'data-tirar-citacao'],
+    seletores: [
+      '.cc-at-foto', '.cc-at-menu-msg', '.cc-at-midia,.cc-at-doc-txt strong', '.cc-at-msg-q', '.cc-at-msg-t', '.cc-at-reacoes',
+      '[data-acoes]', '[data-msg]', '[data-tirar-citacao]', 'audio', 'input[name=citando]', 'video',
+    ],
+  },
+};
