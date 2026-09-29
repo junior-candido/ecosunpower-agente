@@ -331,6 +331,8 @@ function soDigitos(v: string | null | undefined): string { return (v ?? '').repl
 
 const kDetalhes = (id: string) => `agd:pedido:${id}`;
 const kConfirmando = (id: string) => `agd:confirmando:${id}`;
+const kSugestaoFeita = (cid: string, phone: string) => `agd:sugestao-feita:${cid}:${soDigitos(phone)}`;
+const TTL_SUGESTAO_FEITA_S = 7 * 24 * 3600;
 const kSugestao = (cid: string, admin: string) => `agd:sugerir:${cid}:${soDigitos(admin)}`;
 
 export interface NovoPedido {
@@ -418,6 +420,30 @@ export class AgendamentoPendenteService {
     const id = await this.d.repo.inserir({ companyId: e.companyId, leadId: n.leadId, phone: n.phone, tipo: n.tipo, inicioISO: n.inicioISO, fimISO: n.fimISO });
     await this.salvarDetalhes(id, n.detalhes);
     const p: PedidoAgendamento = { ...n.detalhes, id, companyId: e.companyId, leadId: n.leadId, phone: n.phone, tipo: n.tipo, inicioISO: n.inicioISO, fimISO: n.fimISO, resultado: ST_PENDENTE, criadoEmMs: this.d.agoraMs() };
+
+    // O cliente aceitou o horário que o ADMIN sugeriu? Então já está confirmado
+    // (decisão do Junior, 28/09) — desde que o horário bata com a sugestão.
+    let sugerida: { sugestao: string; pedidoId: string } | null = null;
+    try {
+      const raw = await this.d.kv.get(kSugestaoFeita(e.companyId, n.phone));
+      sugerida = raw ? JSON.parse(raw) : null;
+    } catch { sugerida = null; }
+    if (sugerida) {
+      await this.d.kv.del(kSugestaoFeita(e.companyId, n.phone)).catch(() => {});
+      if (horarioBateComSugestao(sugerida.sugestao, n.inicioISO)) {
+        const respostaAdmin = await this.confirmar(p, true);
+        const depois = await this.d.repo.buscar(id, e.companyId).catch(() => null);
+        if (depois && depois.resultado === null) {
+          await this.d.enviarAdmin(`✅ O cliente aceitou sua sugestão — agendado.\n👤 ${p.leadNome || p.phone} · ${formatarDataHora(p.inicioISO)}\n${respostaAdmin}`, []).catch(() => false);
+          this.d.log('info', `[agenda-pendente] pedido ${id}: cliente aceitou a sugestão "${sugerida.sugestao}" — confirmado direto`, { pedido_id: id });
+          return { id, adminAvisado: true };
+        }
+        // Não deu pra confirmar (conflito, Google fora...): segue o fluxo normal do pedido.
+        this.d.log('warn', `[agenda-pendente] pedido ${id}: aceite da sugestão não confirmou (${respostaAdmin.slice(0, 80)}) — vai pro admin`, { pedido_id: id });
+      } else {
+        this.d.log('info', `[agenda-pendente] pedido ${id}: horário ${n.inicioISO} não bate com a sugestão "${sugerida.sugestao}" — vai pro admin`, { pedido_id: id });
+      }
+    }
 
     // A memória da Eva guarda o que o cliente RECEBEU (a resposta livre dela foi segurada).
     await this.falarComCliente({ ...p }, textoClienteAguardando(e, n.tipo, n.inicioISO));
@@ -563,9 +589,12 @@ export class AgendamentoPendenteService {
       return 'ℹ️ Esse pedido já foi resolvido antes. Não mandei a sugestão.';
     }
     const foi = await this.falarComCliente(p, textoClienteSugestao(e, p, sugestao));
+    // Decisão do Junior (28/09): se o cliente ACEITAR o horário que o admin
+    // sugeriu, já conta como confirmado — sem 2ª confirmação.
+    if (foi) await this.d.kv.set(kSugestaoFeita(p.companyId, p.phone), JSON.stringify({ sugestao, pedidoId: p.id }), 'EX', TTL_SUGESTAO_FEITA_S).catch(() => {});
     this.d.log('info', `[agenda-pendente] admin sugeriu "${sugestao}" pro pedido ${p.id} (enviado=${foi})`, { pedido_id: p.id });
     return foi
-      ? '📨 Mandei sua sugestão ao cliente. Quando ele responder, chega um novo pedido pra você confirmar.'
+      ? '📨 Mandei sua sugestão ao cliente. Se ele aceitar esse horário, já fica agendado e eu te aviso; se pedir outro, chega um novo pedido pra você.'
       : `Pedido fechado, mas a sugestão não saiu.${AVISO_TXT_FN(p.phone)}`;
   }
 
@@ -697,6 +726,34 @@ export function pareceComando(t: string): boolean {
   if (/^\/|^menu$|^evabt:/i.test(t)) return true;
   // Um "token" só, começando por letra, com _ : ou - (ids de botão: menucat_financeiro, findel-no, finrec:…)
   return /^[a-z][a-z0-9_:-]*$/i.test(t) && /[_:-]/.test(t);
+}
+
+/**
+ * O horário escolhido bate com o que o admin escreveu? (ex.: "sexta 10h",
+ * "quinta à tarde", "02/10 às 9h30"). Confere dia da semana, data, hora e
+ * período que o texto citar; texto sem nada conferível NÃO bate (vai pro admin).
+ */
+export function horarioBateComSugestao(sugestao: string, inicioISO: string): boolean {
+  const t = sugestao.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const d = new Date(inicioISO);
+  const partes = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'numeric', hour: 'numeric', minute: 'numeric', hour12: false }).formatToParts(d);
+  const val = (k: string) => partes.find(x => x.type === k)?.value ?? '';
+  const dia = val('weekday'); const hora = Number(val('hour')) % 24; const min = Number(val('minute'));
+  const diaNum = Number(val('day')); const mes = Number(val('month'));
+  let conferiu = false;
+  const semana: Array<[RegExp, string]> = [[/segunda/, 'Mon'], [/terca/, 'Tue'], [/quarta/, 'Wed'], [/quinta/, 'Thu'], [/sexta/, 'Fri'], [/sabado/, 'Sat'], [/domingo/, 'Sun']];
+  const citados = semana.filter(([re]) => re.test(t));
+  if (citados.length > 0) { conferiu = true; if (!citados.some(([, w]) => w === dia)) return false; }
+  const data = t.match(/\b(\d{1,2})\/(\d{1,2})\b/);
+  if (data) { conferiu = true; if (Number(data[1]) !== diaNum || Number(data[2]) !== mes) return false; }
+  const h = t.replace(/\b\d{1,2}\/\d{1,2}\b/g, ' ').match(/\b(\d{1,2})\s*(?:h|:|horas?\b)\s*(\d{2})?/);
+  if (h) {
+    conferiu = true;
+    if (Number(h[1]) !== hora) return false;
+    if (h[2] && Number(h[2]) !== min) return false;
+  } else if (/manha/.test(t)) { conferiu = true; if (hora >= 12) return false; }
+  else if (/tarde/.test(t)) { conferiu = true; if (hora < 12) return false; }
+  return conferiu;
 }
 
 function extrairDetalhes(p: PedidoAgendamento & { detalhesOk?: boolean }): DetalhesPedido {

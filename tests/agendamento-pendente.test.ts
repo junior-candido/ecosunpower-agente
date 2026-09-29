@@ -507,3 +507,60 @@ describe('revisões (28/09): robustez', () => {
     expect(t.enviarCliente).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('cliente aceita a sugestão do admin = já confirmado (decisão do Junior 28/09)', () => {
+  const SEXTA_10H = '2026-10-02T13:00:00.000Z'; // sex 02/10 10:00 BRT
+  const fimDe = (iso: string) => new Date(Date.parse(iso) + 30 * 60_000).toISOString();
+
+  it('horarioBateComSugestao confere dia, data, hora e período', async () => {
+    const { horarioBateComSugestao } = await import('../src/modules/vendas/agendamento-pendente.js');
+    expect(horarioBateComSugestao('sexta 10h', SEXTA_10H)).toBe(true);
+    expect(horarioBateComSugestao('sexta de manhã', SEXTA_10H)).toBe(true);
+    expect(horarioBateComSugestao('02/10 às 10:00', SEXTA_10H)).toBe(true);
+    expect(horarioBateComSugestao('sexta 14h', SEXTA_10H)).toBe(false);
+    expect(horarioBateComSugestao('quinta 10h', SEXTA_10H)).toBe(false);
+    expect(horarioBateComSugestao('sexta à tarde', SEXTA_10H)).toBe(false);
+    expect(horarioBateComSugestao('quando der', SEXTA_10H)).toBe(false);
+  });
+
+  it('aceitou o horário sugerido: cria o evento, confirma ao cliente e avisa o admin, sem 2º pedido', async () => {
+    const t = montar();
+    const { id } = await t.svc.registrarPedido(novo());
+    await t.svc.responder('outro', id, '5561999990000');
+    await t.svc.tratarTextoDoAdmin('5561999990000', 'sexta 10h');
+    t.enviarCliente.mockClear(); t.enviarAdmin.mockClear();
+    const r = await t.svc.registrarPedido({ ...novo(), inicioISO: SEXTA_10H, fimISO: fimDe(SEXTA_10H) });
+    expect(t.agenda.createEvent).toHaveBeenCalledTimes(1);
+    expect(t.repo.rows.find(x => x.id === r.id)!.resultado).toBeNull();
+    expect(t.enviarCliente).toHaveBeenCalledTimes(1);
+    expect(t.enviarCliente.mock.calls[0][1]).toContain('O Junior confirmou');
+    expect(t.enviarAdmin).toHaveBeenCalledTimes(1);
+    expect(t.enviarAdmin.mock.calls[0][0]).toContain('cliente aceitou sua sugestão — agendado');
+  });
+
+  it('escolheu OUTRO horário: vira pedido normal pro admin confirmar', async () => {
+    const t = montar();
+    const { id } = await t.svc.registrarPedido(novo());
+    await t.svc.responder('outro', id, '5561999990000');
+    await t.svc.tratarTextoDoAdmin('5561999990000', 'sexta 10h');
+    t.enviarCliente.mockClear();
+    const quinta = '2026-10-08T17:00:00.000Z';
+    const r = await t.svc.registrarPedido({ ...novo(), inicioISO: quinta, fimISO: fimDe(quinta) });
+    expect(t.agenda.createEvent).not.toHaveBeenCalled();
+    expect(t.repo.rows.find(x => x.id === r.id)!.resultado).toBe(ST_PENDENTE);
+    expect(t.enviarCliente.mock.calls[0][1]).toContain('Anotei sua preferência');
+  });
+
+  it('aceitou mas a agenda ficou ocupada: volta pro fluxo normal (pendente + admin)', async () => {
+    const t = montar();
+    const { id } = await t.svc.registrarPedido(novo());
+    await t.svc.responder('outro', id, '5561999990000');
+    await t.svc.tratarTextoDoAdmin('5561999990000', 'sexta 10h');
+    t.agenda.isAvailable.mockResolvedValueOnce(false);
+    t.enviarCliente.mockClear();
+    const r = await t.svc.registrarPedido({ ...novo(), inicioISO: SEXTA_10H, fimISO: fimDe(SEXTA_10H) });
+    expect(t.agenda.createEvent).not.toHaveBeenCalled();
+    expect(t.repo.rows.find(x => x.id === r.id)!.resultado).toBe(ST_PENDENTE);
+    expect(t.enviarCliente.mock.calls[0][1]).toContain('Anotei sua preferência');
+  });
+});
