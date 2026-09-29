@@ -1,15 +1,50 @@
 // src/modules/dashboard/os-views.ts
 // Tela do form da OS (checklist 3-em-1 + upload de fotos) + laudo HTML imprimível.
+// Renovação do miolo — R13 (28/09/2026): a TELA da OS no padrão cc- (tema
+// escuro, sem Tailwind), checklist em painel com toque grande no celular; os
+// mesmos formulários (salvar, concluir por formaction, foto multipart) e os
+// mesmos campos ligados por form="osForm". O LAUDO (documento com doctype
+// próprio, que vai pro cliente) NÃO mudou.
 import { renderLayout, escapeHtml } from './views.js';
 import type { DashUser } from './permissions.js';
 import type { OSRow, FotoOS } from './os-queries.js';
 import { progressoOS, type ItemPreenchido, type ResumoOS } from './os-checklist.js';
 import { empresa } from '../empresa-config.js';
+import { cabecalhoPagina, cartaoSecao, pilulaStatus, botao, barra, icone } from './ui/componentes.js';
+import { temaDaTela } from './ui/tema.js';
+import { TIPO_TEXTO } from './manutencao-views.js';
 
-const TIPO_LABEL: Record<string, string> = {
-  limpeza: '🧹 Limpeza', revisao_inversor: '🔌 Revisão inversor',
-  revisao_eletrica: '⚡ Revisão elétrica', corretiva: '🔧 Corretiva', inspecao: '🔎 Inspeção',
-};
+const CSS_OS = `
+.cc-os{max-width:860px}
+.cc-os .cc-panel+.cc-panel{margin-top:16px}
+.cc-os-prog{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.cc-os-prog .cc-bar{flex:1}
+.cc-os-prog span{font-size:13px;color:var(--cc-text-2);white-space:nowrap}
+.cc-os-lista{display:flex;flex-direction:column}
+.cc-os-item{display:flex;align-items:center;gap:12px;min-height:48px;padding:8px 4px;border-bottom:1px solid var(--cc-line);font-size:14px;color:var(--cc-text)}
+.cc-os-item:last-child{border-bottom:0}
+label.cc-os-item{cursor:pointer}
+.cc-os-item input[type=checkbox]{width:22px;height:22px;flex:none;accent-color:var(--cc-gold)}
+.cc-os-med{justify-content:space-between;flex-wrap:wrap}
+.cc-os-med input{width:200px;max-width:100%}
+.cc-os-foto{flex-direction:column;align-items:stretch}
+.cc-os-foto small{font-size:12px;color:var(--cc-faint);margin-left:6px}
+.cc-os-minis{display:flex;flex-wrap:wrap;gap:6px}
+.cc-os-minis img{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--cc-line-2)}
+.cc-os-up{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.cc-os-up input[type=file]{flex:1 1 180px;min-width:0}
+.cc-os-obs{display:flex;flex-direction:column;gap:6px;margin-top:14px}
+.cc-os-obs textarea{width:100%}
+.cc-os-acoes{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.cc-os-acoes .cc-btn{min-height:40px}
+@media (max-width:760px){
+  .cc-os-item{min-height:52px;font-size:15px}
+  .cc-os-item input[type=checkbox]{width:26px;height:26px}
+  .cc-os-med input{width:100%}
+  .cc-os-up .cc-btn{flex:1 1 auto;justify-content:center;min-height:44px}
+  .cc-os-acoes .cc-btn{flex:1 1 100%;justify-content:center;min-height:48px}
+}
+`;
 
 // Os campos de check/medição/observações usam o atributo HTML5 form="osForm"
 // pra pertencer ao form de salvar SEM ficarem aninhados — assim o form de upload
@@ -17,52 +52,62 @@ const TIPO_LABEL: Record<string, string> = {
 function renderItem(osId: string, i: ItemPreenchido, fotos: FotoOS[], travado: boolean): string {
   const dis = travado ? 'disabled' : '';
   if (i.kind === 'check') {
-    return `<label class="flex items-center gap-2 py-1"><input type="checkbox" form="osForm" name="${escapeHtml(i.chave)}" ${i.valor === true ? 'checked' : ''} ${dis}> ${escapeHtml(i.label)}</label>`;
+    return `<label class="cc-os-item"><input type="checkbox" form="osForm" name="${escapeHtml(i.chave)}" ${i.valor === true ? 'checked' : ''} ${dis}><span>${escapeHtml(i.label)}</span></label>`;
   }
   if (i.kind === 'medicao') {
-    return `<label class="flex items-center gap-2 py-1">${escapeHtml(i.label)}
-      <input type="text" form="osForm" name="${escapeHtml(i.chave)}" value="${escapeHtml(String(i.valor ?? ''))}" placeholder="${escapeHtml(i.unidade ?? '')}" class="border rounded px-2 py-0.5 text-sm" ${dis}></label>`;
+    return `<label class="cc-os-item cc-os-med"><span>${escapeHtml(i.label)}</span>
+      <input type="text" form="osForm" name="${escapeHtml(i.chave)}" value="${escapeHtml(String(i.valor ?? ''))}" placeholder="${escapeHtml(i.unidade ?? '')}" ${dis}></label>`;
   }
   // foto: form próprio (irmão do osForm, não aninhado)
   const minis = fotos.filter((f) => f.item_chave === i.chave)
-    .map((f) => `<img src="${escapeHtml(f.url ?? '#')}" class="w-16 h-16 object-cover rounded border">`).join('');
+    .map((f) => `<img src="${escapeHtml(f.url ?? '#')}" alt="">`).join('');
   const upload = travado ? '' : `
-    <form method="post" action="/dashboard/os/${escapeHtml(osId)}/foto" enctype="multipart/form-data" class="inline-flex items-center gap-1 mt-1">
+    <form method="post" action="/dashboard/os/${escapeHtml(osId)}/foto" enctype="multipart/form-data" class="cc-form cc-os-up">
       <input type="hidden" name="itemChave" value="${escapeHtml(i.chave)}">
-      <input type="file" name="foto" accept="image/*" class="text-xs" id="os_foto_${escapeHtml(i.chave)}">
-      <button type="button" onclick="var i=document.getElementById('os_foto_${escapeHtml(i.chave)}');i.setAttribute('capture','environment');i.click();i.removeAttribute('capture')" class="px-2 py-0.5 rounded bg-slate-600 text-white text-xs">📷 Tirar foto</button>
-      <button class="px-2 py-0.5 rounded bg-slate-700 text-white text-xs">📤 Enviar</button>
+      <input type="file" name="foto" accept="image/*" id="os_foto_${escapeHtml(i.chave)}" aria-label="Foto: ${escapeHtml(i.label)}">
+      <button type="button" onclick="var i=document.getElementById('os_foto_${escapeHtml(i.chave)}');i.setAttribute('capture','environment');i.click();i.removeAttribute('capture')" class="cc-btn cc-btn-sm">📷 Tirar foto</button>
+      <button type="submit" class="cc-btn cc-btn-sm">${icone('send', 'sm')}Enviar</button>
     </form>`;
-  return `<div class="py-1"><div class="text-sm">${escapeHtml(i.label)} <span class="text-xs text-slate-400">(${i.fotos} foto${i.fotos === 1 ? '' : 's'})</span></div>
-    <div class="flex flex-wrap gap-1 mt-1">${minis}</div>${upload}</div>`;
+  return `<div class="cc-os-item cc-os-foto"><div>${escapeHtml(i.label)}<small>(${i.fotos} foto${i.fotos === 1 ? '' : 's'})</small></div>
+    ${minis ? `<div class="cc-os-minis">${minis}</div>` : ''}${upload}</div>`;
 }
 
 export function renderOSPage(os: OSRow, itens: ItemPreenchido[], fotos: FotoOS[], user?: DashUser): string {
   const travado = os.status !== 'aberta';
   const p = progressoOS(itens);
-  const body = `
-  <div class="max-w-2xl">
-    <a href="/dashboard/manutencao" class="text-xs text-slate-500 hover:underline">← Manutenção</a>
-    <h1 class="text-xl font-bold text-slate-900 mt-1">📋 OS — ${TIPO_LABEL[os.tipo] ?? escapeHtml(os.tipo)}</h1>
-    <p class="text-sm text-slate-600">${escapeHtml(os.apelido ?? 'usina')} · ${escapeHtml(os.clienteNome ?? '')}</p>
-    <p class="text-xs ${travado ? 'text-emerald-600' : 'text-slate-500'} mb-3">${travado ? '✅ OS concluída' : `Progresso: ${p.feitos}/${p.total} (${p.pct}%)`}</p>
+  const tipo = TIPO_TEXTO[os.tipo] ?? os.tipo;
+  const laudo = botao({ rotulo: 'Gerar laudo (PDF)', href: `/dashboard/os/${os.id}/laudo`, tom: travado ? 'ouro' : 'normal', icone: 'file', attrs: { target: '_blank' } });
+
+  const checklist = `
+    <div class="cc-os-prog">${barra(p.pct, p.pct === 100 ? 'ok' : 'ouro')}<span>${travado ? 'OS concluída' : `Progresso: ${p.feitos}/${p.total} (${p.pct}%)`}</span></div>
+    <div class="cc-form cc-os-lista">${itens.map((i) => renderItem(os.id, i, fotos, travado)).join('')}</div>
+    <label class="cc-form cc-os-obs"><span class="cc-rot">Observações</span>
+      <textarea form="osForm" name="observacoes" rows="3" ${travado ? 'disabled' : ''}>${escapeHtml(os.observacoes ?? '')}</textarea>
+    </label>
+    ${travado ? '' : `<div class="cc-os-acoes">
+      <button form="osForm" class="cc-btn">${icone('check', 'sm')}Salvar</button>
+      <button form="osForm" formaction="/dashboard/os/${escapeHtml(os.id)}/concluir" class="cc-btn cc-btn-gold">${icone('doc-check', 'sm')}Concluir OS</button>
+    </div>`}`;
+
+  const body = `<div class="cc-root cc-os">
+${cabecalhoPagina({
+    trilha: [{ rotulo: 'Manutenção', href: '/dashboard/manutencao' }, { rotulo: 'Ordem de Serviço' }],
+    titulo: `OS — ${tipo}`,
+    subtitulo: `${os.apelido ?? '—'} · ${os.clienteNome ?? '—'}`,
+    seloHtml: travado ? pilulaStatus('normal', 'OS concluída') : pilulaStatus('info', 'aberta'),
+    acoesHtml: laudo,
+  })}
 
     <!-- form de salvar/concluir: vazio aqui; os campos se ligam por form="osForm" -->
     <form id="osForm" method="post" action="/dashboard/os/${escapeHtml(os.id)}/salvar"></form>
 
-    <div class="bg-white border rounded-xl p-4">
-      ${itens.map((i) => renderItem(os.id, i, fotos, travado)).join('')}
-      <label class="block text-sm mt-3">Observações
-        <textarea form="osForm" name="observacoes" class="w-full border rounded px-2 py-1 text-sm mt-1" rows="3" ${travado ? 'disabled' : ''}>${escapeHtml(os.observacoes ?? '')}</textarea>
-      </label>
-      ${travado ? '' : `<div class="flex gap-2 mt-3">
-        <button form="osForm" class="px-3 py-1.5 rounded bg-slate-600 text-white text-sm">💾 Salvar</button>
-        <button form="osForm" formaction="/dashboard/os/${escapeHtml(os.id)}/concluir" class="px-3 py-1.5 rounded bg-emerald-600 text-white text-sm">✅ Concluir OS</button>
-      </div>`}
-    </div>
-    <a href="/dashboard/os/${escapeHtml(os.id)}/laudo" target="_blank" class="inline-block mt-3 px-3 py-1.5 rounded bg-violet-600 text-white text-sm">📄 Gerar laudo (PDF)</a>
-  </div>`;
-  return renderLayout({ active: 'manutencao', title: 'Ordem de Serviço', body, user });
+${cartaoSecao({ titulo: 'Checklist', dica: `${p.feitos} de ${p.total} feitos`, corpoHtml: checklist })}
+</div>
+<style>${CSS_OS}</style>`;
+  return renderLayout({
+    active: 'manutencao', title: 'Ordem de Serviço', body, user,
+    tailwind: false, dark: temaDaTela(user, 'escuro') === 'escuro',
+  });
 }
 
 export function renderOSLaudoHtml(os: OSRow, resumo: ResumoOS, fotos: FotoOS[], responsavel: string): string {

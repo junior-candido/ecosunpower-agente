@@ -5,46 +5,59 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { uploadAnexo, getSignedUrls } from '../anexos/storage.js';
 import { marcarManutencaoFeita } from './manutencao-queries.js';
 import type { OSTipo } from './os-checklist.js';
+import { usinaPertenceAoOperador } from './permissions.js';
+import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
 
 export interface OSRow {
   id: string; sistema_id: string; lead_id: string | null; manutencao_id: string | null;
   tipo: OSTipo; status: string; checklist: Record<string, any> | null; observacoes: string | null;
   executor: string | null; aberta_em: string; concluida_em: string | null;
   apelido?: string | null; clienteNome?: string | null;
+  company_id?: string | null;
 }
 
 export async function criarOS(client: SupabaseClient, o: {
   sistemaId: string; leadId: string | null; tipo: OSTipo; manutencaoId?: string | null;
+  /** Empresa DONA da usina (sem isso o DEFAULT da 077 carimbava EcoSun). */
+  companyId: string;
 }): Promise<string> {
   const { data, error } = await client.from('ordens_servico').insert({
-    sistema_id: o.sistemaId, lead_id: o.leadId, tipo: o.tipo, manutencao_id: o.manutencaoId ?? null, status: 'aberta',
+    company_id: o.companyId, sistema_id: o.sistemaId, lead_id: o.leadId, tipo: o.tipo, manutencao_id: o.manutencaoId ?? null, status: 'aberta',
   }).select('id').single();
   if (error) throw new Error(`criarOS: ${error.message}`);
   return (data as { id: string }).id;
 }
 
 // Cria OS a partir de uma manutenção agendada (portas a/b).
-export async function abrirOSDeManutencao(client: SupabaseClient, manutencaoId: string): Promise<string> {
+// Só abre OS de manutenção da empresa da SESSÃO (null = não achou / é de outra).
+export async function abrirOSDeManutencao(client: SupabaseClient, manutencaoId: string, companyId: string): Promise<string | null> {
   const { data: m, error } = await client.from('manutencoes')
-    .select('sistema_id, lead_id, tipo').eq('id', manutencaoId).maybeSingle();
+    .select('sistema_id, lead_id, tipo, sistemas_clientes(company_id)').eq('id', manutencaoId).maybeSingle();
   if (error) throw new Error(`abrirOSDeManutencao: ${error.message}`);
-  if (!m) throw new Error('abrirOSDeManutencao: manutenção não encontrada');
   const row = m as any;
-  return criarOS(client, { sistemaId: row.sistema_id, leadId: row.lead_id, tipo: row.tipo, manutencaoId });
+  // Dono = empresa da USINA (o company_id da manutenção antiga pode ser o DEFAULT EcoSun).
+  const dono: string | null = row?.sistemas_clientes?.company_id ?? null;
+  if (!row || !usinaPertenceAoOperador(dono, companyId)) return null;
+  return criarOS(client, { sistemaId: row.sistema_id, leadId: row.lead_id, tipo: row.tipo, manutencaoId, companyId: dono ?? ECOSUN_COMPANY_ID });
 }
 
-export async function getOS(client: SupabaseClient, id: string): Promise<OSRow | null> {
+// OS da empresa da SESSÃO — null se não existe ou é de outra empresa (a tela,
+// salvar, foto, concluir e laudo passam todos por aqui antes de agir).
+export async function getOS(client: SupabaseClient, id: string, companyId: string): Promise<OSRow | null> {
   const { data, error } = await client.from('ordens_servico')
-    .select('id, sistema_id, lead_id, manutencao_id, tipo, status, checklist, observacoes, executor, aberta_em, concluida_em, sistemas_clientes(apelido, leads(name))')
+    .select('id, sistema_id, lead_id, manutencao_id, tipo, status, checklist, observacoes, executor, aberta_em, concluida_em, sistemas_clientes(apelido, company_id, leads(name))')
     .eq('id', id).maybeSingle();
   if (error) throw new Error(`getOS: ${error.message}`);
   if (!data) return null;
   const r = data as any;
+  // Dono = empresa da USINA (o company_id da OS antiga pode ser o DEFAULT EcoSun).
+  if (!usinaPertenceAoOperador(r.sistemas_clientes?.company_id ?? null, companyId)) return null;
   return {
     id: r.id, sistema_id: r.sistema_id, lead_id: r.lead_id, manutencao_id: r.manutencao_id,
     tipo: r.tipo, status: r.status, checklist: r.checklist, observacoes: r.observacoes,
     executor: r.executor, aberta_em: r.aberta_em, concluida_em: r.concluida_em,
     apelido: r.sistemas_clientes?.apelido ?? null, clienteNome: r.sistemas_clientes?.leads?.name ?? null,
+    company_id: r.sistemas_clientes?.company_id ?? null,
   };
 }
 
@@ -72,24 +85,28 @@ export async function listFotosOS(client: SupabaseClient, osId: string, comUrl =
 
 export async function addFotoOS(client: SupabaseClient, osId: string, p: {
   leadId: string | null; itemChave: string; buffer: Buffer; mimeType: string; ext: string; legenda?: string;
+  /** Empresa dona da OS (sem isso o DEFAULT da 077 carimbava EcoSun). */
+  companyId: string;
 }): Promise<void> {
   // bucket de anexos do cliente; OS avulsa sem lead usa o próprio osId como pasta
   const up = await uploadAnexo(client, p.leadId ?? osId, 'os', p.buffer, p.mimeType, p.ext);
   if (!up.ok || !up.storage_path) throw new Error(`addFotoOS: upload falhou (${up.error ?? '?'})`);
   const { error } = await client.from('os_fotos').insert({
-    os_id: osId, item_chave: p.itemChave, storage_path: up.storage_path, legenda: p.legenda ?? null,
+    company_id: p.companyId, os_id: osId, item_chave: p.itemChave, storage_path: up.storage_path, legenda: p.legenda ?? null,
   });
   if (error) throw new Error(`addFotoOS: ${error.message}`);
 }
 
 // Concluir: se ligada a manutenção, reusa marcarManutencaoFeita (auto-agenda + alerta).
-export async function concluirOS(client: SupabaseClient, id: string, p: { executor: string; notas: string }): Promise<{ manutencaoId: string | null }> {
-  const os = await getOS(client, id);
+export async function concluirOS(client: SupabaseClient, id: string, p: { executor: string; notas: string; companyId: string }): Promise<{ manutencaoId: string | null }> {
+  const os = await getOS(client, id, p.companyId);
   if (!os) throw new Error('concluirOS: OS não encontrada');
   const { error } = await client.from('ordens_servico')
     .update({ status: 'concluida', concluida_em: new Date().toISOString(), executor: p.executor, updated_at: new Date().toISOString() })
     .eq('id', id).eq('status', 'aberta');
   if (error) throw new Error(`concluirOS: ${error.message}`);
+  // A manutenção ligada é da mesma usina (a OS só se liga a ela por
+  // abrirOSDeManutencao, que já conferiu a empresa) — por isso não reconfere.
   if (os.manutencao_id) {
     await marcarManutencaoFeita(client, os.manutencao_id, {
       feitaEm: new Date().toISOString().slice(0, 10), feitoPor: p.executor, notas: p.notas,

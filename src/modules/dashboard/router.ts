@@ -117,8 +117,8 @@ import type { AuthedRequest } from './auth.js';
 import { pastaDaEmpresa, listarPastasDaEmpresa } from './pasta-da-empresa.js';
 import { EMPRESA_CASA as EMPRESA_PADRAO_PASTA } from './canal-envio.js';
 import type { BlogGenerator, BlogDraft } from '../blog-generator.js';
-import { renderBlogDraftsPage, renderBlogIndisponivel, renderBlogRevisarPage } from './blog-views.js';
-import { renderEmailPage } from './email-views.js';
+import { renderBlogDraftsPage, renderBlogIndisponivel, renderBlogRevisarPage, renderBlogLayout } from './blog-views.js';
+import { renderEmailPage, renderEmailLayout, renderEmailIndisponivel } from './email-views.js';
 import { renderMedicaoPage } from './medicao-views.js';
 import {
   renderDemonstrativosLista, renderDemonstrativoCliente, renderConferenciaPdf, renderDigitar, renderEnviarPdf,
@@ -132,7 +132,7 @@ import { objetivoManual, fallbackMensagem } from './pos-venda-mensagens.js';
 import { snoozeAte } from './pos-venda-sugestao-memoria.js';
 import { registrarAbordagemManual } from '../monitoring/abordagem/abordagens-repo.js';
 import { numerosMes } from '../monitoring/abordagem/numeros-usina.js';
-import { listarAgenda, prontuarioUsina, listarLeiturasPendentes, criarManutencao, marcarManutencaoFeita, reagendarManutencao, registrarLeituraManual } from './manutencao-queries.js';
+import { listarAgenda, prontuarioUsina, listarLeiturasPendentes, criarManutencao, marcarManutencaoFeita, reagendarManutencao, registrarLeituraManual, listarUsinasAtivas, sistemaDoOperador, manutencaoDoOperador } from './manutencao-queries.js';
 import { renderManutencaoPage, renderProntuarioCc } from './manutencao-views.js';
 import type { ManutencaoTipo } from './manutencao-motor.js';
 import { criarOS, abrirOSDeManutencao, getOS, salvarOS, addFotoOS, listFotosOS, fotoCountsPorItem, concluirOS } from './os-queries.js';
@@ -144,6 +144,7 @@ import { blocoMiniMapaUsina } from './mapa-usinas-views.js';
 import { montarRotasEnergia } from './energia-rotas.js';
 import { criarTravaDeModulo } from './modulos-contratados.js';
 import { bancoDoOperador } from '../tenant-client.js';   // strangler RLS Fase B (flag RLS_TENANT_ROTAS)
+import { guardaClienteDaEmpresa, clienteDaEmpresa, anexoDoCliente, sistemaDaEmpresa } from './clientes-guarda.js';   // R16: /clientes presa à empresa da sessão
 import { criarTravaLeadDaEmpresa } from './trava-lead-empresa.js';
 import { criarTravaPropostaDaEmpresa, leadIdConferido } from './trava-proposta-empresa.js';
 import { criarRotasAtendimento } from './atendimento-rotas.js';
@@ -287,6 +288,13 @@ export function createDashboardRouter(
       if (can(req.dashUser, area, nivel)) { next(); return; }
       res.status(403).send('<h2>Sem permissão</h2><p>Fale com o administrador.</p>');
     };
+  }
+
+  // R17 (segurança): o que é SÓ da casa (blog do site da EcoSun, jornada de
+  // e-mail com flag global, recálculo de canais de todos os leads). Tenant → 403.
+  function soDaCasa(req: AuthedRequest, res: Response, next: import('express').NextFunction) {
+    if (req.dashUser?.companyId === ECOSUN) { next(); return; }
+    res.status(403).send('<h2>Sem permissão</h2><p>Esta ação é só da empresa dona do painel.</p>');
   }
 
   // Atendimento Parte 2 — responder pelo painel + Assumir/Devolver (atendimento-rotas.ts).
@@ -1291,7 +1299,7 @@ b.onclick=async function(){
       const { renderServicosPage } = await import('./servicos-views.js');
       const q = req.query as Record<string, string | undefined>;
       const aviso = q.ok ? { tipo: 'ok' as const, texto: q.ok } : q.erro ? { tipo: 'erro' as const, texto: q.erro } : undefined;
-      res.type('html').send(renderServicosPage(await listarServicos(supabase), req.dashUser, aviso));
+      res.type('html').send(renderServicosPage(await listarServicos(supabase, 100, false, req.dashUser!.companyId ?? null), req.dashUser, aviso));
     } catch (err) {
       console.error('[servicos]', err);
       res.status(500).send('Falha ao carregar os serviços. A migration 092 já foi aplicada?');
@@ -1303,7 +1311,7 @@ b.onclick=async function(){
     try {
       const { listarServicos } = await import('./servicos-store.js');
       const { renderLixeiraServicosPage } = await import('./servicos-views.js');
-      res.type('html').send(renderLixeiraServicosPage(await listarServicos(supabase, 100, true), req.dashUser));
+      res.type('html').send(renderLixeiraServicosPage(await listarServicos(supabase, 100, true, req.dashUser!.companyId ?? null), req.dashUser));
     } catch (err) {
       console.error('[servicos/lixeira]', err);
       res.status(500).send('Falha ao carregar a lixeira. A migration 099 já foi aplicada?');
@@ -1312,8 +1320,11 @@ b.onclick=async function(){
 
   router.post('/servicos/:id/excluir', exigir('servicos', 'editar'), async (req: AuthedRequest, res) => {
     try {
-      const { excluirServico } = await import('./servicos-store.js');
-      await excluirServico(supabase, String(req.params.id));
+      const { excluirServico, getServico } = await import('./servicos-store.js');
+      // Só serviço da empresa da sessão (revisão R14: antes excluía de qualquer empresa).
+      const s = await getServico(supabase, String(req.params.id), req.dashUser!.companyId);
+      if (!s) { res.redirect('/dashboard/servicos?erro=' + encodeURIComponent('Registro não achado.')); return; }
+      await excluirServico(supabase, s.id);
       res.redirect('/dashboard/servicos?ok=' + encodeURIComponent('🗑️ Foi pra Lixeira — dá pra restaurar quando quiser.'));
     } catch (err) {
       console.error('[servicos/excluir]', err);
@@ -1323,8 +1334,10 @@ b.onclick=async function(){
 
   router.post('/servicos/:id/restaurar', exigir('servicos', 'editar'), async (req: AuthedRequest, res) => {
     try {
-      const { restaurarServico } = await import('./servicos-store.js');
-      await restaurarServico(supabase, String(req.params.id));
+      const { restaurarServico, getServico } = await import('./servicos-store.js');
+      const s = await getServico(supabase, String(req.params.id), req.dashUser!.companyId);
+      if (!s) { res.redirect('/dashboard/servicos/lixeira'); return; }
+      await restaurarServico(supabase, s.id);
       res.redirect('/dashboard/servicos?ok=' + encodeURIComponent('♻️ Restaurado!'));
     } catch (err) {
       console.error('[servicos/restaurar]', err);
@@ -1343,23 +1356,19 @@ b.onclick=async function(){
   });
 
   router.get('/servicos/buscar-cliente', exigir('servicos', 'criar'), async (req: AuthedRequest, res) => {
-    const q = String(req.query.q ?? '').trim().replace(/[,%]/g, ' ');
+    // Parênteses/aspas quebravam o filtro `or` do PostgREST (busca voltava vazia).
+    const q = String(req.query.q ?? '').trim().replace(/[,%()"]/g, ' ');
     if (q.length < 2) { res.json({ clientes: [] }); return; }
-    const db = bancoDoOperador(req, supabase);
-    const { data } = await db.from('leads').select('id, name, phone')
-      .eq('company_id', req.dashUser!.companyId)
-      .or(`name.ilike.%${q}%,phone.ilike.%${q}%`)
-      .limit(8);
-    res.json({ clientes: (data ?? []).map((l: any) => ({ id: l.id, nome: l.name ?? '(sem nome)', telefone: l.phone ?? '' })) });
+    const { buscarClientesDaEmpresa } = await import('./servicos-store.js');
+    res.json({ clientes: await buscarClientesDaEmpresa(bancoDoOperador(req, supabase), req.dashUser!.companyId, q) });
   });
 
   router.get('/servicos/buscar-usina', exigir('servicos', 'criar'), async (req: AuthedRequest, res) => {
     const q = String(req.query.q ?? '').trim().replace(/[,%]/g, ' ');
     if (q.length < 2) { res.json({ usinas: [] }); return; }
-    const db = bancoDoOperador(req, supabase);
-    const { data } = await db.from('sistemas_clientes').select('id, apelido')
-      .ilike('apelido', `%${q}%`).eq('ativo', true).limit(8);
-    res.json({ usinas: (data ?? []).map((s: any) => ({ id: s.id, nome: s.apelido })) });
+    // Só usinas da empresa da sessão (revisão R14: antes listava a frota de todas).
+    const { buscarUsinasDaEmpresa } = await import('./servicos-store.js');
+    res.json({ usinas: await buscarUsinasDaEmpresa(bancoDoOperador(req, supabase), req.dashUser!.companyId, q) });
   });
 
   router.post('/servicos/nova', exigir('servicos', 'criar'), async (req: AuthedRequest, res) => {
@@ -1384,10 +1393,15 @@ b.onclick=async function(){
         res.status(400).json({ ok: false, erro: 'Máximo de 2 vídeos por registro.' }); return;
       }
 
-      const { criarServico } = await import('./servicos-store.js');
+      const { criarServico, conferirVinculosDoServico } = await import('./servicos-store.js');
       const { randomUUID } = await import('crypto');
       // Atribuiu a alguém → nasce 🟡 pendente pra pessoa completar no campo.
       const atribuidoA = b.atribuidoA ? String(b.atribuidoA) : null;
+      // Cliente, usina e "quem faz" têm que ser da empresa da sessão (revisão R14).
+      const erroVinculo = await conferirVinculosDoServico(supabase, req.dashUser!.companyId, {
+        leadId, sistemaId: b.sistemaId ? String(b.sistemaId) : null, atribuidoA,
+      });
+      if (erroVinculo) { res.status(400).json({ ok: false, erro: erroVinculo }); return; }
       const servicoId = await criarServico(supabase, {
         companyId: req.dashUser!.companyId, tipoId: tipo, leadId,
         sistemaId: b.sistemaId ? String(b.sistemaId) : null,
@@ -1419,7 +1433,7 @@ b.onclick=async function(){
       const servicoId = String(req.params.id);
       const { getServico } = await import('./servicos-store.js');
       const { randomUUID } = await import('crypto');
-      const s = await getServico(supabase, servicoId);
+      const s = await getServico(supabase, servicoId, req.dashUser!.companyId);
       if (!s) { res.status(404).json({ ok: false, erro: 'Registro não achado.' }); return; }
       const midias = (Array.isArray(req.body?.midias) ? req.body.midias : []) as { tipoMidia?: string; contentType?: string }[];
       if (s.videos + midias.filter((m) => m.tipoMidia === 'video').length > 2) {
@@ -1444,7 +1458,7 @@ b.onclick=async function(){
     try {
       const servicoId = String(req.params.id);
       const { getServico, concluirServico } = await import('./servicos-store.js');
-      const antes = await getServico(supabase, servicoId);
+      const antes = await getServico(supabase, servicoId, req.dashUser!.companyId);
       if (!antes) { res.status(404).json({ ok: false, erro: 'Registro não achado.' }); return; }
       const obsFinais = String(req.body?.observacoes ?? '').trim();
       const observacoes = obsFinais
@@ -1452,7 +1466,7 @@ b.onclick=async function(){
         : null;
       await concluirServico(supabase, servicoId, observacoes);
       if (options.sendText && options.engineerPhone) {
-        const depois = await getServico(supabase, servicoId);
+        const depois = await getServico(supabase, servicoId, req.dashUser!.companyId);
         options.sendText(options.engineerPhone,
           `✅ Serviço concluído: ${antes.tipoNome} — ${antes.clienteNome}` +
           ` (${depois?.fotos ?? 0} fotos, ${depois?.videos ?? 0} vídeo${(depois?.videos ?? 0) === 1 ? '' : 's'})` +
@@ -1467,7 +1481,7 @@ b.onclick=async function(){
           const { updateUser, dadosAcessoUsuario } = await import('./users-store.js');
           const u = await dadosAcessoUsuario(supabase, antes.atribuidoA);
           if (u?.acessoTemporario && u.ativo && (await contarPendentesDoUsuario(supabase, antes.atribuidoA)) === 0) {
-            await updateUser(supabase, antes.atribuidoA, { ativo: false });
+            await updateUser(supabase, antes.atribuidoA, { ativo: false }, req.dashUser!.companyId);
             if (options.sendText && options.engineerPhone) {
               options.sendText(options.engineerPhone,
                 `🔒 Acesso temporário de ${u.nome} expirou (serviços concluídos). Pra chamar de novo: reabra um serviço ou atribua um novo — reativa sozinho.`,
@@ -1489,7 +1503,7 @@ b.onclick=async function(){
     try {
       const servicoId = String(req.params.id);
       const { getServico, registrarMidias } = await import('./servicos-store.js');
-      const s = await getServico(supabase, servicoId);
+      const s = await getServico(supabase, servicoId, req.dashUser!.companyId);
       if (!s) { res.status(404).json({ ok: false, erro: 'Registro não achado.' }); return; }
       const prefixo = `${s.leadId}/servico/${servicoId}/`;
       const midias = ((Array.isArray(req.body?.midias) ? req.body.midias : []) as { path?: string; tipoMidia?: string }[])
@@ -1511,12 +1525,12 @@ b.onclick=async function(){
       const servicoId = String(req.params.id);
       const motivo = String(req.body?.motivo ?? '').trim();
       const { getServico, reabrirServico } = await import('./servicos-store.js');
-      const s = await getServico(supabase, servicoId);
+      const s = await getServico(supabase, servicoId, req.dashUser!.companyId);
       if (!s) { res.redirect('/dashboard/servicos?erro=' + encodeURIComponent('Registro não achado.')); return; }
       await reabrirServico(supabase, servicoId);
       if (s.atribuidoA) {
         const { updateUser, telefoneDoUsuario } = await import('./users-store.js');
-        await updateUser(supabase, s.atribuidoA, { ativo: true }); // reativa (temporário ou não)
+        await updateUser(supabase, s.atribuidoA, { ativo: true }, req.dashUser!.companyId); // reativa (temporário ou não) — só usuário da empresa da sessão
         if (options.sendText) {
           const tel = await telefoneDoUsuario(supabase, s.atribuidoA);
           if (tel) {
@@ -1543,7 +1557,7 @@ b.onclick=async function(){
   router.post('/servicos/:id/link-campo', exigir('servicos', 'editar'), async (req: AuthedRequest, res) => {
     try {
       const { getServico, gerarLinkCampo } = await import('./servicos-store.js');
-      const s = await getServico(supabase, String(req.params.id));
+      const s = await getServico(supabase, String(req.params.id), req.dashUser!.companyId);
       if (!s) { res.status(404).json({ ok: false, erro: 'Registro não achado.' }); return; }
       const nome = String(req.body?.nome ?? '').trim();
       if (!nome) { res.status(400).json({ ok: false, erro: 'Informe o nome de quem vai fazer.' }); return; }
@@ -1564,7 +1578,7 @@ b.onclick=async function(){
       const { getServico, midiasDoServico } = await import('./servicos-store.js');
       const { renderDetalheServicoPage } = await import('./servicos-views.js');
       const { getSignedUrls } = await import('../anexos/storage.js');
-      const s = await getServico(supabase, String(req.params.id));
+      const s = await getServico(supabase, String(req.params.id), req.dashUser!.companyId);
       if (!s) { res.status(404).send('Registro não achado.'); return; }
       const midias = await midiasDoServico(supabase, s.id);
       const urls = await getSignedUrls(supabase, midias.map((m) => m.path), 3600);
@@ -1713,13 +1727,18 @@ b.onclick=async function(){
     if (!can(req.dashUser, 'usuarios', 'visualizar')) { res.status(403).send('Sem permissão'); return; }
     const cid = req.dashUser!.companyId;
     const [users, roles] = await Promise.all([listUsers(supabase, cid), listRoles(supabase, cid)]);
-    res.type('html').send(renderUsuariosListPage(users, roles, req.dashUser));
+    const { papelCabeNoOperador } = await import('./users-store.js');
+    // Coluna "vê" usa todos os papéis; o <select> do novo usuário só os que este operador pode dar (R19).
+    res.type('html').send(renderUsuariosListPage(users, roles, req.dashUser, roles.filter((r) => papelCabeNoOperador(r, req.dashUser!))));
   });
 
   router.post('/usuarios/novo', async (req: AuthedRequest, res) => {
     if (!can(req.dashUser, 'usuarios', 'criar')) { res.status(403).send('Sem permissão'); return; }
     const { nome, login, senha, role_id, telefone, acesso_temporario, email } = req.body ?? {};
     if (!nome || !login || !senha || !role_id) { res.status(400).send('Campos obrigatórios'); return; }
+    // Segurança (R19): papel só da empresa da sessão e nunca acima de quem cria.
+    const { conferirPapelParaDar } = await import('./users-store.js');
+    if (!(await conferirPapelParaDar(supabase, req.dashUser!, String(role_id)))) { res.status(403).send('Papel não permitido'); return; }
     const emailLimpo = String(email ?? '').trim().toLowerCase() || null;
     const r = await createUser(supabase, {
       companyId: req.dashUser!.companyId, nome, login,
@@ -1770,7 +1789,10 @@ b.onclick=async function(){
     if (!can(req.dashUser, 'usuarios', 'editar')) { res.status(403).send('Sem permissão'); return; }
     const userId = String(req.params.id);
     if (userId === req.dashUser!.id) { res.status(400).send('Você não pode desativar a si mesmo.'); return; }
-    await updateUser(supabase, userId, { ativo: String(req.body?.valor) === 'sim' });
+    const { conferirAlvoUsuario } = await import('./users-store.js');
+    const alvo = await conferirAlvoUsuario(supabase, req.dashUser!, userId);
+    if (!alvo.ok) { res.status(alvo.status).send(alvo.motivo); return; }
+    await updateUser(supabase, userId, { ativo: String(req.body?.valor) === 'sim' }, req.dashUser!.companyId);
     await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'usuario', entidadeId: userId, acao: String(req.body?.valor) === 'sim' ? 'reativou' : 'desativou' });
     res.redirect('/dashboard/usuarios');
   });
@@ -1785,8 +1807,10 @@ b.onclick=async function(){
     // pode ou não, e não o sistema". Histórico (serviços/leads) transfere
     // automaticamente pra quem excluiu (ou pro transferir_para, se vier).
     const destino = String((req.body as Record<string, unknown> | undefined)?.transferir_para ?? '').trim() || req.dashUser!.id;
-    const { excluirTransferindoHistorico } = await import('./users-store.js');
-    const rt = await excluirTransferindoHistorico(supabase, userId, destino);
+    const { excluirTransferindoHistorico, conferirAlvoUsuario } = await import('./users-store.js');
+    const alvo = await conferirAlvoUsuario(supabase, req.dashUser!, userId);
+    if (!alvo.ok) { res.status(alvo.status).send(alvo.motivo); return; }
+    const rt = await excluirTransferindoHistorico(supabase, userId, destino, req.dashUser!.companyId);
     if (!rt.ok) { res.status(400).send(`Não deu pra excluir: ${rt.motivo}. <a href="/dashboard/usuarios">← voltar</a>`); return; }
     await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'usuario', entidadeId: userId, acao: 'excluiu_transferindo', valorNovo: destino });
     res.redirect('/dashboard/usuarios');
@@ -1796,24 +1820,31 @@ b.onclick=async function(){
     if (!can(req.dashUser, 'usuarios', 'visualizar')) { res.status(403).send('Sem permissão'); return; }
     const cid = req.dashUser!.companyId;
     const userId = String(req.params.id);
-    const { data: u } = await supabase.from('dashboard_users')
-      .select('id, nome, login, ativo, role_id, telefone, acesso_temporario, email').eq('id', userId).maybeSingle();
+    const { usuarioParaEditar } = await import('./users-store.js');
+    const u = await usuarioParaEditar(supabase, userId, cid); // só da empresa da sessão (R19)
     if (!u) { res.status(404).send('Usuário não encontrado'); return; }
-    const roles = await listRoles(supabase, cid);
-    res.type('html').send(renderUsuarioEditPage(u as any, roles, req.dashUser));
+    const { papelCabeNoOperador } = await import('./users-store.js');
+    const roles = (await listRoles(supabase, cid)).filter((r) => papelCabeNoOperador(r, req.dashUser!));
+    res.type('html').send(renderUsuarioEditPage(u, roles, req.dashUser));
   });
 
   router.post('/usuarios/:id', async (req: AuthedRequest, res) => {
     if (!can(req.dashUser, 'usuarios', 'editar')) { res.status(403).send('Sem permissão'); return; }
     const userId = String(req.params.id);
     const { nome, role_id, senha, ativo, telefone, acesso_temporario, email } = req.body ?? {};
+    // Segurança (R19): alvo da empresa da sessão, não acima de quem edita; papel idem.
+    const { conferirAlvoUsuario, conferirPapelParaDar } = await import('./users-store.js');
+    const alvo = await conferirAlvoUsuario(supabase, req.dashUser!, userId);
+    if (!alvo.ok) { res.status(alvo.status).send(alvo.motivo); return; }
+    if (userId === req.dashUser!.id && !(ativo === 'on' || ativo === true)) { res.status(400).send('Você não pode desativar a si mesmo.'); return; }
+    if (role_id && !(await conferirPapelParaDar(supabase, req.dashUser!, String(role_id)))) { res.status(403).send('Papel não permitido'); return; }
     await updateUser(supabase, userId, {
-      nome, roleId: role_id, ativo: ativo === 'on' || ativo === true,
+      nome, roleId: role_id || undefined, ativo: ativo === 'on' || ativo === true,
       senhaHash: senha ? await hashSenha(senha) : undefined,
       telefone: telefone !== undefined ? (String(telefone).replace(/\D/g, '') || null) : undefined,
       acessoTemporario: acesso_temporario === 'on' || acesso_temporario === true,
       email: email !== undefined ? (String(email).trim().toLowerCase() || null) : undefined,
-    });
+    }, req.dashUser!.companyId);
     await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'usuario', entidadeId: userId, acao: 'editar' });
     res.redirect('/dashboard/usuarios');
   });
@@ -1931,14 +1962,23 @@ b.onclick=async function(){
 
   // ----- RH (Trabalhe Conosco): vagas + funil de candidatos -----
   router.get('/rh', (_req: AuthedRequest, res) => { res.redirect('/dashboard/rh/candidatos'); });
+  // Empresa da SESSÃO pra toda consulta/escrita do RH (revisão de segurança R18):
+  // as escritas usam o client de serviço — sem o company_id, um tenant com o
+  // módulo RH mexia (status, editar, excluir, currículo) em linha de outra empresa.
+  const empresaRh = (req: AuthedRequest, res: Response): string | null => {
+    const c = req.dashUser?.companyId;
+    if (!c) { res.status(403).send('Sem empresa na sessão'); return null; }
+    return c;
+  };
 
   router.get('/rh/vagas', async (req: AuthedRequest, res) => {
     if (!can(req.dashUser, 'rh', 'visualizar')) { res.status(403).send('Sem permissão'); return; }
     const { listarVagas } = await import('../rh/store.js');
     const { renderVagasPage } = await import('./rh-views.js');
     // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+    const empresa = empresaRh(req, res); if (!empresa) return;
     const db = bancoDoOperador(req, supabase);
-    res.type('html').send(renderVagasPage(await listarVagas(db), req.dashUser));
+    res.type('html').send(renderVagasPage(await listarVagas(db, empresa), req.dashUser));
   });
 
   router.get('/rh/vagas/nova', async (req: AuthedRequest, res) => {
@@ -1949,9 +1989,10 @@ b.onclick=async function(){
 
   router.post('/rh/vagas', async (req: AuthedRequest, res) => {
     if (!can(req.dashUser, 'rh', 'criar')) { res.status(403).send('Sem permissão'); return; }
+    const empresa = empresaRh(req, res); if (!empresa) return;
     const b = req.body ?? {};
     const { criarVaga } = await import('../rh/store.js');
-    const r = await criarVaga(supabase, {
+    const r = await criarVaga(supabase, empresa, {
       titulo: String(b.titulo ?? ''), descricao: String(b.descricao ?? ''),
       requisitos: String(b.requisitos ?? ''), cidade: String(b.cidade ?? 'Brasília-DF'),
       tipo: String(b.tipo ?? 'CLT'),
@@ -1966,8 +2007,9 @@ b.onclick=async function(){
     const { getVaga } = await import('../rh/store.js');
     const { renderVagaFormPage } = await import('./rh-views.js');
     // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+    const empresa = empresaRh(req, res); if (!empresa) return;
     const db = bancoDoOperador(req, supabase);
-    const vaga = await getVaga(db, String(req.params.id));
+    const vaga = await getVaga(db, empresa, String(req.params.id));
     if (!vaga) { res.status(404).send('Vaga não encontrada'); return; }
     res.type('html').send(renderVagaFormPage(vaga, req.dashUser));
   });
@@ -1976,12 +2018,14 @@ b.onclick=async function(){
     if (!can(req.dashUser, 'rh', 'editar')) { res.status(403).send('Sem permissão'); return; }
     const b = req.body ?? {};
     if (!String(b.titulo ?? '').trim()) { res.status(400).send('Título da vaga é obrigatório.'); return; }
+    const empresa = empresaRh(req, res); if (!empresa) return;
     const { atualizarVaga } = await import('../rh/store.js');
-    await atualizarVaga(supabase, String(req.params.id), {
+    const r = await atualizarVaga(supabase, empresa, String(req.params.id), {
       titulo: String(b.titulo ?? ''), descricao: String(b.descricao ?? ''),
       requisitos: String(b.requisitos ?? ''), cidade: String(b.cidade ?? ''),
       tipo: String(b.tipo ?? 'CLT'),
     });
+    if (!r.ok) { res.status(r.error === 'vaga não encontrada' ? 404 : 400).send(r.error ?? 'Erro ao salvar vaga'); return; }
     await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'rh_vaga', entidadeId: String(req.params.id), acao: 'editar' });
     res.redirect('/dashboard/rh/vagas');
   });
@@ -1989,8 +2033,10 @@ b.onclick=async function(){
   router.post('/rh/vagas/:id/status', async (req: AuthedRequest, res) => {
     if (!can(req.dashUser, 'rh', 'editar')) { res.status(403).send('Sem permissão'); return; }
     const status = req.body?.status === 'fechada' ? 'fechada' as const : 'aberta' as const;
+    const empresa = empresaRh(req, res); if (!empresa) return;
     const { atualizarVaga } = await import('../rh/store.js');
-    await atualizarVaga(supabase, String(req.params.id), { status });
+    const r = await atualizarVaga(supabase, empresa, String(req.params.id), { status });
+    if (!r.ok) { res.status(r.error === 'vaga não encontrada' ? 404 : 400).send(r.error ?? 'Erro ao mudar a vaga'); return; }
     await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'rh_vaga', entidadeId: String(req.params.id), acao: status === 'fechada' ? 'fechou' : 'reabriu' });
     res.redirect('/dashboard/rh/vagas');
   });
@@ -2005,16 +2051,18 @@ b.onclick=async function(){
       q: typeof req.query.q === 'string' && req.query.q ? req.query.q : undefined,
     };
     // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+    const empresa = empresaRh(req, res); if (!empresa) return;
     const db = bancoDoOperador(req, supabase);
-    const [candidatos, vagas] = await Promise.all([listarCandidatos(db, filtros), listarVagas(db)]);
+    const [candidatos, vagas] = await Promise.all([listarCandidatos(db, empresa, filtros), listarVagas(db, empresa)]);
     res.type('html').send(renderCandidatosPage(candidatos, vagas, filtros, req.dashUser));
   });
 
   router.post('/rh/candidatos/:id/status', async (req: AuthedRequest, res) => {
     if (!can(req.dashUser, 'rh', 'editar')) { res.status(403).send('Sem permissão'); return; }
+    const empresa = empresaRh(req, res); if (!empresa) return;
     const { mudarStatus } = await import('../rh/store.js');
     const novoStatus = String(req.body?.status ?? '');
-    const r = await mudarStatus(supabase, String(req.params.id), novoStatus, req.dashUser?.nome ?? '?');
+    const r = await mudarStatus(supabase, empresa, String(req.params.id), novoStatus, req.dashUser?.nome ?? '?');
     if (!r.ok) { res.status(400).send(r.error ?? 'Erro'); return; }
     await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'rh_candidato', entidadeId: String(req.params.id), acao: `status:${novoStatus}` });
     res.redirect('/dashboard/rh/candidatos');
@@ -2024,9 +2072,10 @@ b.onclick=async function(){
     if (!can(req.dashUser, 'rh', 'visualizar')) { res.status(403).send('Sem permissão'); return; }
     const { urlCurriculoDoCandidato } = await import('../rh/store.js');
     // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+    const empresa = empresaRh(req, res); if (!empresa) return;
     const db = bancoDoOperador(req, supabase);
-    // Tabela via crachá (RLS); URL assinada via SERVIÇO (storage fica fora da 079).
-    const url = await urlCurriculoDoCandidato(db, String(req.params.id), supabase);
+    // Tabela via crachá (RLS) + filtro da empresa; URL assinada via SERVIÇO (storage fica fora da 079).
+    const url = await urlCurriculoDoCandidato(db, String(req.params.id), supabase, empresa);
     if (!url) { res.status(404).send('Currículo não encontrado — tenta de novo em instantes.'); return; }
     res.redirect(url);
   });
@@ -2034,6 +2083,7 @@ b.onclick=async function(){
   router.get('/rh/busca', async (req: AuthedRequest, res) => {
     if (!can(req.dashUser, 'rh', 'visualizar')) { res.status(403).send('Sem permissão'); return; }
     const { renderBuscaPage } = await import('./rh-views.js');
+    const empresa = empresaRh(req, res); if (!empresa) return;
     const pergunta = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     if (!pergunta) { res.type('html').send(renderBuscaPage('', null, req.dashUser)); return; }
     if (!options.anthropicApiKey) {
@@ -2046,7 +2096,7 @@ b.onclick=async function(){
       const anthropic = new Anthropic({ apiKey: options.anthropicApiKey });
       // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
       const db = bancoDoOperador(req, supabase);
-      const resultados = await buscarNoBanco(anthropic, db, pergunta);
+      const resultados = await buscarNoBanco(anthropic, db, pergunta, empresa);
       res.type('html').send(renderBuscaPage(pergunta, resultados, req.dashUser));
     } catch (err) {
       console.warn('[rh-busca]', (err as Error).message);
@@ -2056,8 +2106,9 @@ b.onclick=async function(){
 
   router.post('/rh/candidatos/:id/excluir', async (req: AuthedRequest, res) => {
     if (!can(req.dashUser, 'rh', 'excluir')) { res.status(403).send('Sem permissão'); return; }
+    const empresa = empresaRh(req, res); if (!empresa) return;
     const { excluirCandidato } = await import('../rh/store.js');
-    const r = await excluirCandidato(supabase, String(req.params.id));
+    const r = await excluirCandidato(supabase, empresa, String(req.params.id));
     if (!r.ok) { res.status(400).send(r.error ?? 'Erro ao excluir'); return; }
     await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'rh_candidato', entidadeId: String(req.params.id), acao: 'excluiu' });
     res.redirect('/dashboard/rh/candidatos');
@@ -2242,23 +2293,23 @@ b.onclick=async function(){
 
   // POST /cadencia/fechou — marca lead como cliente (status=transferido + opt_out=true).
   // Remove da cadência automaticamente.
-  router.post('/cadencia/fechou', async (req: Request, res: Response) => {
+  router.post('/cadencia/fechou', exigir('marketing', 'editar'), async (req: Request, res: Response) => {
     const id = String(req.body?.id ?? '').trim();
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
     // Fatia 4 (strangler RLS): escrita de dado do tenant no client-do-operador.
+    // R17: presa à empresa da SESSÃO (id de lead de outra empresa não mexe em nada).
     const db = bancoDoOperador(req as AuthedRequest, supabase);
-    const { data: leadRow, error } = await db
-      .from('leads')
-      .update({ status: 'transferido', opt_out: true, updated_at: new Date().toISOString() })
-      .eq('id', id)
-      .select('name')
-      .maybeSingle();
-    if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
+    const companyId = (req as AuthedRequest).dashUser!.companyId;
+    const { fecharLeadCadencia } = await import('./cadencia-queries.js');
+    const r = await fecharLeadCadencia(db, companyId, id);
+    if (!r.ok) return res.status(500).send(`erro: ${escapeHtmlSimple(r.erro)}`);
+    const leadRow = r.lead;
 
     // Avisa o Junior no zap e já oferece gerar os documentos (botões disparam o
     // fluxo /fechar existente via evabt:fechar-doc:<cmd>:<leadId>). Best-effort:
     // falha no WhatsApp NÃO quebra o "Fechou" do dashboard.
-    if (leadRow && options.metaService && options.engineerPhone) {
+    // R17: o zap é o do DONO da casa — lead de tenant não vai pra ele.
+    if (leadRow && companyId === ECOSUN && options.metaService && options.engineerPhone) {
       const nome = leadRow?.name ?? 'Cliente';
       try {
         await options.metaService.sendInteractiveButtons(
@@ -2278,16 +2329,15 @@ b.onclick=async function(){
   });
 
   // POST /cadencia/optout — marca lead como opt_out (não atende mais).
-  router.post('/cadencia/optout', async (req: Request, res: Response) => {
+  router.post('/cadencia/optout', exigir('marketing', 'editar'), async (req: Request, res: Response) => {
     const id = String(req.body?.id ?? '').trim();
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
     // Fatia 4 (strangler RLS): escrita de dado do tenant no client-do-operador.
+    // R17: presa à empresa da SESSÃO.
     const db = bancoDoOperador(req as AuthedRequest, supabase);
-    const { error } = await db
-      .from('leads')
-      .update({ opt_out: true, eva_active: false, updated_at: new Date().toISOString() })
-      .eq('id', id);
-    if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
+    const { optoutLeadCadencia } = await import('./cadencia-queries.js');
+    const r = await optoutLeadCadencia(db, (req as AuthedRequest).dashUser!.companyId, id);
+    if (!r.ok) return res.status(500).send(`erro: ${escapeHtmlSimple(r.erro)}`);
     res.redirect('/dashboard/cadencia');
   });
 
@@ -2378,13 +2428,13 @@ b.onclick=async function(){
   });
 
   // Cadência: acompanhamento da reativação de leads da base terceirizada.
-  router.get('/cadencia', async (req: Request, res: Response) => {
+  router.get('/cadencia', exigir('marketing', 'visualizar'), async (req: Request, res: Response) => {
     try {
       const { listCadenciaLeads, calcKpis } = await import('./cadencia-queries.js');
       const { renderCadenciaPage } = await import('./cadencia-views.js');
       // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
       const db = bancoDoOperador(req as AuthedRequest, supabase);
-      const rows = await listCadenciaLeads(db);
+      const rows = await listCadenciaLeads(db, (req as AuthedRequest).dashUser!.companyId);
       const kpis = calcKpis(rows);
       const filterStatus = typeof req.query.status === 'string' ? req.query.status : undefined;
       res.send(renderCadenciaPage({ rows, kpis, filterStatus, user: (req as AuthedRequest).dashUser }));
@@ -3064,26 +3114,30 @@ b.onclick=async function(){
       const { fetchGoogleAnalyticsSummary } = await import('../marketing/google-analytics/index.js');
       // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
       const db = bancoDoOperador(req as AuthedRequest, supabase);
+      // R17 (segurança): toda consulta presa à empresa da SESSÃO. O Analytics é o
+      // do site da CASA (propriedade na env) — tenant nem busca.
+      const companyId = (req as AuthedRequest).dashUser!.companyId;
+      const ehCasa = companyId === ECOSUN;
       const [kpis, campaignsResult, creatives, alerts, channels, insights, googleAds7d, googleAds30d, ga4_30d] = await Promise.all([
-        fetchMarketingKpis(db),
-        listActiveCampaigns(db, { status, search, limit, offset }),
-        listRecentCreatives(db, 8),
-        listPendingAlerts(db),
-        fetchChannelFunnel(db, periodo),
-        buildMarketingInsights(db),
-        fetchGoogleAdsSummary(db, 7),
-        fetchGoogleAdsSummary(db, 30),
-        fetchGoogleAnalyticsSummary(30).catch((err) => ({
+        fetchMarketingKpis(db, companyId),
+        listActiveCampaigns(db, companyId, { status, search, limit, offset }),
+        listRecentCreatives(db, companyId, 8),
+        listPendingAlerts(db, companyId),
+        fetchChannelFunnel(db, companyId, periodo),
+        buildMarketingInsights(db, companyId),
+        fetchGoogleAdsSummary(db, 7, companyId),
+        fetchGoogleAdsSummary(db, 30, companyId),
+        ehCasa ? fetchGoogleAnalyticsSummary(30).catch((err) => ({
           sessions: 0, users: 0, pageviews: 0, dias_com_dado: 0, channels: [], top_pages: [],
           error: (err as Error).message,
-        })),
+        })) : Promise.resolve(undefined),
       ]);
       // Qualidade por campanha: janela 14 dias. Falha silenciosa — não quebra a página.
       let campaignQuality: import('../marketing/campaign-quality.js').CampaignQualityReport | undefined;
       try {
         const { fetchCampaignQualityInputs } = await import('../marketing/campaign-quality-data.js');
         const { analyzeCampaignQuality } = await import('../marketing/campaign-quality.js');
-        const inputs = await fetchCampaignQualityInputs(db, 14);
+        const inputs = await fetchCampaignQualityInputs(db, 14, new Date(), companyId);
         campaignQuality = analyzeCampaignQuality(inputs.spends, inputs.leads);
       } catch (err) {
         console.warn('[dashboard/marketing] campaignQuality falhou (segue sem):', (err as Error).message);
@@ -3115,9 +3169,16 @@ b.onclick=async function(){
   // ----------------------------------------------------------------------
   router.get('/marketing/blog', exigir('marketing', 'visualizar'), async (req: AuthedRequest, res: Response) => {
     const user = req.dashUser;
+    // R17: o blog é o do site da CASA — tenant não vê nem mexe nos rascunhos dela.
+    if (user?.companyId !== ECOSUN) {
+      res.type('text/html').send(renderBlogLayout({
+        title: 'Blog — aprovar posts', body: renderBlogIndisponivel('empresa'), user,
+      }));
+      return;
+    }
     if (!options.blogGenerator) {
-      res.type('text/html').send(renderLayout({
-        active: 'blog', title: 'Blog — aprovar posts', body: renderBlogIndisponivel(), user,
+      res.type('text/html').send(renderBlogLayout({
+        title: 'Blog — aprovar posts', body: renderBlogIndisponivel(), user,
       }));
       return;
     }
@@ -3132,15 +3193,14 @@ b.onclick=async function(){
     }
     const ok = req.query.ok === '1';
     const erro = typeof req.query.erro === 'string' ? req.query.erro : undefined;
-    res.type('text/html').send(renderLayout({
-      active: 'blog',
+    res.type('text/html').send(renderBlogLayout({
       title: 'Blog — aprovar posts',
       body: renderBlogDraftsPage(drafts, { ok, erro, avisoLeitura }),
       user,
     }));
   });
 
-  router.post('/marketing/blog/:id/publicar', exigir('marketing', 'editar'), async (req: AuthedRequest, res: Response) => {
+  router.post('/marketing/blog/:id/publicar', exigir('marketing', 'editar'), soDaCasa, async (req: AuthedRequest, res: Response) => {
     const id = String(req.params.id);
     if (!options.blogGenerator || !options.publicarDraft) {
       res.redirect('/dashboard/marketing/blog?erro=' + encodeURIComponent('Publicação não está configurada neste servidor.'));
@@ -3165,7 +3225,7 @@ b.onclick=async function(){
     }
   });
 
-  router.post('/marketing/blog/:id/descartar', exigir('marketing', 'editar'), async (req: AuthedRequest, res: Response) => {
+  router.post('/marketing/blog/:id/descartar', exigir('marketing', 'editar'), soDaCasa, async (req: AuthedRequest, res: Response) => {
     const id = String(req.params.id);
     if (!options.blogGenerator) {
       res.redirect('/dashboard/marketing/blog?erro=' + encodeURIComponent('Blog não está configurado neste servidor.'));
@@ -3186,7 +3246,7 @@ b.onclick=async function(){
   });
 
   // Tela de revisão: lê o post inteiro, edita e confere a foto antes de publicar.
-  router.get('/marketing/blog/:id/revisar', exigir('marketing', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+  router.get('/marketing/blog/:id/revisar', exigir('marketing', 'visualizar'), soDaCasa, async (req: AuthedRequest, res: Response) => {
     const id = String(req.params.id);
     if (!options.blogGenerator) {
       res.redirect('/dashboard/marketing/blog?erro=' + encodeURIComponent('Blog não está configurado neste servidor.'));
@@ -3200,13 +3260,13 @@ b.onclick=async function(){
     const ok = req.query.ok === '1';
     const fotoOk = req.query.foto === '1';
     const erro = typeof req.query.erro === 'string' ? req.query.erro : undefined;
-    res.type('text/html').send(renderLayout({
-      active: 'blog', title: 'Revisar rascunho', body: renderBlogRevisarPage(draft, { ok, erro, fotoOk }), user: req.dashUser,
+    res.type('text/html').send(renderBlogLayout({
+      title: 'Revisar rascunho', body: renderBlogRevisarPage(draft, { ok, erro, fotoOk }), user: req.dashUser,
     }));
   });
 
   // Salva a edição (título/resumo/conteúdo) do rascunho.
-  router.post('/marketing/blog/:id/editar', exigir('marketing', 'editar'), async (req: AuthedRequest, res: Response) => {
+  router.post('/marketing/blog/:id/editar', exigir('marketing', 'editar'), soDaCasa, async (req: AuthedRequest, res: Response) => {
     const id = String(req.params.id);
     if (!options.blogGenerator) {
       res.redirect('/dashboard/marketing/blog?erro=' + encodeURIComponent('Blog não está configurado neste servidor.'));
@@ -3231,7 +3291,7 @@ b.onclick=async function(){
   });
 
   // Busca/troca a foto do hero (Pexels) no rascunho.
-  router.post('/marketing/blog/:id/foto', exigir('marketing', 'editar'), async (req: AuthedRequest, res: Response) => {
+  router.post('/marketing/blog/:id/foto', exigir('marketing', 'editar'), soDaCasa, async (req: AuthedRequest, res: Response) => {
     const id = String(req.params.id);
     if (!options.blogGenerator) {
       res.redirect('/dashboard/marketing/blog?erro=' + encodeURIComponent('Blog não está configurado neste servidor.'));
@@ -3257,6 +3317,11 @@ b.onclick=async function(){
   // checa a flag 'email_seq_ligado' em app_flags antes de mandar.
   // ----------------------------------------------------------------------
   router.get('/marketing/email', exigir('marketing', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    // R17: a jornada de e-mail (números e flag global) é a da CASA.
+    if (req.dashUser?.companyId !== ECOSUN) {
+      res.type('text/html').send(renderEmailLayout({ body: renderEmailIndisponivel(), user: req.dashUser }));
+      return;
+    }
     let metricas = { enviados: 0, abertos: 0, clicados: 0, quentes: 0, descadastros: 0 };
     try {
       const counts = await supabaseService.contarEventosPorTipo([
@@ -3279,15 +3344,13 @@ b.onclick=async function(){
       console.warn('[dashboard/email] falha ao montar desempenho por step (segue vazio):', (err as Error).message);
     }
     const ligado = (await supabaseService.getFlag('email_seq_ligado')) ?? true;
-    res.type('text/html').send(renderLayout({
-      active: 'email',
-      title: 'E-mail Marketing',
+    res.type('text/html').send(renderEmailLayout({
       body: renderEmailPage(metricas, ligado, desempenho),
       user: req.dashUser,
     }));
   });
 
-  router.post('/marketing/email/ligar', exigir('marketing', 'editar'), async (req: AuthedRequest, res: Response) => {
+  router.post('/marketing/email/ligar', exigir('marketing', 'editar'), soDaCasa, async (req: AuthedRequest, res: Response) => {
     await supabaseService.setFlag('email_seq_ligado', true);
     await audit(supabase, {
       companyId: req.dashUser!.companyId, userId: req.dashUser!.id,
@@ -3296,7 +3359,7 @@ b.onclick=async function(){
     res.redirect('/dashboard/marketing/email?ok=1');
   });
 
-  router.post('/marketing/email/pausar', exigir('marketing', 'editar'), async (req: AuthedRequest, res: Response) => {
+  router.post('/marketing/email/pausar', exigir('marketing', 'editar'), soDaCasa, async (req: AuthedRequest, res: Response) => {
     await supabaseService.setFlag('email_seq_ligado', false);
     await audit(supabase, {
       companyId: req.dashUser!.companyId, userId: req.dashUser!.id,
@@ -3307,7 +3370,9 @@ b.onclick=async function(){
 
   // Backfill manual de leads.channel — alternativa ao CLI quando Easypanel não
   // expoe shell. Botao chamando esta rota fica na secao Canais.
-  router.post('/admin/backfill-channels', async (req: Request, res: Response) => {
+  // R17 (segurança): mexe em TODOS os leads de TODAS as empresas (banco de
+  // serviço) — só a casa, com permissão de editar Marketing.
+  router.post('/admin/backfill-channels', exigir('marketing', 'editar'), soDaCasa, async (req: Request, res: Response) => {
     try {
       const { runBackfillChannels } = await import('./backfill-channel-runner.js');
       const recomputaTodos = req.query.all === '1';
@@ -5931,13 +5996,14 @@ b.onclick=async function(){
   router.get('/manutencao', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
     try {
       // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+      // R13 (segurança): tudo filtrado pela empresa da SESSÃO.
       const db = bancoDoOperador(req, supabase);
-      const [agenda, leiturasPendentes, usinasRes] = await Promise.all([
-        listarAgenda(db),
-        listarLeiturasPendentes(db),
-        db.from('sistemas_clientes').select('id, apelido').eq('ativo', true).order('apelido'),
+      const companyId = req.dashUser!.companyId;
+      const [agenda, leiturasPendentes, usinas] = await Promise.all([
+        listarAgenda(db, companyId),
+        listarLeiturasPendentes(db, companyId),
+        listarUsinasAtivas(db, companyId),
       ]);
-      const usinas = (usinasRes.data ?? []).map((u: any) => ({ id: u.id, apelido: u.apelido }));
       res.type('text/html').send(renderManutencaoPage({ agenda, leiturasPendentes, usinas }, req.dashUser));
     } catch (err) {
       console.error('[manutencao] GET falhou:', (err as Error).message);
@@ -5956,8 +6022,10 @@ b.onclick=async function(){
       }
       // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
       const db = bancoDoOperador(req, supabase);
-      const { data: s } = await db.from('sistemas_clientes').select('lead_id').eq('id', sistemaId).maybeSingle();
-      await criarManutencao(supabase, { sistemaId, leadId: (s as any)?.lead_id ?? null, tipo, origem: 'manual', dataAgendada });
+      // R13 (segurança): a usina tem que ser da empresa da sessão.
+      const sis = await sistemaDoOperador(db, sistemaId, req.dashUser!.companyId);
+      if (!sis) { res.status(404).send('usina não encontrada'); return; }
+      await criarManutencao(supabase, { sistemaId, leadId: sis.leadId, tipo, origem: 'manual', dataAgendada, companyId: sis.companyId });
       res.redirect('/dashboard/manutencao');
     } catch (err) {
       console.error('[manutencao] agendar falhou:', (err as Error).message);
@@ -5969,17 +6037,19 @@ b.onclick=async function(){
     try {
       const id = String(req.params.id);
       if (!UUID_RE.test(id)) { res.status(400).send('id inválido'); return; }
+      // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
+      // R13 (segurança): só marca feita manutenção da empresa da sessão.
+      const db = bancoDoOperador(req, supabase);
+      const m = await manutencaoDoOperador(db, id, req.dashUser!.companyId);
+      if (!m) { res.status(404).send('manutenção não encontrada'); return; }
       const hoje = new Date().toISOString().slice(0, 10);
       await marcarManutencaoFeita(supabase, id, {
         feitaEm: String(req.body.feitaEm ?? hoje), feitoPor: req.dashUser!.id, notas: req.body.notas ? String(req.body.notas) : undefined,
       });
-      // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
-      const db = bancoDoOperador(req, supabase);
-      const { data: m } = await db.from('manutencoes').select('lead_id, tipo').eq('id', id).maybeSingle();
-      if ((m as any)?.lead_id) {
+      if (m.leadId) {
         await registrarAtividade(supabase, {
-          company_id: req.dashUser!.companyId, lead_id: (m as any).lead_id, tipo: 'visita',
-          titulo: `Manutenção feita: ${(m as any).tipo}`, automatica: false, user_id: req.dashUser!.id,
+          company_id: req.dashUser!.companyId, lead_id: m.leadId, tipo: 'visita',
+          titulo: `Manutenção feita: ${m.tipo}`, automatica: false, user_id: req.dashUser!.id,
         });
       }
       res.redirect('/dashboard/manutencao');
@@ -5994,6 +6064,8 @@ b.onclick=async function(){
       const id = String(req.params.id);
       const novaData = String(req.body.dataAgendada ?? '');
       if (!UUID_RE.test(id) || !/^\d{4}-\d{2}-\d{2}$/.test(novaData)) { res.status(400).send('dados inválidos'); return; }
+      // R13 (segurança): só reagenda manutenção da empresa da sessão.
+      if (!(await manutencaoDoOperador(bancoDoOperador(req, supabase), id, req.dashUser!.companyId))) { res.status(404).send('manutenção não encontrada'); return; }
       await reagendarManutencao(supabase, id, novaData);
       res.redirect('/dashboard/manutencao');
     } catch (err) {
@@ -6007,15 +6079,12 @@ b.onclick=async function(){
   router.get('/usinas/kanban', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
     try {
       // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+      // Revisão R15: só as obras da empresa da SESSÃO (antes listava todas).
       const db = bancoDoOperador(req, supabase);
-      const { data, error } = await db
-        .from('sistemas_clientes')
-        .select('id, apelido, cidade, potencia_kwp, etapa_obra, etapa_obra_updated_at')
-        .eq('ativo', true)
-        .order('apelido', { ascending: true });
-      if (error) throw new Error(`usinas/kanban: ${error.message}`);
+      const { listarObras } = await import('./obras-store.js');
+      const data = await listarObras(db, req.dashUser?.companyId);
       const { renderUsinasKanbanPage } = await import('./usinas-kanban-views.js');
-      res.type('text/html').send(renderUsinasKanbanPage((data ?? []) as any, req.dashUser));
+      res.type('text/html').send(renderUsinasKanbanPage(data, req.dashUser));
     } catch (err) {
       console.error('[dashboard/usinas/kanban]', err);
       res.status(500).send(`<h2>Erro ao carregar o Quadro de Obras</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
@@ -6028,18 +6097,18 @@ b.onclick=async function(){
       const companyId = req.dashUser!.companyId;
       // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
       const db = bancoDoOperador(req, supabase);
-      const [usinasRes, leadsRes] = await Promise.all([
-        db.from('sistemas_clientes')
-          .select('id, apelido').eq('ativo', true).is('lead_id', null).order('apelido'),
+      // Revisão R15: só usinas sem cliente da empresa da SESSÃO (req.dashUser.companyId).
+      const { listarUsinasSemCliente } = await import('./obras-store.js');
+      const [usinasSem, leadsRes] = await Promise.all([
+        listarUsinasSemCliente(db, companyId),
         db.from('leads')
           .select('id, name').eq('company_id', companyId).order('name'),
       ]);
-      if (usinasRes.error) throw new Error(usinasRes.error.message);
       if (leadsRes.error) throw new Error(leadsRes.error.message);
       const { sugerirVinculos } = await import('./vincular-usinas.js');
       const { renderVincularUsinasPage } = await import('./vincular-usinas-views.js');
       const leads = (leadsRes.data ?? []) as Array<{ id: string; name: string | null }>;
-      const usinas = (usinasRes.data ?? []) as Array<{ id: string; apelido: string | null }>;
+      const usinas = usinasSem;
       const sugestoes = sugerirVinculos(usinas, leads);
       res.type('text/html').send(renderVincularUsinasPage({ sugestoes, leads, user: req.dashUser }));
     } catch (err) {
@@ -6057,8 +6126,8 @@ b.onclick=async function(){
       const viewer = req.dashUser!;
       // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
       const db = bancoDoOperador(req, supabase);
-      // Defesa multi-empresa: só aceita vincular a leads da própria company.
-      // (sistemas_clientes não tem company_id; o vínculo é o que define a dona.)
+      // Defesa multi-empresa: só aceita vincular a leads da própria company E
+      // usinas da própria company (revisão R15: antes a usina não era conferida).
       const leadIds = [...new Set(pares.map((p) => p.leadId))];
       const { data: leadsValidos } = leadIds.length
         ? await db.from('leads').select('id').eq('company_id', viewer.companyId).in('id', leadIds)
@@ -6066,11 +6135,12 @@ b.onclick=async function(){
       const idsValidos = new Set((leadsValidos ?? []).map((l: any) => l.id));
       const paresOk = pares.filter((p) => idsValidos.has(p.leadId));
       let aplicados = 0;
+      const { vincularUsinaAoCliente } = await import('./obras-store.js');
       for (const { usinaId, leadId } of paresOk) {
-        const { error } = await db.from('sistemas_clientes')
-          .update({ lead_id: leadId, etapa_obra: 'pos_venda', etapa_obra_updated_at: new Date().toISOString() })
-          .eq('id', usinaId).eq('ativo', true);
-        if (error) { console.warn(`[usinas/vincular] ${usinaId} falhou: ${error.message}`); continue; }
+        let ok = false;
+        try { ok = await vincularUsinaAoCliente(db, req.dashUser?.companyId, usinaId, leadId); }
+        catch (e) { console.warn(`[usinas/vincular] ${usinaId} falhou: ${(e as Error).message}`); continue; }
+        if (!ok) { console.warn(`[usinas/vincular] ${usinaId} não é da empresa (ou inativa) — ignorada`); continue; }
         aplicados++;
         await audit(supabase, {
           companyId: viewer.companyId, userId: viewer.id, entidade: 'usina',
@@ -6102,11 +6172,12 @@ b.onclick=async function(){
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
     const etapa = String(req.body?.etapa ?? '').trim();
     if (!ETAPAS_USINA.some((e) => e.slug === etapa)) return res.status(400).send('etapa inválida');
-    const { error } = await supabase
-      .from('sistemas_clientes')
-      .update({ etapa_obra: etapa, etapa_obra_updated_at: new Date().toISOString() })
-      .eq('id', id);
-    if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
+    // Revisão R15: só move usina da empresa da SESSÃO (antes movia qualquer id).
+    const { moverObra } = await import('./obras-store.js');
+    let movida = false;
+    try { movida = await moverObra(bancoDoOperador(req, supabase), req.dashUser?.companyId, id, etapa); }
+    catch (e) { return res.status(500).send(`erro: ${escapeHtmlSimple((e as Error).message)}`); }
+    if (!movida) return res.status(404).send('usina não encontrada');
     const viewer = req.dashUser;
     if (viewer) {
       await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'usina', entidadeId: id, acao: 'etapa_obra', valorNovo: etapa });
@@ -6121,12 +6192,9 @@ b.onclick=async function(){
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).json({ erro: 'id inválido' });
     try {
-      const { data: usina, error } = await supabase
-        .from('sistemas_clientes')
-        .select('id, apelido, cidade, uf, potencia_kwp, etapa_obra, etapa_obra_updated_at, lead_id')
-        .eq('id', id)
-        .maybeSingle();
-      if (error) throw new Error(error.message);
+      // Revisão R15: só a usina (e o cliente) da empresa da SESSÃO.
+      const { lerUsinaDoContato } = await import('./obras-store.js');
+      const usina = await lerUsinaDoContato(bancoDoOperador(req, supabase), req.dashUser?.companyId, id);
       if (!usina) return res.status(404).json({ erro: 'usina não encontrada' });
       const u = usina as any;
       const lead = u.lead_id ? await supabaseService.getClienteByLeadId(u.lead_id) : null;
@@ -6150,16 +6218,17 @@ b.onclick=async function(){
     const { etapaValida, ids } = sanitizarMoverLote(idsRaw, etapa);
     if (!etapaValida) return res.status(400).json({ erro: 'etapa inválida' });
     if (ids.length === 0) return res.status(400).json({ erro: 'nenhuma usina válida' });
-    const { error } = await supabase
-      .from('sistemas_clientes')
-      .update({ etapa_obra: etapa, etapa_obra_updated_at: new Date().toISOString() })
-      .in('id', ids);
-    if (error) return res.status(500).json({ erro: error.message });
+    // Revisão R15: só move as usinas da empresa da SESSÃO (as de outra ficam de fora).
+    const { moverObrasLote } = await import('./obras-store.js');
+    let movidas: string[] = [];
+    try { movidas = await moverObrasLote(bancoDoOperador(req, supabase), req.dashUser?.companyId, ids, etapa); }
+    catch (e) { return res.status(500).json({ erro: (e as Error).message }); }
+    if (movidas.length === 0) return res.status(404).json({ erro: 'nenhuma usina encontrada' });
     const viewer = req.dashUser;
     if (viewer) {
-      await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'usina', entidadeId: ids.join(','), acao: 'etapa_obra_lote', valorNovo: etapa });
+      await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'usina', entidadeId: movidas.join(','), acao: 'etapa_obra_lote', valorNovo: etapa });
     }
-    res.json({ ok: true, movidas: ids.length });
+    res.json({ ok: true, movidas: movidas.length });
   });
 
   router.post('/usinas/:sistemaId/leitura', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
@@ -6169,6 +6238,10 @@ b.onclick=async function(){
       const kwh = Number(req.body.kwh);
       if (!UUID_RE.test(sistemaId) || !/^\d{4}-\d{2}$/.test(competencia) || !(kwh >= 0)) {
         res.status(400).json({ error: 'dados inválidos' }); return;
+      }
+      // R13 (segurança): leitura só em usina da empresa da sessão.
+      if (!(await sistemaDoOperador(bancoDoOperador(req, supabase), sistemaId, req.dashUser!.companyId))) {
+        res.status(404).json({ error: 'usina não encontrada' }); return;
       }
       const fb = await registrarLeituraManual(supabase, { sistemaId, competencia, kwh });
       res.json(fb);
@@ -6185,7 +6258,9 @@ b.onclick=async function(){
     try {
       const mid = String(req.params.id);
       if (!UUID_RE.test(mid)) { res.status(400).send('id inválido'); return; }
-      const osId = await abrirOSDeManutencao(supabase, mid);
+      // R13 (segurança): só abre OS de manutenção da empresa da sessão.
+      const osId = await abrirOSDeManutencao(supabase, mid, req.dashUser!.companyId);
+      if (!osId) { res.status(404).send('manutenção não encontrada'); return; }
       res.redirect(`/dashboard/os/${osId}`);
     } catch (err) { console.error('[os] abrir falhou:', (err as Error).message); res.status(500).send('erro ao abrir OS'); }
   });
@@ -6200,8 +6275,10 @@ b.onclick=async function(){
       }
       // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
       const db = bancoDoOperador(req, supabase);
-      const { data: s } = await db.from('sistemas_clientes').select('lead_id').eq('id', sistemaId).maybeSingle();
-      const osId = await criarOS(supabase, { sistemaId, leadId: (s as any)?.lead_id ?? null, tipo });
+      // R13 (segurança): a usina tem que ser da empresa da sessão.
+      const sis = await sistemaDoOperador(db, sistemaId, req.dashUser!.companyId);
+      if (!sis) { res.status(404).send('usina não encontrada'); return; }
+      const osId = await criarOS(supabase, { sistemaId, leadId: sis.leadId, tipo, companyId: sis.companyId });
       res.redirect(`/dashboard/os/${osId}`);
     } catch (err) { console.error('[os] nova falhou:', (err as Error).message); res.status(500).send('erro ao criar OS'); }
   });
@@ -6210,7 +6287,7 @@ b.onclick=async function(){
     try {
       const id = String(req.params.id);
       if (!UUID_RE.test(id)) { res.status(400).send('id inválido'); return; }
-      const os = await getOS(supabase, id);
+      const os = await getOS(supabase, id, req.dashUser!.companyId); // R13: só OS da empresa da sessão
       if (!os) { res.status(404).send('OS não encontrada'); return; }
       const [fotos, counts] = await Promise.all([listFotosOS(supabase, id, true), fotoCountsPorItem(supabase, id)]);
       const itens = hidratarChecklist(os.tipo, os.checklist ?? {}, counts);
@@ -6232,7 +6309,7 @@ b.onclick=async function(){
     try {
       const id = String(req.params.id);
       if (!UUID_RE.test(id)) { res.status(400).send('id inválido'); return; }
-      const os = await getOS(supabase, id);
+      const os = await getOS(supabase, id, req.dashUser!.companyId); // R13: só OS da empresa da sessão
       if (!os) { res.status(404).send('OS não encontrada'); return; }
       await salvarOS(supabase, id, { checklist: checklistDoForm(os.tipo, req.body), observacoes: String(req.body.observacoes ?? '') });
       res.redirect(`/dashboard/os/${id}`);
@@ -6243,12 +6320,12 @@ b.onclick=async function(){
     try {
       const id = String(req.params.id);
       if (!UUID_RE.test(id) || !req.file) { res.status(400).send('faltou a foto'); return; }
-      const os = await getOS(supabase, id);
+      const os = await getOS(supabase, id, req.dashUser!.companyId); // R13: só OS da empresa da sessão
       if (!os) { res.status(404).send('OS não encontrada'); return; }
       const ext = (req.file.originalname.split('.').pop() ?? 'jpg').toLowerCase().slice(0, 5);
       await addFotoOS(supabase, id, {
         leadId: os.lead_id, itemChave: String(req.body.itemChave ?? ''),
-        buffer: req.file.buffer, mimeType: req.file.mimetype, ext,
+        buffer: req.file.buffer, mimeType: req.file.mimetype, ext, companyId: os.company_id ?? req.dashUser!.companyId,
       });
       res.redirect(`/dashboard/os/${id}`);
     } catch (err) { console.error('[os] foto falhou:', (err as Error).message); res.status(500).send('erro no upload'); }
@@ -6258,10 +6335,10 @@ b.onclick=async function(){
     try {
       const id = String(req.params.id);
       if (!UUID_RE.test(id)) { res.status(400).send('id inválido'); return; }
-      const os = await getOS(supabase, id);
+      const os = await getOS(supabase, id, req.dashUser!.companyId); // R13: só OS da empresa da sessão
       if (!os) { res.status(404).send('OS não encontrada'); return; }
       await salvarOS(supabase, id, { checklist: checklistDoForm(os.tipo, req.body), observacoes: String(req.body.observacoes ?? '') });
-      await concluirOS(supabase, id, { executor: req.dashUser!.id, notas: `OS ${os.tipo} concluída` });
+      await concluirOS(supabase, id, { executor: req.dashUser!.id, notas: `OS ${os.tipo} concluída`, companyId: req.dashUser!.companyId });
       if (os.lead_id) {
         await registrarAtividade(supabase, {
           company_id: req.dashUser!.companyId, lead_id: os.lead_id, tipo: 'visita',
@@ -6276,7 +6353,7 @@ b.onclick=async function(){
     try {
       const id = String(req.params.id);
       if (!UUID_RE.test(id)) { res.status(400).send('id inválido'); return; }
-      const os = await getOS(supabase, id);
+      const os = await getOS(supabase, id, req.dashUser!.companyId); // R13: só OS da empresa da sessão
       if (!os) { res.status(404).send('OS não encontrada'); return; }
       const [fotos, counts] = await Promise.all([listFotosOS(supabase, id, true), fotoCountsPorItem(supabase, id)]);
       const itens = hidratarChecklist(os.tipo, os.checklist ?? {}, counts);
@@ -6303,6 +6380,11 @@ b.onclick=async function(){
   };
   router.use('/clientes', soEcosunPorEnquanto);
   router.use('/cerebro', soEcosunPorEnquanto);
+  // [R16 28/09] toda rota /clientes/:id (ficha, edit, arquivar, excluir, anexos,
+  // relatório pós-instalação) só com cliente da empresa da sessão (senão 404).
+  const dbClientes = (req: Request) => bancoDoOperador(req as AuthedRequest, supabase);
+  const empresaDaSessao = (req: Request) => (req as AuthedRequest).dashUser?.companyId ?? null;
+  router.use('/clientes/:id', guardaClienteDaEmpresa(dbClientes));
 
   router.get('/clientes', async (req: Request, res: Response) => {
     try {
@@ -6317,6 +6399,7 @@ b.onclick=async function(){
         limit,
         offset,
         mostrarArquivados,
+        companyId: empresaDaSessao(req) ?? ECOSUN,   // [R16] só clientes da empresa da sessão
       };
       const { clientes, sistemasOrfaos, total } = await listClientes(supabaseService, filters);
       res.type('text/html').send(renderClientesListPage(clientes as any, filters, sistemasOrfaos, { total, limit, offset, mostrarArquivados }, (req as AuthedRequest).dashUser));
@@ -6399,6 +6482,7 @@ b.onclick=async function(){
       concessionaria: b.concessionaria || null,
       consumo_medio_kwh: consumo,
       profile: (b.profile as any) || 'indefinido',
+      companyId: empresaDaSessao(req),   // [R16] nasce na empresa de quem cadastrou
     });
 
     if (!r.ok) {
@@ -6516,6 +6600,7 @@ b.onclick=async function(){
       lead_id: id, tipo, descricao,
       storage_path: up.storage_path, mime_type: file.mimetype, size_bytes: file.size,
       created_by: 'junior',
+      ...(empresaDaSessao(req) ? { company_id: empresaDaSessao(req)! } : {}),   // [R16] carimbo da empresa
     });
     if (!ins.ok) {
       await deleteAnexoFile(supabaseService.getClient(), up.storage_path).catch(() => {});
@@ -6529,6 +6614,8 @@ b.onclick=async function(){
     const id = String(req.params.id ?? '');
     const anexoId = String(req.params.anexoId ?? '');
     if (!UUID_RE.test(id) || !UUID_RE.test(anexoId)) return res.status(400).send('UUID inválido');
+    // [R16] o anexo tem que ser DESTE cliente (antes apagava qualquer anexo pelo id).
+    if (!(await anexoDoCliente(dbClientes(req), anexoId, id))) return res.status(404).send('Anexo não encontrado');
     const r = await supabaseService.deleteAnexo(anexoId);
     if (r.ok && r.storage_path) {
       await deleteAnexoFile(supabaseService.getClient(), r.storage_path).catch((e) => console.warn('[clientes/anexos] storage cleanup falhou:', e));
@@ -6540,6 +6627,8 @@ b.onclick=async function(){
     const action = String(req.body?.action ?? '');
     const leadId = String(req.body?.lead_id ?? '');
     if (!UUID_RE.test(leadId)) return res.status(400).send('lead_id inválido');
+    // [R16] lead_id vem do formulário: tem que ser cliente da empresa da sessão.
+    if (!(await clienteDaEmpresa(dbClientes(req), leadId, empresaDaSessao(req)))) return res.status(404).send('Cliente não encontrado');
 
     let topic: string | null = null;
     if (action === 'eva_pedir_depoimento') topic = 'pedido_depoimento';
@@ -6562,10 +6651,13 @@ b.onclick=async function(){
   router.post('/clientes/vincular-sistema', async (req: Request, res: Response) => {
     const sistemaId = String(req.body?.sistema_id ?? '');
     if (!UUID_RE.test(sistemaId)) return res.status(400).send('Sistema inválido');
+    // [R16] a usina tem que ser da empresa da sessão.
+    if (!(await sistemaDaEmpresa(dbClientes(req), sistemaId, empresaDaSessao(req)))) return res.status(404).send('Sistema não encontrado');
 
     const leadId = String(req.body?.lead_id ?? '').trim();
     // Caminho 1: cliente existente escolhido no seletor
     if (UUID_RE.test(leadId)) {
+      if (!(await clienteDaEmpresa(dbClientes(req), leadId, empresaDaSessao(req)))) return res.status(404).send('Cliente não encontrado');
       const r = await supabaseService.vincularClienteExistente({ sistema_id: sistemaId, lead_id: leadId });
       if (!r.ok) return res.status(500).send(`<h2>Erro: ${escapeHtmlSimple(r.error ?? '')}</h2><a href="/dashboard/clientes">← voltar</a>`);
       return res.redirect(303, `/dashboard/clientes/${leadId}`);
@@ -6576,7 +6668,7 @@ b.onclick=async function(){
     const phone = String(req.body?.novo_phone ?? '').replace(/\D/g, '');
     if (name.length < 2) return res.status(400).send('Escolha um cliente existente ou preencha nome (mín 2 chars)');
     if (phone.length < 10) return res.status(400).send('Telefone inválido — use formato 5561999990000');
-    const r = await supabaseService.vincularNovoLeadAoSistema({ sistema_id: sistemaId, name, phone });
+    const r = await supabaseService.vincularNovoLeadAoSistema({ sistema_id: sistemaId, name, phone, companyId: empresaDaSessao(req) });
     if (!r.ok) return res.status(500).send(`<h2>Erro: ${escapeHtmlSimple(r.error ?? '')}</h2><a href="/dashboard/clientes">← voltar</a>`);
     res.redirect(303, `/dashboard/clientes/${r.lead_id}`);
   });
@@ -6690,6 +6782,10 @@ b.onclick=async function(){
     const id = String(req.params.id ?? '');
     const rid = String(req.params.rid ?? '');
     if (!UUID_RE.test(id) || !UUID_RE.test(rid)) return res.status(400).send('UUID inválido');
+
+    // [R16] o relatório tem que ser DESTE cliente (antes enviava qualquer rid).
+    const relDoCliente = await supabaseService.getRelatorioPosInstalacaoById(rid);
+    if (!relDoCliente || relDoCliente.lead_id !== id) return res.status(404).send('Relatório não encontrado');
 
     const sendText = options.sendText;
     if (!sendText) return res.status(500).send('sendText não configurado neste ambiente.');

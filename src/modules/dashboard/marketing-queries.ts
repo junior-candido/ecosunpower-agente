@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Channel } from './resolve-channel.js';
+import { filtroEmpresa } from './filtro-empresa.js';
 
 export interface MarketingKpis {
   spend7d_brl: number;
@@ -58,12 +59,15 @@ function isoNDaysAgo(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-export async function fetchMarketingKpis(supabase: SupabaseClient): Promise<MarketingKpis> {
+// R17 (segurança): toda consulta do /marketing filtra a empresa da SESSÃO — o
+// banco padrão do painel é o de serviço (bancoDoOperador só vira RLS com flag).
+export async function fetchMarketingKpis(supabase: SupabaseClient, companyId: string): Promise<MarketingKpis> {
   const since = isoNDaysAgo(7);
 
   const { data: insights } = await supabase
     .from('meta_ads_insights')
     .select('spend_cents, leads, impressions, clicks, date_start')
+    .or(filtroEmpresa(companyId))
     .gte('date_start', since);
 
   const rows = (insights ?? []) as InsightAgg[];
@@ -77,11 +81,11 @@ export async function fetchMarketingKpis(supabase: SupabaseClient): Promise<Mark
   const ctr7d_pct = impressions > 0 ? (clicks / impressions) * 100 : null;
 
   const { count: activeCampaigns } = await supabase
-    .from('marketing_campaigns').select('*', { count: 'exact', head: true }).eq('status', 'active');
+    .from('marketing_campaigns').select('*', { count: 'exact', head: true }).or(filtroEmpresa(companyId)).eq('status', 'active');
   const { count: creativesEmUso } = await supabase
-    .from('marketing_creatives').select('*', { count: 'exact', head: true }).eq('status', 'em_uso');
+    .from('marketing_creatives').select('*', { count: 'exact', head: true }).or(filtroEmpresa(companyId)).eq('status', 'em_uso');
   const { count: alertasPendentes } = await supabase
-    .from('marketing_alerts').select('*', { count: 'exact', head: true }).eq('status', 'pending');
+    .from('marketing_alerts').select('*', { count: 'exact', head: true }).or(filtroEmpresa(companyId)).eq('status', 'pending');
 
   return {
     spend7d_brl,
@@ -119,12 +123,16 @@ export interface GoogleAdsSummary {
 export async function fetchGoogleAdsSummary(
   supabase: SupabaseClient,
   dias: number = 7,
+  /** Empresa da sessão (painel). Sem ela = comportamento antigo (comando /google do dono). */
+  companyId?: string,
 ): Promise<GoogleAdsSummary> {
   const since = new Date(Date.now() - (dias - 1) * 24 * 60 * 60_000).toISOString().slice(0, 10);
-  const { data } = await supabase
+  let q = supabase
     .from('channel_daily_metrics')
     .select('date, spend_cents, clicks, impressions, updated_at')
-    .eq('channel', 'google')
+    .eq('channel', 'google');
+  if (companyId) q = q.or(filtroEmpresa(companyId));
+  const { data } = await q
     .gte('date', since)
     .order('date', { ascending: false });
 
@@ -160,6 +168,7 @@ export interface CampaignsResult {
 
 export async function listActiveCampaigns(
   supabase: SupabaseClient,
+  companyId: string,
   options: ListCampaignsOptions = {},
 ): Promise<CampaignsResult> {
   const status = options.status ?? 'active';
@@ -170,8 +179,8 @@ export async function listActiveCampaigns(
 
   // 1) Contagens por status (sempre todas, pra mostrar badges das tabs)
   const [activeCount, pausedCount] = await Promise.all([
-    supabase.from('marketing_campaigns').select('id', { count: 'exact', head: true }).eq('status', 'active'),
-    supabase.from('marketing_campaigns').select('id', { count: 'exact', head: true }).eq('status', 'paused'),
+    supabase.from('marketing_campaigns').select('id', { count: 'exact', head: true }).or(filtroEmpresa(companyId)).eq('status', 'active'),
+    supabase.from('marketing_campaigns').select('id', { count: 'exact', head: true }).or(filtroEmpresa(companyId)).eq('status', 'paused'),
   ]);
   const countByStatus = {
     active: activeCount.count ?? 0,
@@ -182,7 +191,8 @@ export async function listActiveCampaigns(
   // 2) Lista filtrada
   let query = supabase
     .from('marketing_campaigns')
-    .select('id, codigo_portfolio, name, status, daily_budget_cents, cpl_alerta_brl, cpl_critico_brl, last_synced_at', { count: 'exact' });
+    .select('id, codigo_portfolio, name, status, daily_budget_cents, cpl_alerta_brl, cpl_critico_brl, last_synced_at', { count: 'exact' })
+    .or(filtroEmpresa(companyId));
 
   if (status === 'active') query = query.eq('status', 'active');
   else if (status === 'paused') query = query.eq('status', 'paused');
@@ -205,6 +215,7 @@ export async function listActiveCampaigns(
   const { data: ins } = await supabase
     .from('meta_ads_insights')
     .select('campaign_id, spend_cents, leads')
+    .or(filtroEmpresa(companyId))
     .in('campaign_id', ids)
     .gte('date_start', since);
 
@@ -237,19 +248,21 @@ export async function listActiveCampaigns(
   return { rows, total: total ?? 0, countByStatus };
 }
 
-export async function listRecentCreatives(supabase: SupabaseClient, limit = 8): Promise<CreativeRow[]> {
+export async function listRecentCreatives(supabase: SupabaseClient, companyId: string, limit = 8): Promise<CreativeRow[]> {
   const { data } = await supabase
     .from('marketing_creatives')
     .select('id, briefing, status, created_at')
+    .or(filtroEmpresa(companyId))
     .order('created_at', { ascending: false })
     .limit(limit);
   return (data ?? []) as CreativeRow[];
 }
 
-export async function listPendingAlerts(supabase: SupabaseClient): Promise<AlertRow[]> {
+export async function listPendingAlerts(supabase: SupabaseClient, companyId: string): Promise<AlertRow[]> {
   const { data } = await supabase
     .from('marketing_alerts')
     .select('id, agent, severity, subject, body, action_required, status, created_at')
+    .or(filtroEmpresa(companyId))
     .eq('status', 'pending')
     .order('created_at', { ascending: false })
     .limit(20);
@@ -360,18 +373,21 @@ export function aggregateChannelFunnel(
  */
 export async function fetchChannelFunnel(
   supabase: SupabaseClient,
+  companyId: string,
   periodo: ChannelFunnelPeriodo,
 ): Promise<ChannelFunnelRow[]> {
   const [leadsRes, metricsRes] = await Promise.all([
     supabase
       .from('leads')
       .select('channel, status')
+      .or(filtroEmpresa(companyId))
       .gte('created_at', periodo.start)
       .lte('created_at', periodo.end + 'T23:59:59.999Z')
       .limit(10000),
     supabase
       .from('channel_daily_metrics')
       .select('channel, spend_cents')
+      .or(filtroEmpresa(companyId))
       .gte('date', periodo.start)
       .lte('date', periodo.end),
   ]);

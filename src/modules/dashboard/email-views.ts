@@ -1,10 +1,25 @@
 // src/modules/dashboard/email-views.ts
-// View da aba E-mail Marketing (sob o setor Marketing). Mostra as métricas da
-// sequência de e-mail (contadas a partir de eventos_elo) e o botão pra
-// ligar/pausar o envio automático. Espelha blog-views.ts.
+// Marketing › E-mail: métricas da sequência de e-mail (contadas a partir de
+// eventos_elo) e o botão pra ligar/pausar o envio automático.
+// renderEmailPage devolve o CORPO; renderEmailLayout envolve na casca.
+// Renovação do miolo — R17 (28/09/2026): mesmo formulário (ligar/pausar),
+// visual cc- do Command Center, tema escuro (D4), sem Tailwind.
+// A jornada de e-mail é a da casa: tenant vê renderEmailIndisponivel().
 
-import { escapeHtml } from './views.js';
+import { renderLayout, escapeHtml } from './views.js';
+import type { DashUser } from './permissions.js';
 import type { DesempenhoStep } from './email-metricas.js';
+import { cabecalhoPagina, faixaKpis, cartaoSecao, tabela, estadoVazio, pilulaStatus, botao } from './ui/componentes.js';
+import { temaDaTela } from './ui/tema.js';
+
+const CSS_EMAIL = `
+.cc-em>*+*{margin-top:16px}
+.cc-em-acao{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.cc-em-acao form{margin:0}
+.cc-em-acao p{margin:0;font-size:13px;color:var(--cc-muted)}
+.cc-em-pct{color:var(--cc-muted);font-size:12px;margin-left:4px}
+@media (max-width:760px){.cc-em-acao form,.cc-em-acao .cc-btn{width:100%;justify-content:center}}
+`;
 
 export function resumirMetricas(eventos: Array<{ tipo: string }>) {
   const c = (t: string) => eventos.filter((e) => e.tipo === t).length;
@@ -17,69 +32,69 @@ export function resumirMetricas(eventos: Array<{ tipo: string }>) {
   };
 }
 
+/** Casca da aba E-mail Marketing (o router passa o corpo pronto). */
+export function renderEmailLayout(input: { body: string; user: DashUser | undefined }): string {
+  return renderLayout({
+    active: 'email', title: 'E-mail Marketing', user: input.user,
+    body: `<div class="cc-root cc-em">${input.body}</div><style>${CSS_EMAIL}</style>`,
+    tailwind: false, dark: temaDaTela(input.user, 'escuro') === 'escuro', largo: true,
+  });
+}
+
+const TRILHA = [{ rotulo: 'Marketing', href: '/dashboard/marketing' }, { rotulo: 'E-mail Marketing', href: '/dashboard/marketing/email' }];
+
+/** Tenant: a jornada de e-mail (e os números dela) é a da casa — ainda não há a dele. */
+export function renderEmailIndisponivel(): string {
+  return `${cabecalhoPagina({ trilha: TRILHA, titulo: 'E-mail Marketing' })}
+    ${estadoVazio({
+      tipo: 'construcao', titulo: 'O e-mail marketing ainda não está disponível para a sua empresa.',
+      texto: 'Quando a sequência de e-mails da sua empresa estiver ligada, os envios, aberturas e cliques aparecem aqui.', icone: 'mail',
+    })}`;
+}
+
 export function renderEmailPage(
   m: ReturnType<typeof resumirMetricas>,
   ligado: boolean,
   desempenho: DesempenhoStep[] = [],
 ): string {
-  const card = (rot: string, v: number) => `
-    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;min-width:130px">
-      <div style="color:#64748b;font-size:12px">${escapeHtml(rot)}</div>
-      <div style="color:#0f172a;font-size:28px;font-weight:700">${v}</div>
-    </div>`;
   const taxaAb = m.enviados ? Math.round((m.abertos / m.enviados) * 100) : 0;
 
-  const statusBadge = ligado
-    ? `<span style="background:#064e3b;color:#d1fae5;border-radius:999px;padding:3px 12px;font-weight:600;font-size:13px">🟢 ligada</span>`
-    : `<span style="background:#450a0a;color:#fecaca;border-radius:999px;padding:3px 12px;font-weight:600;font-size:13px">⏸️ pausada</span>`;
+  const kpis = faixaKpis([
+    { rotulo: 'Enviados', valor: m.enviados, detalhe: 'e-mails da jornada', destaque: true },
+    { rotulo: 'Abertos', valor: m.abertos, detalhe: `${taxaAb}% dos enviados` },
+    { rotulo: 'Clicados', valor: m.clicados, detalhe: 'clicaram no link' },
+    { rotulo: 'Quentes', valor: m.quentes, detalhe: 'viraram lead quente' },
+    { rotulo: 'Descadastros', valor: m.descadastros, detalhe: 'pediram pra sair' },
+  ]);
 
-  const linhasDesempenho = desempenho.length
-    ? desempenho.map((d) => `
-      <tr>
-        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#0f172a">${escapeHtml(String(d.step))}. ${escapeHtml(d.nome)}</td>
-        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;text-align:right;color:#0f172a">${d.enviados}</td>
-        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;text-align:right;color:#0f172a">${d.abertos} <span style="color:#64748b">(${d.taxaAbertura}%)</span></td>
-        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;text-align:right;color:#0f172a">${d.clicados} <span style="color:#64748b">(${d.taxaClique}%)</span></td>
-      </tr>`).join('')
-    : `<tr><td colspan="4" style="padding:16px 12px;color:#64748b;text-align:center">Ainda sem e-mails enviados nesta jornada.</td></tr>`;
-
-  const tabelaDesempenho = `
-    <div style="margin:24px 0">
-      <h2 style="font-size:16px;font-weight:700;color:#0f172a;margin-bottom:10px">📊 Desempenho por e-mail da jornada</h2>
-      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:auto">
-        <table style="width:100%;border-collapse:collapse;font-size:14px">
-          <thead>
-            <tr style="background:#f8fafc">
-              <th style="padding:10px 12px;text-align:left;color:#64748b;font-size:12px">E-mail</th>
-              <th style="padding:10px 12px;text-align:right;color:#64748b;font-size:12px">Enviados</th>
-              <th style="padding:10px 12px;text-align:right;color:#64748b;font-size:12px">Abertos</th>
-              <th style="padding:10px 12px;text-align:right;color:#64748b;font-size:12px">Clicados</th>
-            </tr>
-          </thead>
-          <tbody>${linhasDesempenho}</tbody>
-        </table>
-      </div>
+  const acao = `<div class="cc-em-acao">
+      <form method="POST" action="/dashboard/marketing/email/${ligado ? 'pausar' : 'ligar'}">
+        ${botao({ rotulo: ligado ? 'Pausar sequência' : 'Ligar sequência', tipo: 'submit', tom: ligado ? 'critico' : 'ouro' })}
+      </form>
+      <p>${ligado ? 'Pausar para de mandar os próximos e-mails até você ligar de novo.' : 'Ligar volta a mandar a sequência para os leads com e-mail.'}</p>
     </div>`;
 
+  const corpoDesempenho = desempenho.length
+    ? tabela({
+      mobile: 'rolar',
+      colunas: [{ titulo: 'E-mail' }, { titulo: 'Enviados', alinhar: 'dir', num: true }, { titulo: 'Abertos', alinhar: 'dir', num: true }, { titulo: 'Clicados', alinhar: 'dir', num: true }],
+      linhas: desempenho.map((d) => [
+        `${d.step}. ${d.nome}`,
+        d.enviados,
+        { html: `${escapeHtml(String(d.abertos))}<span class="cc-em-pct">(${escapeHtml(String(d.taxaAbertura))}%)</span>` },
+        { html: `${escapeHtml(String(d.clicados))}<span class="cc-em-pct">(${escapeHtml(String(d.taxaClique))}%)</span>` },
+      ]),
+    })
+    : estadoVazio({ tipo: 'vazio', titulo: 'Ainda sem e-mails enviados nesta jornada.', icone: 'mail', compacto: true });
+
   return `
-  <div style="max-width:920px;margin:0 auto">
-    <h1 style="font-size:24px;font-weight:700;color:#0f172a;margin-bottom:6px">✉️ E-mail Marketing</h1>
-    <p style="color:#64748b;margin-bottom:16px">Sequência que nutre e converte lead frio por e-mail · status: ${statusBadge}</p>
-
-    <div style="display:flex;gap:12px;flex-wrap:wrap;margin:16px 0 24px">
-      ${card('Enviados', m.enviados)}
-      ${card(`Abertos (${taxaAb}%)`, m.abertos)}
-      ${card('Clicados', m.clicados)}
-      ${card('🔥 Quentes', m.quentes)}
-      ${card('Descadastros', m.descadastros)}
-    </div>
-
-    <form method="POST" action="/dashboard/marketing/email/${ligado ? 'pausar' : 'ligar'}" style="margin:0">
-      <button type="submit" style="background:${ligado ? '#fff' : '#16a34a'};color:${ligado ? '#b91c1c' : '#fff'};border:${ligado ? '1px solid #fecaca' : '0'};border-radius:10px;padding:10px 18px;font-weight:700;font-size:14px;cursor:pointer">
-        ${ligado ? '⏸️ Pausar sequência' : '▶️ Ligar sequência'}
-      </button>
-    </form>
-
-    ${tabelaDesempenho}
-  </div>`;
+    ${cabecalhoPagina({
+      trilha: TRILHA,
+      titulo: 'E-mail Marketing',
+      subtitulo: 'Sequência que nutre e converte lead frio por e-mail.',
+      seloHtml: ligado ? pilulaStatus('normal', 'ligada') : pilulaStatus('atencao', 'pausada'),
+    })}
+    ${kpis}
+    ${cartaoSecao({ titulo: 'Envio automático', corpoHtml: acao })}
+    ${cartaoSecao({ titulo: 'Desempenho por e-mail da jornada', corpoHtml: corpoDesempenho })}`;
 }

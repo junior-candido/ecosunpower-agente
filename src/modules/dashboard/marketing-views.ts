@@ -1,33 +1,59 @@
+// src/modules/dashboard/marketing-views.ts
+// Marketing › Campanhas (/dashboard/marketing).
+// Renovação do miolo — R17 (28/09/2026): mesmos formulários (busca GET com q +
+// status, "Recalcular canais" com o mesmo confirm), mesmos links de abas e de
+// paginação; visual no padrão cc- do Command Center (protótipo 05-marketing),
+// tema escuro (D4), sem Tailwind. KPIs só com os números que já vêm de
+// marketing-queries. Tabelas de número rolam no celular; criativos em grade.
+// Tenant: "assistente" no lugar de "Eva"; nada da casa (Analytics do site da
+// casa, conta MCC do Google Ads, "Recalcular canais" de todos os leads,
+// comando /criativo do WhatsApp do dono).
 import { renderLayout, escapeHtml, brl } from './views.js';
 import type { DashUser } from './permissions.js';
 import type {
   MarketingKpis, CampaignRow, CreativeRow, AlertRow, ChannelFunnelRow,
 } from './marketing-queries.js';
+import type { Insight } from './ai-summary.js';
+import type { GoogleAdsSummary } from './marketing-queries.js';
+import type { GoogleAnalyticsSummary } from '../marketing/google-analytics/index.js';
+import type { CampaignQualityReport } from '../marketing/campaign-quality.js';
+import {
+  cabecalhoPagina, faixaKpis, cartaoSecao, tabela, estadoVazio, pilulaStatus, botao, chipsFiltro,
+  celulaDupla, barra,
+} from './ui/componentes.js';
+import type { Tom } from './ui/componentes.js';
+import { temaDaTela } from './ui/tema.js';
+import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
 
-function card(
-  titulo: string,
-  valor: string,
-  sub: string,
-  accent: 'amber' | 'sky' | 'emerald' | 'violet' | 'rose' | 'indigo',
-  valorCor: string = 'text-slate-900',
-): string {
-  return `
-    <div class="bg-white rounded-xl shadow-md hover:shadow-lg transition border border-slate-200 accent-${accent} p-5">
-      <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold">${escapeHtml(titulo)}</div>
-      <div class="text-3xl font-bold ${valorCor} mt-2">${escapeHtml(valor)}</div>
-      ${sub ? `<div class="text-xs text-slate-500 mt-1">${escapeHtml(sub)}</div>` : ''}
-    </div>`;
+const CSS_MARKETING = `
+.cc-mk>*+*{margin-top:16px}
+.cc-mk-duo{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.cc-mk .cc-mk-duo>.cc-panel{margin:0}
+.cc-mk-busca{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.cc-mk-busca input[type=text]{width:240px;max-width:100%;min-width:0}
+.cc-mk-busca .cc-link{font-size:12.5px;color:var(--cc-muted)}
+.cc-mk-abas{margin-bottom:12px}
+.cc-mk-criativos{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.cc-mk-cri{border:1px solid var(--cc-line);border-radius:12px;padding:12px;background:rgba(255,255,255,.02);min-width:0}
+.cc-mk-cri-t{display:flex;gap:8px;align-items:flex-start;justify-content:space-between}
+.cc-mk-cri-t strong{font-size:13.5px;font-weight:600;line-height:1.35;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.cc-mk-cri small{display:block;margin-top:6px;font-size:11.5px;color:var(--cc-faint)}
+.cc-mk-per{font-size:11.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--cc-muted);margin:0 0 8px}
+.cc-mk-per+.cc-kstrip{margin-bottom:16px}
+.cc-mk-nota{margin:10px 0 0;font-size:12px;color:var(--cc-faint)}
+.cc-mk-sub{font-size:11.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--cc-muted);margin:0 0 8px}
+.cc-mk-funil{display:flex;flex-direction:column;gap:5px;min-width:90px}
+.cc-mk-funil .cc-bar{height:5px}
+.cc-mk-path{font-family:ui-monospace,monospace;font-size:12px;overflow-wrap:anywhere}
+.cc-mk-inline{display:inline;margin:0}
+.cc-mk-leg{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+@media (max-width:1023px){.cc-mk-duo{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:760px){
+  .cc-mk-criativos{grid-template-columns:minmax(0,1fr)}
+  .cc-mk-busca{width:100%}
+  .cc-mk-busca input[type=text]{flex:1 1 160px;width:auto}
 }
-
-function alertBadge(severity: string): string {
-  const map: Record<string, { bg: string; text: string; icon: string }> = {
-    critical: { bg: 'bg-rose-100', text: 'text-rose-800', icon: '🚨' },
-    warning: { bg: 'bg-amber-100', text: 'text-amber-800', icon: '⚠️' },
-    info: { bg: 'bg-sky-100', text: 'text-sky-800', icon: 'ℹ️' },
-  };
-  const s = map[severity] ?? map.info;
-  return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${s.bg} ${s.text}">${s.icon} ${escapeHtml(severity)}</span>`;
-}
+`;
 
 function timeAgo(iso: string | null): string {
   if (!iso) return '—';
@@ -41,12 +67,7 @@ function timeAgo(iso: string | null): string {
   return `${days}d atrás`;
 }
 
-import type { Insight } from './ai-summary.js';
-import { renderInsightsBanner } from './ai-summary.js';
-
-import type { GoogleAdsSummary } from './marketing-queries.js';
-import type { GoogleAnalyticsSummary } from '../marketing/google-analytics/index.js';
-import type { CampaignQualityReport } from '../marketing/campaign-quality.js';
+const ehCasa = (user: DashUser | undefined) => !user || user.companyId === ECOSUN_COMPANY_ID;
 
 export interface MarketingPageInput {
   kpis: MarketingKpis;
@@ -64,224 +85,124 @@ export interface MarketingPageInput {
   campaignQuality?: CampaignQualityReport;
 }
 
-const CAMPAIGN_STATUS_EMOJI: Record<string, string> = {
-  campea: '🟢',
-  ok: '⚪',
-  cara: '🔴',
-  sem_dados: '🟡',
-};
-
-const CAMPAIGN_STATUS_LABEL: Record<string, string> = {
-  campea: 'Campeã',
-  ok: 'OK',
-  cara: 'Cara',
-  sem_dados: 'Juntando dados',
+const STATUS_QUALIDADE: Record<string, { tom: Tom; rotulo: string }> = {
+  campea: { tom: 'normal', rotulo: 'Campeã' },
+  ok: { tom: 'info', rotulo: 'OK' },
+  cara: { tom: 'critico', rotulo: 'Cara' },
+  sem_dados: { tom: 'acompanhar', rotulo: 'Juntando dados' },
 };
 
 export function renderCampaignQualitySection(report: CampaignQualityReport): string {
   const mediaStr = report.mediaCostPerQualified != null
-    ? `Média geral: ${brl(report.mediaCostPerQualified)}/lead qualificado`
+    ? `Média geral: ${brl(report.mediaCostPerQualified)} por lead qualificado`
     : 'Média geral: dados insuficientes';
 
-  const rows = report.rows.length === 0
-    ? `<tr><td colspan="4" class="text-center text-slate-500 py-8">Nenhuma campanha com dado no período.</td></tr>`
-    : report.rows.map((r) => {
-        const emoji = CAMPAIGN_STATUS_EMOJI[r.status] ?? '⚪';
-        const statusLabel = CAMPAIGN_STATUS_LABEL[r.status] ?? r.status;
-        const custoStr = r.status === 'sem_dados'
-          ? '<span class="text-slate-400 italic">juntando dados</span>'
+  const corpo = report.rows.length === 0
+    ? estadoVazio({ tipo: 'sem_dado', titulo: 'Nenhuma campanha com dado no período.', compacto: true })
+    : tabela({
+      mobile: 'rolar',
+      colunas: [{ titulo: 'Campanha' }, { titulo: 'Gasto', alinhar: 'dir', num: true }, { titulo: 'Qualificados / total', alinhar: 'dir', num: true }, { titulo: 'Custo por lead bom', alinhar: 'dir', num: true }],
+      linhas: report.rows.map((r) => {
+        const st = STATUS_QUALIDADE[r.status] ?? { tom: 'sem_dado' as Tom, rotulo: r.status };
+        const custo = r.status === 'sem_dados'
+          ? '<span class="cc-faint">juntando dados</span>'
           : r.costPerQualified != null
-            ? escapeHtml(brl(r.costPerQualified))
+            ? `<span class="${r.status === 'campea' ? 'cc-okc' : r.status === 'cara' ? 'cc-critc' : ''}">${escapeHtml(brl(r.costPerQualified))}</span>`
             : '—';
-        const custoColor = r.status === 'campea'
-          ? 'text-emerald-700 font-semibold'
-          : r.status === 'cara'
-            ? 'text-rose-600 font-semibold'
-            : 'text-slate-700';
+        return [
+          { html: `<div class="cc-mk-leg">${escapeHtml(r.name)} ${pilulaStatus(st.tom, st.rotulo)}</div>` },
+          brl(r.spendBrl),
+          `${r.qualified} / ${r.totalLeads}`,
+          { html: custo },
+        ];
+      }),
+    });
 
-        return `
-          <tr class="border-t border-slate-100 hover:bg-slate-50">
-            <td class="px-4 py-3 text-sm text-slate-900">
-              <span class="mr-1">${emoji}</span>
-              ${escapeHtml(r.name)}
-              <span class="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">${escapeHtml(statusLabel)}</span>
-            </td>
-            <td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(brl(r.spendBrl))}</td>
-            <td class="px-4 py-3 text-sm text-slate-700">${String(r.qualified)} / ${String(r.totalLeads)}</td>
-            <td class="px-4 py-3 text-sm ${custoColor}">${custoStr}</td>
-          </tr>`;
-      }).join('');
-
-  return `
-    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8 overflow-x-auto">
-      <div class="flex items-center justify-between mb-1">
-        <h2 class="text-lg font-semibold text-slate-900">🏆 Qualidade por Campanha</h2>
-      </div>
-      <p class="text-xs text-slate-500 mb-4">${escapeHtml(mediaStr)} · Últimos 14 dias · 🟢 Campeã · ⚪ OK · 🔴 Cara · 🟡 Juntando dados</p>
-      <table class="w-full text-left">
-        <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
-          <tr>
-            <th class="px-4 py-2">Campanha</th>
-            <th class="px-4 py-2">Gasto (R$)</th>
-            <th class="px-4 py-2">Qualificados / Total</th>
-            <th class="px-4 py-2">Custo/lead bom (R$)</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-      <p class="text-xs text-slate-400 mt-3">Ordenado do mais barato pro mais caro · "Juntando dados" = menos de 5 leads no período</p>
-    </section>`;
+  return cartaoSecao({
+    titulo: 'Qualidade por campanha',
+    dica: `${mediaStr} · últimos 14 dias`,
+    corpoHtml: `${corpo}<p class="cc-mk-nota">Do mais barato pro mais caro · "Juntando dados" = menos de 5 leads no período.</p>`,
+  });
 }
 
 function renderGoogleAnalyticsSection(s?: GoogleAnalyticsSummary): string {
-  const card = (label: string, valor: string, sub: string, cor: string) => `
-    <div class="bg-white border border-slate-200 rounded-lg p-4">
-      <div class="text-[10px] text-slate-500 uppercase tracking-wider">${label}</div>
-      <div class="text-2xl font-bold ${cor} mt-1">${valor}</div>
-      <div class="text-[10px] text-slate-500 mt-1">${sub}</div>
-    </div>`;
-
+  const titulo = 'Site e tráfego (Google Analytics)';
   if (!s || s.error) {
-    return `
-      <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8">
-        <div class="flex items-center justify-between mb-2">
-          <h2 class="text-lg font-semibold text-slate-900">🌐 Site & Tráfego (Google Analytics)</h2>
-        </div>
-        <div class="bg-slate-50 border border-dashed border-slate-300 rounded-lg p-6 text-center text-sm text-slate-600">
-          ${s?.error ? `⚠️ ${escapeHtml(s.error)}` : '🚦 Aguardando dado (GA4 acabou de subir tag, pode levar até 24h pra primeiros dados aparecerem na API).'}
-        </div>
-      </section>
-    `;
+    return cartaoSecao({
+      titulo,
+      corpoHtml: estadoVazio({
+        tipo: 'sem_dado',
+        titulo: s?.error ? s.error : 'Aguardando dado',
+        texto: s?.error ? undefined : 'O Analytics acabou de receber a marcação; os primeiros dados podem levar até 24 h para aparecer.',
+        compacto: true,
+      }),
+    });
   }
-
-  const semSessao = s.sessions === 0;
-
-  // Top 3 canais por sessions
-  const topChannels = s.channels.slice().sort((a, b) => b.sessions - a.sessions).slice(0, 5);
-  const channelRows = topChannels.length === 0
-    ? `<tr><td colspan="4" class="text-center text-slate-500 py-4">Sem dado de canal ainda.</td></tr>`
-    : topChannels.map((c) => `
-        <tr class="border-t border-slate-100">
-          <td class="px-3 py-2 text-sm text-slate-900">${escapeHtml(c.channel)}</td>
-          <td class="px-3 py-2 text-sm text-slate-700">${c.sessions.toLocaleString('pt-BR')}</td>
-          <td class="px-3 py-2 text-sm text-slate-700">${c.users.toLocaleString('pt-BR')}</td>
-          <td class="px-3 py-2 text-sm text-slate-700">${c.pageviews.toLocaleString('pt-BR')}</td>
-        </tr>`).join('');
-
-  const topPagesRows = s.top_pages.length === 0
-    ? `<tr><td colspan="2" class="text-center text-slate-500 py-4">Sem dado de página.</td></tr>`
-    : s.top_pages.map((p) => `
-        <tr class="border-t border-slate-100">
-          <td class="px-3 py-2 text-sm text-slate-900 font-mono text-xs">${escapeHtml(p.path)}</td>
-          <td class="px-3 py-2 text-sm text-slate-700">${p.pageviews.toLocaleString('pt-BR')}</td>
-        </tr>`).join('');
-
-  return `
-    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8 overflow-x-auto">
-      <div class="flex items-center justify-between mb-4">
-        <div>
-          <h2 class="text-lg font-semibold text-slate-900">🌐 Site & Tráfego (Google Analytics)</h2>
-          <p class="text-xs text-slate-500">Últimos 30 dias · GA4 propriedade ${escapeHtml(String(process.env.GOOGLE_ANALYTICS_PROPERTY_ID ?? '—'))}</p>
-        </div>
-      </div>
-
-      ${semSessao
-        ? `<div class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4 text-sm text-amber-800">
-            🚦 GA4 está conectado mas ainda não recebeu sessão. Pode levar 24-48h pra primeiros dados aparecerem. Cloudflare Analytics já está coletando em paralelo.
-          </div>`
-        : `<div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
-            ${card('Sessões', s.sessions.toLocaleString('pt-BR'), 'visitas totais', 'text-slate-900')}
-            ${card('Usuários', s.users.toLocaleString('pt-BR'), 'únicos', 'text-sky-700')}
-            ${card('Pageviews', s.pageviews.toLocaleString('pt-BR'), 'páginas vistas', 'text-emerald-700')}
-          </div>
-
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div>
-              <h3 class="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">Tráfego por canal</h3>
-              <table class="w-full text-left">
-                <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
-                  <tr>
-                    <th class="px-3 py-2">Canal</th>
-                    <th class="px-3 py-2">Sessões</th>
-                    <th class="px-3 py-2">Usuários</th>
-                    <th class="px-3 py-2">Pageviews</th>
-                  </tr>
-                </thead>
-                <tbody>${channelRows}</tbody>
-              </table>
-            </div>
-            <div>
-              <h3 class="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">Top 5 páginas</h3>
-              <table class="w-full text-left">
-                <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
-                  <tr>
-                    <th class="px-3 py-2">Path</th>
-                    <th class="px-3 py-2">Pageviews</th>
-                  </tr>
-                </thead>
-                <tbody>${topPagesRows}</tbody>
-              </table>
-            </div>
-          </div>`}
-    </section>
-  `;
+  const dica = `Últimos 30 dias · propriedade ${String(process.env.GOOGLE_ANALYTICS_PROPERTY_ID ?? '—')}`;
+  if (s.sessions === 0) {
+    return cartaoSecao({
+      titulo, dica,
+      corpoHtml: estadoVazio({
+        tipo: 'sem_dado', titulo: 'Conectado, mas ainda sem visita registrada.',
+        texto: 'Pode levar de 24 a 48 h para os primeiros dados aparecerem. O Cloudflare Analytics já está coletando em paralelo.', compacto: true,
+      }),
+    });
+  }
+  const canais = s.channels.slice().sort((a, b) => b.sessions - a.sessions).slice(0, 5);
+  const tabelaCanais = tabela({
+    mobile: 'rolar', vazio: 'Sem dado de canal ainda.',
+    colunas: [{ titulo: 'Canal' }, { titulo: 'Sessões', alinhar: 'dir', num: true }, { titulo: 'Usuários', alinhar: 'dir', num: true }, { titulo: 'Páginas vistas', alinhar: 'dir', num: true }],
+    linhas: canais.map((c) => [c.channel, c.sessions, c.users, c.pageviews]),
+  });
+  const tabelaPaginas = tabela({
+    mobile: 'rolar', vazio: 'Sem dado de página.',
+    colunas: [{ titulo: 'Página' }, { titulo: 'Vistas', alinhar: 'dir', num: true }],
+    linhas: s.top_pages.map((p) => [{ html: `<span class="cc-mk-path">${escapeHtml(p.path)}</span>` }, p.pageviews]),
+  });
+  return cartaoSecao({
+    titulo, dica,
+    corpoHtml: `${faixaKpis([
+      { rotulo: 'Sessões', valor: s.sessions, detalhe: 'visitas no total' },
+      { rotulo: 'Usuários', valor: s.users, detalhe: 'pessoas diferentes' },
+      { rotulo: 'Páginas vistas', valor: s.pageviews, detalhe: 'no período' },
+    ])}
+    <div class="cc-mk-duo" style="margin-top:16px">
+      <div><h4 class="cc-mk-sub">Tráfego por canal</h4>${tabelaCanais}</div>
+      <div><h4 class="cc-mk-sub">5 páginas mais vistas</h4>${tabelaPaginas}</div>
+    </div>`,
+  });
 }
 
-function renderGoogleAdsSection(s7d?: GoogleAdsSummary, s30d?: GoogleAdsSummary): string {
+function renderGoogleAdsSection(s7d: GoogleAdsSummary | undefined, s30d: GoogleAdsSummary | undefined, casa: boolean): string {
   const has7d = s7d && s7d.dias_com_dado > 0;
   const has30d = s30d && s30d.dias_com_dado > 0;
-  const semDado = !has7d && !has30d;
 
-  const card = (label: string, valor: string, sub: string, cor: string) => `
-    <div class="bg-white border border-slate-200 rounded-lg p-4">
-      <div class="text-[10px] text-slate-500 uppercase tracking-wider">${label}</div>
-      <div class="text-2xl font-bold ${cor} mt-1">${valor}</div>
-      <div class="text-[10px] text-slate-500 mt-1">${sub}</div>
-    </div>`;
-
-  const periodBlock = (label: string, s?: GoogleAdsSummary) => {
-    if (!s || s.dias_com_dado === 0) {
-      return `<div class="text-sm text-slate-400 italic">Sem dado em ${label}.</div>`;
-    }
-    const spendBrl = (s.spend_cents / 100).toFixed(2);
-    const cpcStr = s.cpc_brl != null ? `R$ ${s.cpc_brl.toFixed(2)}` : '—';
-    const ctrStr = s.ctr_pct != null ? `${s.ctr_pct.toFixed(2)}%` : '—';
-    return `
-      <div>
-        <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">${label} · ${s.dias_com_dado} dia(s) com dado</div>
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-          ${card('Gasto', `R$ ${spendBrl}`, 'em anúncios', 'text-slate-900')}
-          ${card('Cliques', String(s.clicks), 'cliques nos anúncios', 'text-sky-700')}
-          ${card('Impressões', s.impressions.toLocaleString('pt-BR'), 'vezes exibido', 'text-slate-700')}
-          ${card('CPC', cpcStr, `CTR ${ctrStr}`, 'text-emerald-700')}
-        </div>
-      </div>`;
+  const periodo = (label: string, s?: GoogleAdsSummary) => {
+    if (!s || s.dias_com_dado === 0) return `<p class="cc-mk-per">${escapeHtml(label)}</p><p class="cc-faint" style="margin:0 0 16px">Sem dado em ${escapeHtml(label.toLowerCase())}.</p>`;
+    return `<p class="cc-mk-per">${escapeHtml(label)} · ${s.dias_com_dado} dia(s) com dado</p>${faixaKpis([
+      { rotulo: 'Gasto', valor: s.spend_cents / 100, prefixo: 'R$', casas: 2, detalhe: 'em anúncios' },
+      { rotulo: 'Cliques', valor: s.clicks, detalhe: 'nos anúncios' },
+      { rotulo: 'Impressões', valor: s.impressions, detalhe: 'vezes exibido' },
+      { rotulo: 'CPC', valor: s.cpc_brl, prefixo: 'R$', casas: 2, detalhe: `CTR ${s.ctr_pct != null ? `${s.ctr_pct.toFixed(2).replace('.', ',')}%` : '—'}` },
+    ])}`;
   };
 
-  const ultimaSync = (s7d?.ultima_sync_at ?? s30d?.ultima_sync_at)
-    ? new Date(s7d?.ultima_sync_at ?? s30d!.ultima_sync_at!).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
-    : 'nunca';
+  const ultima = s7d?.ultima_sync_at ?? s30d?.ultima_sync_at;
+  const ultimaSync = ultima ? new Date(ultima).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : 'nunca';
 
-  return `
-    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8 overflow-x-auto">
-      <div class="flex items-center justify-between mb-4">
-        <div>
-          <h2 class="text-lg font-semibold text-slate-900">📊 Google Ads</h2>
-          <p class="text-xs text-slate-500">Cron sync a cada 30 min. Última: ${ultimaSync}.</p>
-        </div>
-      </div>
+  const corpo = !has7d && !has30d
+    ? estadoVazio({
+      tipo: 'sem_dado',
+      titulo: 'Aguardando a primeira campanha rodar',
+      texto: casa
+        ? 'Credenciais OK, sincronização ligada. Quando você criar uma campanha no Google Ads (MCC 8617425872), o dado começa a aparecer aqui em até 30 min.'
+        : 'Quando a conta do Google Ads da sua empresa estiver ligada e uma campanha rodar, o dado aparece aqui.',
+    })
+    : `${periodo('Últimos 7 dias', s7d)}${periodo('Últimos 30 dias', s30d)}`;
 
-      ${semDado
-        ? `<div class="bg-slate-50 border border-dashed border-slate-300 rounded-lg p-6 text-center text-sm text-slate-600">
-            <div class="text-lg mb-2">🚦 Aguardando primeira campanha rodar</div>
-            <div>Credenciais OK, cron ativo. Quando você criar uma campanha no Google Ads (MCC 8617425872), o dado começa a aparecer aqui em até 30 min.</div>
-          </div>`
-        : `<div class="space-y-6">
-            ${periodBlock('Últimos 7 dias', s7d)}
-            ${periodBlock('Últimos 30 dias', s30d)}
-          </div>`}
-    </section>
-  `;
+  // Tenant sem dado: sem a linha de sincronização (ele não tem sync ligado).
+  const dica = casa || has7d || has30d ? `sincroniza a cada 30 min · última: ${ultimaSync}` : undefined;
+  return cartaoSecao({ titulo: 'Google Ads', dica, corpoHtml: corpo });
 }
 
 const CHANNEL_LABELS: Record<string, string> = {
@@ -294,74 +215,62 @@ const CHANNEL_LABELS: Record<string, string> = {
   outro: 'Outro',
 };
 
-function renderChannelsSection(channels: ChannelFunnelRow[]): string {
-  const dash = '—';
-
-  const rows = channels.map((ch) => {
-    const empty = ch.total === 0;
-    const label = CHANNEL_LABELS[ch.channel] ?? ch.channel;
-    const total = empty ? dash : String(ch.total);
-    const qualificado = empty ? dash : String(ch.qualificado);
-    const agendado = empty ? dash : String(ch.agendado);
-    const gasto = empty ? dash : brl(ch.spend_cents / 100);
-    const cpl = ch.cpl != null ? brl(ch.cpl / 100) : dash;
-    const custoAgend = ch.custo_por_agendamento != null ? brl(ch.custo_por_agendamento / 100) : dash;
-
-    // Barra de funil simples: qualificado/total %
+function renderChannelsSection(channels: ChannelFunnelRow[], casa: boolean): string {
+  const linhas = channels.map((ch) => {
+    const vazio = ch.total === 0;
     const pct = ch.total > 0 ? Math.round((ch.qualificado / ch.total) * 100) : 0;
-    const barColor = pct >= 50 ? 'bg-emerald-500' : pct >= 25 ? 'bg-amber-500' : 'bg-slate-300';
-    const funnelBar = empty
-      ? `<div class="w-full h-1.5 bg-slate-100 rounded-full"></div>`
-      : `<div class="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-           <div class="${barColor} h-1.5 rounded-full" style="width:${pct}%"></div>
-         </div>`;
+    const leads = vazio
+      ? null
+      : { html: `<div class="cc-mk-funil"><span>${escapeHtml(String(ch.total))}</span>${barra(pct, pct >= 50 ? 'ok' : pct >= 25 ? 'warn' : 'crit')}</div>` };
+    return [
+      { html: `<strong>${escapeHtml(CHANNEL_LABELS[ch.channel] ?? ch.channel)}</strong>` },
+      leads,
+      vazio ? null : ch.qualificado,
+      vazio ? null : ch.agendado,
+      vazio ? null : brl(ch.spend_cents / 100),
+      ch.cpl != null ? brl(ch.cpl / 100) : null,
+      ch.custo_por_agendamento != null ? brl(ch.custo_por_agendamento / 100) : null,
+    ];
+  });
 
-    return `
-      <tr class="border-t border-slate-100 hover:bg-slate-50">
-        <td class="px-4 py-3 text-sm font-medium text-slate-900">${escapeHtml(label)}</td>
-        <td class="px-4 py-3 text-sm text-slate-700">
-          <div>${escapeHtml(total)}</div>
-          ${empty ? '' : funnelBar}
-        </td>
-        <td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(qualificado)}</td>
-        <td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(agendado)}</td>
-        <td class="px-4 py-3 text-sm text-slate-700">${gasto}</td>
-        <td class="px-4 py-3 text-sm text-slate-700">${cpl}</td>
-        <td class="px-4 py-3 text-sm text-slate-700">${custoAgend}</td>
-      </tr>`;
-  }).join('');
+  // "Recalcular canais" mexe em TODOS os leads (de todas as empresas): só a casa.
+  const recalcular = casa
+    ? `<form method="POST" action="/dashboard/admin/backfill-channels" onsubmit="return confirm('Recalcular canais de TODOS os leads sem channel preenchido? Idempotente, pode rodar varias vezes.')" class="cc-mk-inline">
+        ${botao({ rotulo: 'Recalcular canais', tipo: 'submit', tamanho: 'sm', icone: 'down' })}
+      </form>`
+    : '';
 
-  return `
-    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8 overflow-x-auto">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-semibold text-slate-900">📡 Canais — funil por origem</h2>
-        <div class="flex items-center gap-3">
-          <form method="POST" action="/dashboard/admin/backfill-channels" onsubmit="return confirm('Recalcular canais de TODOS os leads sem channel preenchido? Idempotente, pode rodar varias vezes.')" class="inline">
-            <button class="px-3 py-1.5 text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 rounded font-medium">🔄 Recalcular canais</button>
-          </form>
-          <span class="text-xs text-slate-400">Mesmo período dos KPIs</span>
-        </div>
-      </div>
-      <table class="w-full text-left">
-        <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
-          <tr>
-            <th class="px-4 py-2">Canal</th>
-            <th class="px-4 py-2">Leads</th>
-            <th class="px-4 py-2">Qualificados</th>
-            <th class="px-4 py-2">Agendados</th>
-            <th class="px-4 py-2">Gasto</th>
-            <th class="px-4 py-2">CPL</th>
-            <th class="px-4 py-2">Custo/Agend.</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-      <p class="text-xs text-slate-400 mt-3">CPL = custo por lead · Custo/Agend. = custo por agendamento · "—" = sem dado no período</p>
-    </section>`;
+  return cartaoSecao({
+    titulo: 'Canais — funil por origem',
+    dica: 'mesmo período dos KPIs',
+    acoesHtml: recalcular,
+    corpoHtml: `${tabela({
+      mobile: 'rolar',
+      colunas: [{ titulo: 'Canal' }, { titulo: 'Leads', num: true }, { titulo: 'Qualificados', alinhar: 'dir', num: true }, { titulo: 'Agendados', alinhar: 'dir', num: true }, { titulo: 'Gasto', alinhar: 'dir', num: true }, { titulo: 'CPL', alinhar: 'dir', num: true }, { titulo: 'Custo por agend.', alinhar: 'dir', num: true }],
+      linhas,
+    })}<p class="cc-mk-nota">CPL = custo por lead · Custo por agend. = custo por agendamento · "—" = sem dado no período.</p>`,
+  });
 }
+
+function renderInsights(insights: Insight[], casa: boolean): string {
+  if (insights.length === 0) return '';
+  const tom: Record<Insight['severity'], string> = { critical: 'critico', warning: 'atencao', info: 'info' };
+  return cartaoSecao({
+    titulo: casa ? 'Eva está observando' : 'A assistente está observando',
+    corpoHtml: `<div class="cc-evs">${insights.map((i) =>
+      `<div class="cc-ev cc-ev-${tom[i.severity] ?? 'info'}"><div class="cc-ev-t">${escapeHtml(i.emoji)} ${escapeHtml(i.text)}</div></div>`).join('')}</div>`,
+  });
+}
+
+const SEVERIDADE: Record<string, { classe: string; rotulo: string }> = {
+  critical: { classe: 'critico', rotulo: 'crítico' },
+  warning: { classe: 'atencao', rotulo: 'atenção' },
+  info: { classe: 'info', rotulo: 'info' },
+};
 
 export function renderMarketingPage(input: MarketingPageInput, user?: DashUser): string {
   const { kpis, campaigns, creatives, alerts, channels } = input;
+  const casa = ehCasa(user);
   const filters = input.campaignsFilters ?? { status: 'active' as const, search: '', limit: 20, offset: 0 };
   const counts = input.campaignsCounts ?? { active: 0, paused: 0, total: 0 };
   const total = input.campaignsTotal ?? campaigns.length;
@@ -373,162 +282,121 @@ export function renderMarketingPage(input: MarketingPageInput, user?: DashUser):
     for (const [k, v] of Object.entries(extras)) base[k] = String(v);
     return new URLSearchParams(base).toString();
   };
-  const tabBtn = (id: 'active' | 'paused' | 'all', label: string, count: number) => {
-    const isActive = filters.status === id;
-    const cls = isActive
-      ? 'bg-slate-900 text-white'
-      : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-300';
-    return `<a href="/dashboard/marketing?status=${id}${filters.search ? `&q=${encodeURIComponent(filters.search)}` : ''}" class="px-3 py-1.5 rounded-md text-xs font-semibold inline-flex items-center gap-2 ${cls}">${label} <span class="px-1.5 py-0.5 rounded-full text-[10px] ${isActive ? 'bg-white/20' : 'bg-slate-200'}">${count}</span></a>`;
-  };
+  const aba = (id: 'active' | 'paused' | 'all', rotulo: string, valor: number) => ({
+    rotulo, valor, ativo: filters.status === id,
+    href: `/dashboard/marketing?status=${id}${filters.search ? `&q=${encodeURIComponent(filters.search)}` : ''}`,
+  });
 
-  const cplStr = kpis.cpl7d_brl != null ? brl(kpis.cpl7d_brl) : '—';
-  const ctrStr = kpis.ctr7d_pct != null ? `${kpis.ctr7d_pct.toFixed(2)}%` : '—';
-  const cplColor = kpis.cpl7d_brl != null && kpis.cpl7d_brl > 80 ? 'text-rose-600' : 'text-emerald-700';
+  const kpisHtml = faixaKpis([
+    { rotulo: 'Gasto 7d', valor: kpis.spend7d_brl, prefixo: 'R$', detalhe: 'investimento Meta Ads', destaque: true },
+    { rotulo: 'Leads 7d', valor: kpis.leads7d, detalhe: 'capturados via campanha' },
+    { rotulo: 'CPL médio 7d', valor: kpis.cpl7d_brl, prefixo: 'R$', casas: 2, detalhe: 'por lead', semDadoTexto: 'sem leads ainda' },
+    { rotulo: 'CTR 7d', valor: kpis.ctr7d_pct, casas: 2, unidade: '%', detalhe: `${kpis.impressions7d.toLocaleString('pt-BR')} impressões` },
+    { rotulo: 'Campanhas ativas', valor: kpis.activeCampaigns, detalhe: 'rodando agora' },
+    { rotulo: 'Criativos em uso', valor: kpis.creativesEmUso, detalhe: 'gerados pelo Agente Criativo' },
+    { rotulo: 'Alertas pendentes', valor: kpis.alertasPendentes, detalhe: 'aguardando ação' },
+  ]);
 
-  const campaignsRows = campaigns.length === 0
-    ? `<tr><td colspan="7" class="text-center text-slate-500 py-8">Nenhuma campanha cadastrada.</td></tr>`
-    : campaigns.map((c) => {
+  const busca = `<form action="/dashboard/marketing" method="get" class="cc-form cc-mk-busca">
+      <input type="hidden" name="status" value="${escapeHtml(filters.status)}">
+      <input type="text" name="q" value="${escapeHtml(filters.search)}" placeholder="Buscar campanha…" aria-label="Buscar campanha">
+      ${botao({ rotulo: 'Buscar', tipo: 'submit', tom: 'ouro', tamanho: 'sm', icone: 'search' })}
+      ${filters.search ? `<a class="cc-link" href="/dashboard/marketing?status=${escapeHtml(filters.status)}">limpar</a>` : ''}
+    </form>`;
+
+  const tabelaCampanhas = campaigns.length === 0
+    ? estadoVazio({ tipo: 'vazio', titulo: 'Nenhuma campanha cadastrada.', icone: 'mega', compacto: true })
+    : tabela({
+      mobile: 'rolar',
+      colunas: [{ titulo: 'Campanha' }, { titulo: 'Status' }, { titulo: 'Orçamento diário', alinhar: 'dir', num: true }, { titulo: 'Gasto 7d', alinhar: 'dir', num: true }, { titulo: 'Leads 7d', alinhar: 'dir', num: true }, { titulo: 'CPL 7d', alinhar: 'dir', num: true }, { titulo: 'Última sync' }],
+      linhas: campaigns.map((c) => {
         const cpl = c.cpl7d_brl;
-        const cplColor = cpl == null
-          ? 'text-slate-400'
-          : (c.cpl_critico_brl && cpl > c.cpl_critico_brl)
-            ? 'text-rose-600 font-semibold'
-            : (c.cpl_alerta_brl && cpl > c.cpl_alerta_brl)
-              ? 'text-amber-600'
-              : 'text-emerald-700';
-        const budget = c.daily_budget_cents != null ? brl(c.daily_budget_cents / 100) : '—';
-        const isPaused = c.status === 'paused';
-        const statusBadge = isPaused
-          ? `<span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-200 text-slate-700">⏸ Pausada</span>`
-          : `<span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800">● Ativa</span>`;
-        const rowOpacity = isPaused ? 'opacity-60' : '';
-        return `
-          <tr class="border-t border-slate-100 hover:bg-slate-50 ${rowOpacity}">
-            <td class="px-4 py-3 text-sm">
-              <div class="font-medium text-slate-900">${escapeHtml(c.name)}</div>
-              <div class="text-xs text-slate-500">${escapeHtml(c.codigo_portfolio)}</div>
-            </td>
-            <td class="px-4 py-3 text-sm">${statusBadge}</td>
-            <td class="px-4 py-3 text-sm text-slate-700">${budget}</td>
-            <td class="px-4 py-3 text-sm text-slate-700">${brl(c.spend7d_brl)}</td>
-            <td class="px-4 py-3 text-sm text-slate-700">${c.leads7d}</td>
-            <td class="px-4 py-3 text-sm ${cplColor}">${cpl != null ? brl(cpl) : '—'}</td>
-            <td class="px-4 py-3 text-xs text-slate-500">${timeAgo(c.last_synced_at)}</td>
-          </tr>`;
-      }).join('');
+        const cor = cpl == null ? ''
+          : (c.cpl_critico_brl && cpl > c.cpl_critico_brl) ? 'cc-critc'
+            : (c.cpl_alerta_brl && cpl > c.cpl_alerta_brl) ? 'cc-warnc'
+              : 'cc-okc';
+        return [
+          { html: celulaDupla(c.name, c.codigo_portfolio) },
+          { html: c.status === 'paused' ? pilulaStatus('sem_dado', 'Pausada') : pilulaStatus('normal', 'Ativa') },
+          c.daily_budget_cents != null ? brl(c.daily_budget_cents / 100) : null,
+          brl(c.spend7d_brl),
+          c.leads7d,
+          cpl != null ? { html: `<span class="${cor}">${escapeHtml(brl(cpl))}</span>` } : null,
+          timeAgo(c.last_synced_at),
+        ];
+      }),
+    });
 
-  const creativesBlock = creatives.length === 0
-    ? `<div class="text-sm text-slate-500 py-4">Nenhum criativo cadastrado ainda. Use <code class="bg-slate-100 px-1.5 py-0.5 rounded text-xs">/criativo</code> no WhatsApp pra gerar.</div>`
-    : `<div class="grid grid-cols-1 md:grid-cols-2 gap-3">${creatives.map((cr) => `
-        <div class="border border-slate-200 rounded-lg p-3 hover:border-sky-500 transition">
-          <div class="flex items-start justify-between gap-2">
-            <div class="font-medium text-sm text-slate-900 line-clamp-2">${escapeHtml(cr.briefing ?? 'sem briefing')}</div>
-            <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 shrink-0">${escapeHtml(cr.status)}</span>
-          </div>
-          <div class="text-xs text-slate-500 mt-2">${timeAgo(cr.created_at)}</div>
-        </div>`).join('')}</div>`;
+  // Mesma regra de antes: Anterior = offset−limit (mín. 0) se offset > 0;
+  // Próxima = offset+limit se ainda houver (vale também p/ offset desalinhado).
+  const pag = total > filters.limit
+    ? (() => {
+      const link = (ok: boolean, offset: number, rel: 'prev' | 'next', txt: string) => ok
+        ? `<a class="cc-btn cc-btn-sm" href="/dashboard/marketing?${escapeHtml(qsSemOffset({ offset }))}" rel="${rel}">${txt}</a>`
+        : `<span class="cc-btn cc-btn-sm cc-btn-off" aria-disabled="true">${txt}</span>`;
+      return `<nav class="cc-pg" aria-label="Paginação"><span class="cc-pg-info">Mostrando ${filters.offset + 1}–${Math.min(filters.offset + filters.limit, total)} de ${total} · Página ${pagina} de ${totalPaginas}</span><span class="cc-sp"></span>`
+        + `${link(filters.offset > 0, Math.max(0, filters.offset - filters.limit), 'prev', '← Anterior')}${link(filters.offset + filters.limit < total, filters.offset + filters.limit, 'next', 'Próxima →')}</nav>`;
+    })()
+    : '';
 
-  const alertsBlock = alerts.length === 0
-    ? `<div class="text-sm text-slate-500 py-4">✅ Nenhum alerta pendente — tudo em ordem.</div>`
-    : `<ul class="space-y-2">${alerts.map((a) => `
-        <li class="border-l-4 ${a.severity === 'critical' ? 'border-rose-500' : a.severity === 'warning' ? 'border-amber-500' : 'border-sky-500'} bg-slate-50 px-3 py-2 rounded">
-          <div class="flex items-center gap-2 mb-1">
-            ${alertBadge(a.severity)}
-            <span class="text-xs text-slate-500">${escapeHtml(a.agent)} · ${timeAgo(a.created_at)}</span>
-          </div>
-          <div class="text-sm font-medium text-slate-900">${escapeHtml(a.subject)}</div>
-          <div class="text-sm text-slate-700 mt-1">${escapeHtml(a.body)}</div>
-          ${a.action_required ? `<div class="text-xs text-slate-500 mt-2">Ação: ${escapeHtml(a.action_required)}</div>` : ''}
-        </li>`).join('')}</ul>`;
+  const campanhas = cartaoSecao({
+    titulo: 'Campanhas — últimos 7 dias',
+    acoesHtml: busca,
+    corpoHtml: `<div class="cc-mk-abas">${chipsFiltro([
+      aba('active', 'Ativas', counts.active),
+      aba('paused', 'Pausadas', counts.paused),
+      aba('all', 'Todas', counts.total),
+    ])}</div>${tabelaCampanhas}${pag}`,
+  });
 
-  const insightsBanner = renderInsightsBanner(input.insights ?? []);
+  const criativos = cartaoSecao({
+    titulo: 'Criativos recentes',
+    corpoHtml: creatives.length === 0
+      ? estadoVazio({
+        tipo: 'vazio', titulo: 'Nenhum criativo cadastrado ainda.', compacto: true,
+        texto: casa ? 'Use /criativo no WhatsApp pra gerar.' : undefined,
+      })
+      : `<div class="cc-mk-criativos">${creatives.map((cr) => `
+        <div class="cc-mk-cri">
+          <div class="cc-mk-cri-t"><strong>${escapeHtml(cr.briefing ?? 'sem briefing')}</strong>${pilulaStatus(cr.status === 'em_uso' ? 'normal' : cr.status === 'pending' ? 'acompanhar' : 'sem_dado', cr.status)}</div>
+          <small>${escapeHtml(timeAgo(cr.created_at))}</small>
+        </div>`).join('')}</div>`,
+  });
+
+  const alertas = cartaoSecao({
+    titulo: 'Alertas pendentes',
+    corpoHtml: alerts.length === 0
+      ? estadoVazio({ tipo: 'vazio', titulo: 'Nenhum alerta pendente — tudo em ordem.', compacto: true })
+      : `<div class="cc-evs">${alerts.map((a) => {
+        const sv = SEVERIDADE[a.severity] ?? { classe: 'info', rotulo: a.severity };
+        return `<div class="cc-ev cc-ev-${sv.classe}">
+          <div class="cc-ev-m"><span class="cc-ev-sv">${escapeHtml(sv.rotulo)}</span><span>${escapeHtml(a.agent)} · ${escapeHtml(timeAgo(a.created_at))}</span></div>
+          <div class="cc-ev-t">${escapeHtml(a.subject)}</div>
+          <div class="cc-ev-d">${escapeHtml(a.body)}</div>
+          ${a.action_required ? `<div class="cc-ev-imp">Ação: <b>${escapeHtml(a.action_required)}</b></div>` : ''}
+        </div>`;
+      }).join('')}</div>`,
+  });
 
   const body = `
-    <div class="mb-6">
-      <h1 class="text-2xl font-bold text-slate-900">📣 Marketing</h1>
-      <p class="text-slate-600 text-sm">Desempenho dos últimos 7 dias, campanhas ativas, criativos gerados e alertas pendentes.</p>
-    </div>
-
-    ${insightsBanner}
-
-    <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-      ${card('Gasto 7d', brl(kpis.spend7d_brl), 'investimento Meta Ads', 'amber')}
-      ${card('Leads 7d', String(kpis.leads7d), 'capturados via campanha', 'sky', 'text-sky-700')}
-      ${card('CPL médio 7d', cplStr, kpis.cpl7d_brl != null ? 'por lead' : 'sem leads ainda', kpis.cpl7d_brl != null && kpis.cpl7d_brl > 80 ? 'rose' : 'emerald', cplColor)}
-      ${card('CTR 7d', ctrStr, kpis.impressions7d.toLocaleString('pt-BR') + ' impressões', 'violet', 'text-violet-700')}
-    </section>
-
-    <section class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-      ${card('Campanhas ativas', String(kpis.activeCampaigns), 'rodando agora', 'indigo')}
-      ${card('Criativos em uso', String(kpis.creativesEmUso), 'gerados pelo Agente Criativo', 'emerald')}
-      ${card('Alertas pendentes', String(kpis.alertasPendentes), 'aguardando ação', kpis.alertasPendentes > 0 ? 'rose' : 'sky', kpis.alertasPendentes > 0 ? 'text-rose-600' : 'text-slate-900')}
-    </section>
-
-    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8 overflow-x-auto">
-      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
-        <h2 class="text-lg font-semibold text-slate-900">📊 Campanhas — performance 7d</h2>
-        <form action="/dashboard/marketing" method="get" class="flex gap-2 items-center">
-          <input type="hidden" name="status" value="${filters.status}">
-          <input type="text" name="q" value="${escapeHtml(filters.search)}" placeholder="🔎 Buscar campanha..." class="px-3 py-1.5 border border-slate-300 rounded-md text-sm w-64">
-          <button class="px-3 py-1.5 bg-sky-700 text-white rounded-md text-xs font-semibold hover:bg-sky-800">Buscar</button>
-          ${filters.search ? `<a href="/dashboard/marketing?status=${filters.status}" class="text-xs text-slate-500 hover:underline">limpar</a>` : ''}
-        </form>
-      </div>
-
-      <div class="flex flex-wrap gap-2 mb-4">
-        ${tabBtn('active', '● Ativas', counts.active)}
-        ${tabBtn('paused', '⏸ Pausadas', counts.paused)}
-        ${tabBtn('all', 'Todas', counts.total)}
-      </div>
-
-      <table class="w-full text-left">
-        <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
-          <tr>
-            <th class="px-4 py-2">Campanha</th>
-            <th class="px-4 py-2">Status</th>
-            <th class="px-4 py-2">Budget diário</th>
-            <th class="px-4 py-2">Gasto 7d</th>
-            <th class="px-4 py-2">Leads 7d</th>
-            <th class="px-4 py-2">CPL 7d</th>
-            <th class="px-4 py-2">Última sync</th>
-          </tr>
-        </thead>
-        <tbody>${campaignsRows}</tbody>
-      </table>
-
-      ${total > filters.limit ? `
-      <div class="flex items-center justify-between mt-4 text-sm text-slate-600">
-        <div>Mostrando ${filters.offset + 1}–${Math.min(filters.offset + filters.limit, total)} de ${total} · Página ${pagina} de ${totalPaginas}</div>
-        <div class="flex gap-2">
-          ${filters.offset > 0
-            ? `<a href="/dashboard/marketing?${qsSemOffset({ offset: Math.max(0, filters.offset - filters.limit) })}" class="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 rounded text-xs">← Anterior</a>`
-            : `<span class="px-3 py-1.5 text-slate-300 text-xs">← Anterior</span>`}
-          ${filters.offset + filters.limit < total
-            ? `<a href="/dashboard/marketing?${qsSemOffset({ offset: filters.offset + filters.limit })}" class="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 rounded text-xs">Próxima →</a>`
-            : `<span class="px-3 py-1.5 text-slate-300 text-xs">Próxima →</span>`}
-        </div>
-      </div>` : ''}
-    </section>
-
-    <section class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-        <h2 class="text-lg font-semibold text-slate-900 mb-4">🎨 Criativos recentes</h2>
-        ${creativesBlock}
-      </div>
-      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-        <h2 class="text-lg font-semibold text-slate-900 mb-4">🔔 Alertas pendentes</h2>
-        ${alertsBlock}
-      </div>
-    </section>
-
-    ${renderGoogleAdsSection(input.googleAds7d, input.googleAds30d)}
-
-    ${renderGoogleAnalyticsSection(input.ga4_30d)}
-
-    ${renderChannelsSection(channels)}
-
+    ${cabecalhoPagina({
+      trilha: [{ rotulo: 'Marketing' }, { rotulo: 'Campanhas', href: '/dashboard/marketing' }],
+      titulo: 'Marketing',
+      subtitulo: 'Desempenho dos últimos 7 dias, campanhas, criativos gerados e alertas pendentes.',
+    })}
+    ${renderInsights(input.insights ?? [], casa)}
+    ${kpisHtml}
+    ${campanhas}
+    <div class="cc-mk-duo">${criativos}${alertas}</div>
+    ${renderGoogleAdsSection(input.googleAds7d, input.googleAds30d, casa)}
+    ${casa ? renderGoogleAnalyticsSection(input.ga4_30d) : ''}
+    ${renderChannelsSection(channels, casa)}
     ${input.campaignQuality ? renderCampaignQualitySection(input.campaignQuality) : ''}
   `;
 
-  return renderLayout({ active: 'marketing', title: 'Marketing', body, user });
+  return renderLayout({
+    active: 'marketing', title: 'Marketing', user,
+    body: `<div class="cc-root cc-mk">${body}</div><style>${CSS_MARKETING}</style>`,
+    tailwind: false, dark: temaDaTela(user, 'escuro') === 'escuro', largo: true,
+  });
 }

@@ -7,6 +7,7 @@ import { proximaEtapaPorEvento, type EventoFunil } from './dashboard/pipeline.js
 import { registrarAtividade } from './dashboard/atividades.js';
 import { criarTarefa, cancelarTarefasPendentesDoLead } from './dashboard/tarefas.js';
 import { variantesTelefone } from './phone.js';
+import { ECOSUN_COMPANY_ID } from './tenant-resolver.js';
 import { registrarEvento } from './elo/eventos.js';
 import { clientDaMensagem } from './tenant-client.js';
 
@@ -2310,11 +2311,15 @@ export class SupabaseService {
   // Perfil do Cliente A1
   // ====================================================================
 
-  async listClientesByStatus(statuses: string[], filters: { q?: string; concessionaria?: string; cidade?: string; ord?: string; mostrarArquivados?: boolean } = {}, limit: number = 50, offset: number = 0, incluirManuaisDashboard: boolean = false): Promise<any[]> {
+  async listClientesByStatus(statuses: string[], filters: { q?: string; concessionaria?: string; cidade?: string; ord?: string; mostrarArquivados?: boolean; companyId?: string | null } = {}, limit: number = 50, offset: number = 0, incluirManuaisDashboard: boolean = false): Promise<any[]> {
     let q = this.client
       .from('leads')
       .select('id, name, phone, email, profile, installation_status, installed_at, city, uf, concessionaria, consumo_medio_kwh, conta_media_brl, opt_out, eva_active, created_at, archived_at')
       .limit(limit);
+    // [R16 28/09] /clientes presa à empresa de quem está logado (antes a EcoSun
+    // via os clientes de TODAS as empresas). Sem companyId = comportamento antigo
+    // (outros chamadores filtram depois, ex.: /pastas).
+    if (filters.companyId) q = this.filtroEmpresaComLegado(q, filters.companyId);
 
     // /clientes mostra: fechados (status em CLIENTE_STATUSES) OR cadastros manuais
     // do Junior (acquisition_source='manual_dashboard'). Leads vindos da Eva ficam
@@ -2346,8 +2351,9 @@ export class SupabaseService {
     return data ?? [];
   }
 
-  async countClientesByStatus(statuses: string[], filters: { q?: string; concessionaria?: string; cidade?: string; mostrarArquivados?: boolean } = {}, incluirManuaisDashboard: boolean = false): Promise<number> {
+  async countClientesByStatus(statuses: string[], filters: { q?: string; concessionaria?: string; cidade?: string; mostrarArquivados?: boolean; companyId?: string | null } = {}, incluirManuaisDashboard: boolean = false): Promise<number> {
     let q = this.client.from('leads').select('id', { count: 'exact', head: true });
+    if (filters.companyId) q = this.filtroEmpresaComLegado(q, filters.companyId);   // [R16] igual à lista
 
     if (statuses.length > 0 && incluirManuaisDashboard) {
       q = q.or(`installation_status.in.(${statuses.join(',')}),acquisition_source.eq.manual_dashboard`);
@@ -2597,13 +2603,24 @@ export class SupabaseService {
   }
 
   // Sistemas ativos sem lead vinculado — aparecem em /clientes como "vincular"
-  async listSistemasOrfaos(): Promise<any[]> {
-    const { data, error } = await this.client
+  /** [R16 28/09] Filtro de empresa que respeita o legado: linha sem company_id
+   *  é da casa (EcoSun), igual a leadEhDaEmpresa/usinaPertenceAoOperador. */
+  private filtroEmpresaComLegado<Q extends { eq: (c: string, v: string) => Q; or: (f: string) => Q }>(q: Q, companyId: string): Q {
+    return companyId === ECOSUN_COMPANY_ID
+      ? q.or(`company_id.is.null,company_id.eq.${companyId}`)
+      : q.eq('company_id', companyId);
+  }
+
+  async listSistemasOrfaos(companyId?: string | null): Promise<any[]> {
+    let q = this.client
       .from('sistemas_clientes')
       .select('id, apelido, marca_inversor, potencia_kwp, cidade, uf, data_instalacao')
       .is('lead_id', null)
-      .eq('ativo', true)
-      .order('apelido', { ascending: true });
+      .eq('ativo', true);
+    // [R16 28/09] só as usinas da empresa (company_id nulo = legado da EcoSun,
+    // mesma regra do usinaPertenceAoOperador). Sem companyId = antigo.
+    if (companyId) q = this.filtroEmpresaComLegado(q, companyId);
+    const { data, error } = await q.order('apelido', { ascending: true });
     if (error) {
       console.error('[supabase] listSistemasOrfaos:', error.message);
       return [];
@@ -2622,6 +2639,9 @@ export class SupabaseService {
     city?: string | null;
     uf?: string | null;
     cep?: string | null;
+    /** [R16 28/09] Empresa do operador: o reuso por telefone fica preso a ela e o
+     *  lead novo nasce nela. Sem isso = comportamento antigo (EcoSun). */
+    companyId?: string | null;
   }): Promise<{ ok: boolean; lead_id?: string; error?: string; reused?: boolean; reusedName?: string | null }> {
     // 1. Confirma que o sistema existe e ainda não tem lead vinculado
     const { data: sistema, error: sErr } = await this.client
@@ -2649,11 +2669,12 @@ export class SupabaseService {
     // 2. O telefone tem trava de unicidade (leads_phone_key). Se já existe um lead
     // com esse telefone, é a mesma pessoa: reusa o cadastro em vez de duplicar
     // (não sobrescreve dados do lead existente — só liga na usina).
-    const { data: existente } = await this.client
+    let buscaTel = this.client
       .from('leads')
       .select('id, name')
-      .eq('phone', input.phone)
-      .maybeSingle();
+      .eq('phone', input.phone);
+    if (input.companyId) buscaTel = this.filtroEmpresaComLegado(buscaTel, input.companyId);
+    const { data: existente } = await buscaTel.maybeSingle();
     if (existente) {
       const v = await vincular(existente.id);
       if (!v.ok) return { ok: false, error: v.error };
@@ -2673,7 +2694,7 @@ export class SupabaseService {
         // Empresa dona do lead. Sem isso o cliente nasce "órfão de empresa" e
         // some das telas que filtram por company (ex: Pós-venda). Default EcoSun
         // (single-tenant), igual ao fallback usado no resto do código.
-        company_id: '00000000-0000-0000-0000-000000000001',
+        company_id: input.companyId ?? '00000000-0000-0000-0000-000000000001',
         installation_status: 'operando',
         installed_at: sistema.data_instalacao,
         eva_active: false,                    // Junior precisa ativar depois
@@ -2686,8 +2707,9 @@ export class SupabaseService {
       // Corrida: alguém com esse telefone foi inserido entre a checagem e o insert.
       // Cai no mesmo tratamento de reuso em vez de devolver erro cru do banco.
       if (lErr?.code === '23505') {
-        const { data: agora } = await this.client
-          .from('leads').select('id, name').eq('phone', input.phone).maybeSingle();
+        let buscaAgora = this.client.from('leads').select('id, name').eq('phone', input.phone);
+        if (input.companyId) buscaAgora = this.filtroEmpresaComLegado(buscaAgora, input.companyId);
+        const { data: agora } = await buscaAgora.maybeSingle();
         if (agora) {
           const v = await vincular(agora.id);
           if (!v.ok) return { ok: false, error: v.error };
