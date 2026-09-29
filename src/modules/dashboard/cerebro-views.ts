@@ -410,6 +410,9 @@ function addFixo(){
   return renderLayout({
     active: 'cerebro', title: 'Elo — cérebro do EcoSunPower', body, scripts, user: user as DashUser | undefined,
     dark: true, largo: true, imersivo: true, tailwind: false, cabeca: `<style>
+  /* altura cheia com dvh (no celular o 100vh passa da dobra); 64px = barra de cima da casca */
+  .cc-main.cc-imersivo { min-height:100dvh; }
+  @media (max-width:1023px) { .cc-main.cc-imersivo { min-height:calc(100dvh - 64px); } }
   :where(#cerebro, #cerebro *) { margin:0; padding:0; box-sizing:border-box; }
   #cerebro {
     --ground:#0a1526; --ground-2:#0e1c33; --card:#13233f; --card-2:#182c4d;
@@ -504,8 +507,8 @@ function addFixo(){
     transform:translateX(100%); transition:transform .28s ease; padding:26px 22px; color:#dbe8fb; overflow-y:auto;
   }
   #panel.open { transform:translateX(0); }
-  #panel .panelClose { position:absolute; top:16px; right:16px; width:30px; height:30px; border-radius:50%; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12); color:#dbe8fb; font-size:16px; cursor:pointer; line-height:1; }
-  #panel h2 { font-size:20px; margin:6px 30px 6px 0; color:var(--ink); }
+  #cerebro .panelClose { position:absolute; top:16px; right:16px; width:30px; height:30px; border-radius:50%; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12); color:#dbe8fb; font-size:16px; cursor:pointer; line-height:1; }
+  #panel h2 { font-size:20px; font-weight:700; margin:6px 30px 6px 0; color:var(--ink); }
   #panel .desc { color:#9fb4d4; font-size:13px; line-height:1.5; margin-bottom:18px; }
   #panel .kpi { display:flex; justify-content:space-between; align-items:baseline; padding:10px 0; border-bottom:1px solid rgba(255,255,255,.06); }
   #panel .kpi .n { font-size:22px; font-weight:800; color:var(--green); font-variant-numeric:tabular-nums; }
@@ -522,7 +525,7 @@ function addFixo(){
   .cofre-lock:hover, .cofre-lock:focus-visible { opacity:1; transform:scale(1.12); outline:none; }
   #cofre { position:fixed; top:0; right:0; bottom:0; z-index:30; width:min(380px,92vw); background:rgba(6,11,22,.98); backdrop-filter:blur(16px); border-left:1px solid rgba(245,179,1,.3); box-shadow:-20px 0 50px rgba(0,0,0,.6); transform:translateX(100%); transition:transform .28s ease; padding:26px 22px; color:#dbe8fb; overflow-y:auto; }
   #cofre.open { transform:translateX(0); }
-  #cofre h2 { font-size:20px; margin:6px 30px 6px 0; color:var(--ink); }
+  #cofre h2 { font-size:20px; font-weight:700; margin:6px 30px 6px 0; color:var(--ink); }
   #cofre .desc { color:#9fb4d4; font-size:13px; margin-bottom:16px; }
   #cofreForm { display:flex; gap:8px; margin-bottom:10px; }
   #cofrePin { flex:1; min-width:0; background:rgba(11,22,40,.85); border:1px solid rgba(245,179,1,.35); border-radius:12px; padding:12px 14px; color:var(--ink); font-size:16px; letter-spacing:3px; outline:none; }
@@ -538,6 +541,10 @@ function addFixo(){
   @media (max-width: 640px) { #cofre { top:auto; left:0; right:0; bottom:0; width:100%; max-height:72vh; border-left:none; border-top:1px solid rgba(245,179,1,.3); border-radius:20px 20px 0 0; transform:translateY(100%); } #cofre.open { transform:translateY(0); } }
 
   @media (prefers-reduced-motion: reduce) { .brain::before { animation:none; } .pulse { display:none; } }
+  /* R23: dentro da casca, entre 641 e 1023 px a barra de cima do painel (64px)
+     fica por cima dos painéis (o <main> é um contexto de empilhamento) — eles
+     começam abaixo dela, com o X à vista. */
+  @media (min-width:641px) and (max-width:1023px) { #panel, #cofre { top:64px; } }
 
   /* ---- celular: painel vira bottom-sheet POR CIMA (overlay, fecha no X ou
      tocando fora); cards e cérebro encolhem via clamp/vmin ---- */

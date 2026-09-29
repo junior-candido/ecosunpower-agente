@@ -15,19 +15,22 @@ import { renderLayout } from './views.js';
 import type { DashUser } from './permissions.js';
 
 const CSS_PREDIO = `
+/* altura cheia com dvh (no celular o 100vh passa da dobra); 64px = barra de cima da casca */
+.cc-main.cc-imersivo{min-height:100dvh}
+@media (max-width:1023px){.cc-main.cc-imersivo{min-height:calc(100dvh - 64px)}}
 #predio-vivo{position:relative;flex:1 1 auto;min-height:100vh;min-height:100dvh;background:#05070D;color:#E2E8F0;font-family:'Space Grotesk',ui-sans-serif,system-ui,sans-serif;overflow:hidden;isolation:isolate}
 @media (max-width:1023px){#predio-vivo{min-height:calc(100dvh - 64px)}}
 #predio-vivo #cena{position:absolute;inset:0}
 #predio-vivo #cena canvas{display:block}
 #predio-vivo .hud{position:absolute;z-index:10}
 #predio-vivo #titulo{top:18px;left:22px;right:22px;pointer-events:none}
-#predio-vivo #titulo h1{margin:0;font-size:20px;letter-spacing:.04em}
+#predio-vivo #titulo h1{margin:0;font-size:20px;font-weight:700;letter-spacing:.04em}
 #predio-vivo #titulo p{margin:2px 0 0;font-size:11px;color:#64748B}
 #predio-vivo #letreiro{left:22px;right:22px;bottom:16px;background:rgba(9,14,24,.72);backdrop-filter:blur(8px);border:1px solid #1E293B;border-radius:14px;padding:10px 14px;font-size:12px;display:flex;gap:18px;align-items:center;overflow:hidden;white-space:nowrap}
 #predio-vivo #letreiro strong{color:#FDE68A}
 #predio-vivo #painel{top:0;right:0;bottom:0;width:340px;max-width:88%;background:rgba(7,11,20,.92);backdrop-filter:blur(10px);border-left:1px solid #1E293B;padding:20px;transform:translateX(105%);transition:transform .25s ease;overflow:auto}
 #predio-vivo #painel.aberto{transform:none}
-#predio-vivo #painel h2{margin:0 0 2px;font-size:18px}
+#predio-vivo #painel h2{margin:0 0 2px;font-size:18px;font-weight:700}
 #predio-vivo #painel .sub{font-size:11px;color:#64748B;margin-bottom:14px}
 #predio-vivo #painel .num{display:flex;justify-content:space-between;border-bottom:1px dashed #1E293B;padding:8px 0;font-size:13px}
 #predio-vivo #painel .num strong{font-size:16px}
