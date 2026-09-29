@@ -41,7 +41,6 @@ export const CSS_SERVICOS = `
 .cc-sv-opcao:hover,.cc-sv-opcao:focus{border-color:var(--cc-gold);outline:none}
 .cc-sv-escolhido{margin-top:8px;padding:10px 12px;border-radius:10px;background:var(--cc-ok-soft);color:var(--cc-ok);font-size:14px;font-weight:600;overflow-wrap:anywhere}
 .cc-sv-escolhido-usina{background:var(--cc-info-soft);color:var(--cc-info)}
-.cc-sv-novo-cli{margin-top:8px}
 .cc-sv-guia{margin-top:8px;padding:12px 14px;border:1px solid var(--cc-line-2);border-radius:12px;background:var(--cc-info-soft)}
 .cc-sv-guia p{margin:0 0 6px;font-size:13.5px;font-weight:600;color:var(--cc-info)}
 .cc-sv-guia ol{margin:0;padding-left:20px;font-size:14px;color:var(--cc-text);line-height:1.55}

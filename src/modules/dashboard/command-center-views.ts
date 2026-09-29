@@ -717,7 +717,7 @@ export function renderCommandCenterPage(d: CommandCenterDados, user?: DashUser):
     aoVivo: carimboAoVivo(d.agora),
     subtitulo: 'Como está a empresa agora, o que mudou e qual é a próxima ação mais importante.',
     acoesHtml: `<a class="cc-btn" href="/dashboard/atencao">${icone('bell', 'sm')}Central de Atenção${seloCriticos(d.dados)}</a>`
-      // Modo TV é só da casa (a rota manda o tenant pro Cockpit).
+      // Modo TV é só da casa (a rota manda o tenant pro Command Center).
       + (casa ? `<a class="cc-btn" href="/dashboard/tv">${icone('tv', 'sm')}Modo TV</a>` : ''),
   });
   // Monitoramento não contratado: um bloco trancado no lugar da curva e do "Usinas agora".
@@ -744,10 +744,7 @@ export function renderCommandCenterPage(d: CommandCenterDados, user?: DashUser):
     </div>
     ${mapa}
     ${departamentos(d)}
-    <div class="cc-foot">${casa ? `${icone('tv', 'sm')}Modo TV: a tela do escritório vai girar entre visão geral, usinas e comercial. ` : ''}<span class="cc-sp"></span>Todo número é clicável e leva ao detalhe.${
-      // R5 (D2 = a): o Cockpit saiu do menu; link discreto só da casa. R25: o
-      // /cockpit redireciona; o antigo só abre com ?antigo=1 (até o Junior decidir).
-      casa ? ` <a class="cc-cockpit-antigo" href="/dashboard/cockpit?antigo=1">Cockpit antigo</a>` : ''}</div>
+    <div class="cc-foot">${casa ? `${icone('tv', 'sm')}Modo TV: a tela do escritório vai girar entre visão geral, usinas e comercial. ` : ''}<span class="cc-sp"></span>Todo número é clicável e leva ao detalhe.</div>
   </div>
 </div>
 `;

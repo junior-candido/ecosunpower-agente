@@ -20,22 +20,15 @@ import { CSS_MAPA_USINAS, JS_MAPA_USINAS, JS_MAPA_USINA } from './mapa-cliente.j
 import { CSS_ATENDIMENTO } from './css-atendimento.js';
 import { CSS_COMMAND_CENTER } from './css-command-center.js';
 
-/** Classes que telas ANTIGAS ainda usam dentro do corpo (moravam no <style> do layout). */
+/** Regras de base que moravam no <style> do layout antigo. As classes antigas da
+ *  casca (.ecosun-header, .ecosun-ativo, .ecosun-marca-texto, .accent-*) saíram
+ *  na faxina pós-renovação: nenhuma tela usa mais. */
 const CSS_LEGADO_LAYOUT = `
-.ecosun-ativo{background:var(--marca)}
-.ecosun-marca-texto{color:var(--marca)}
-.ecosun-header{background:linear-gradient(135deg,#0c4a6e 0%,#075985 50%,#0369a1 100%);position:relative;overflow:hidden}
-.accent-amber{border-left:4px solid #f59e0b}
-.accent-sky{border-left:4px solid #0ea5e9}
-.accent-emerald{border-left:4px solid #10b981}
-.accent-violet{border-left:4px solid #8b5cf6}
-.accent-rose{border-left:4px solid #f43f5e}
-.accent-indigo{border-left:4px solid #6366f1}
 details>summary{list-style:none}
 details>summary::-webkit-details-marker{display:none}
 `;
 
-/** CSS comum de TODAS as telas do painel (design system cc- + classes antigas da casca). */
+/** CSS comum de TODAS as telas do painel (design system cc- + as regras de base acima). */
 export const CSS_PAINEL = CSS_DESIGN_SYSTEM + CSS_LEGADO_LAYOUT;
 
 /**

@@ -56,8 +56,8 @@ export const MENU_AREAS: GrupoMenu[] = [
       { href: '/dashboard/command-center', key: 'command_center', label: 'Command Center', abertoATenant: true },
       { href: '/dashboard/atencao', key: 'atencao', label: 'Central de Atenção', abertoATenant: true },
       { href: '/dashboard/home', key: 'home', label: 'Visão geral' },
-      // R5 (D2 = a): o Cockpit saiu do menu. R25: /cockpit redireciona pro Command
-      // Center; o antigo só abre com ?antigo=1 (link no rodapé, só casa).
+      // R5 (D2 = a): o Cockpit saiu do menu; aposentado de vez (/cockpit só
+      // redireciona pra entrada).
       { href: '/dashboard/predio', key: 'predio', label: 'Prédio Vivo', soEcosun: true },
     ],
   },

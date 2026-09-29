@@ -13,7 +13,6 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { fetchCommandCenterKpis, extrairValorTotal, VENDA_STATUSES, type CommandCenterKpis } from './queries.js';
-import { CRITERIO_LEAD_ESPERANDO } from './cockpit-queries.js';
 import {
   janelaBrasilia, resumirFrota, somarDias,
   type ResumoFrota, type UsinaLinha, type GeracaoLinha, type TelemetriaLinha,
@@ -30,6 +29,14 @@ import { tarifaPorConcessionaria } from '../solar-params.js';
 import { competenciaAtual } from '../financeiro/repo.js';
 import { lerModulosAtivos } from './modulos-contratados.js';
 import type { ContaAberta } from '../financeiro/alertas-vencimento.js';
+
+/** Lead "esperando resposta": a Eva está ativa, o lead não saiu, está no começo
+ *  do funil e ninguém mexeu nele há mais de 24 h. Regra ÚNICA da Central de
+ *  Atenção (veio do Cockpit antigo, aposentado na faxina pós-renovação). */
+export const CRITERIO_LEAD_ESPERANDO = {
+  status: ['novo', 'qualificando', 'qualificado'],
+  horas: 24,
+} as const;
 
 /** Blocos do Command Center. O&M e Instalações seguem `usinas` (mesmo papel, mesmo módulo). */
 export interface PermissoesCC { usinas: boolean; leads: boolean; propostas: boolean; financeiro: boolean; marketing: boolean }

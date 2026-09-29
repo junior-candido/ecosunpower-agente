@@ -1,6 +1,6 @@
 // Renovação do miolo — R5 (nova entrada): contrato do Command Center e da
 // Central de Atenção gravado ANTES (tests/fixtures/contrato-command-center.json).
-// O menu perde o Cockpit e o rodapé da casa ganha o link "Cockpit antigo";
+// O menu perde o Cockpit (o link "Cockpit antigo" do rodapé veio e saiu na faxina);
 // formulários, fetches, ids e links têm que continuar os mesmos.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';

@@ -33,6 +33,17 @@ export interface ContratoTela {
 
 const unicos = (xs: string[]): string[] => [...new Set(xs)].sort();
 
+/**
+ * Arquivo estático do painel (/dashboard/estatico/<nome>.<hash>.<ext>): o hash
+ * é do CONTEÚDO (muda quando o CSS muda — ex.: a faxina pós-renovação tirou
+ * classes sem uso), não do comportamento. No contrato vale o NOME do arquivo;
+ * o hash vira "#". (telas-leves.test.ts confere o hash de verdade.)
+ */
+export function linkSemHash(link: string): string {
+  return link.replace(/^(\/dashboard\/estatico\/[\w-]+)\.[0-9a-f]{10}\.(\w+)$/, '$1.#.$2');
+}
+const linksSemHash = (xs: string[]): string[] => unicos(xs.map(linkSemHash));
+
 /** O navegador decodifica entidades nos atributos: `&amp;` e `&` são o mesmo link. */
 export function decodificar(s: string): string {
   return s.replace(/&(amp|quot|lt|gt|#0*39|#x0*27);/gi, (_, e: string) => {
@@ -158,7 +169,7 @@ export function contratoDaTela(html: string): ContratoTela {
   return {
     formularios,
     fetches: unicos(fetches),
-    links: unicos(links),
+    links: linksSemHash(links),
     ids: idsU,
     idsAusentes: idsU.filter((i) => !idsNaPagina.has(i)),
     seletores: unicos(seletores),
@@ -188,12 +199,15 @@ export interface MudancaContrato {
 
 export function aplicarMudancas(base: ContratoTela, ...mudancas: MudancaContrato[]): ContratoTela {
   const out: ContratoTela = JSON.parse(JSON.stringify(base));
+  out.links = linksSemHash(out.links);
   const chaveForm = (f: FormContrato) => JSON.stringify(f);
   for (const m of mudancas) {
-    for (const [k, v] of Object.entries(m.saiSeHouver ?? {})) {
+    for (const [k, v0] of Object.entries(m.saiSeHouver ?? {})) {
+      const v = k === 'links' ? (v0 as string[]).map(linkSemHash) : v0;
       (out as any)[k] = ((out as any)[k] as string[]).filter((x) => !(v as string[]).includes(x));
     }
-    for (const [k, v] of Object.entries(m.sai ?? {})) {
+    for (const [k, v0] of Object.entries(m.sai ?? {})) {
+      const v = k === 'links' ? (v0 as string[]).map(linkSemHash) : v0;
       if (k === 'formularios') {
         const tira = new Set((v as FormContrato[]).map(chaveForm));
         for (const f of v as FormContrato[]) {
@@ -208,7 +222,8 @@ export function aplicarMudancas(base: ContratoTela, ...mudancas: MudancaContrato
         (out as any)[k] = lista.filter((x) => !(v as string[]).includes(x));
       }
     }
-    for (const [k, v] of Object.entries(m.entra ?? {})) {
+    for (const [k, v0] of Object.entries(m.entra ?? {})) {
+      const v = k === 'links' ? (v0 as string[]).map(linkSemHash) : v0;
       if (k === 'formularios') {
         out.formularios = [...out.formularios, ...(v as FormContrato[])]
           .sort((x, y) => JSON.stringify(x).localeCompare(JSON.stringify(y)));

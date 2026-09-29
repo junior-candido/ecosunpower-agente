@@ -34,10 +34,10 @@ describe('arquivos estáticos do painel (nome com hash)', () => {
     expect(URL_LOGO_CASA).toMatch(/^\/dashboard\/estatico\/logo-casa\.[0-9a-f]{10}\.png$/);
   });
 
-  it('o CSS do painel é o design system inteiro (+ classes antigas da casca)', () => {
+  it('o CSS do painel é o design system inteiro (as classes antigas da casca saíram na faxina)', () => {
     expect(CSS_PAINEL).toContain(CSS_DESIGN_SYSTEM);
-    expect(CSS_PAINEL).toContain('.accent-amber');
-    expect(CSS_PAINEL).toContain('.ecosun-header');
+    expect(CSS_PAINEL).not.toContain('.accent-amber');
+    expect(CSS_PAINEL).not.toContain('.ecosun-header');
   });
 
   it('o CSS "sem Tailwind" traz o reset (preflight) e as 2 utilidades que a casca e os modais usam', () => {

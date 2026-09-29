@@ -55,9 +55,9 @@ const ITENS_ANTIGOS_TODOS: Legado[] = [
 
 // TROCA DELIBERADA (renovação do miolo R5, decisão D2 = a — ok do Junior no PR):
 // exceções documentadas da regra "nada se perde". Cada uma diz por quê e onde
-// a rota continua viva.
+// a rota continua viva (ou, no caso do Cockpit, só redireciona).
 const APOSENTADOS_DO_MENU: Record<string, string> = {
-  '/dashboard/cockpit': 'aposentado no R5 (a entrada virou o Command Center); a rota /cockpit continua viva, só da casa, com o link "Cockpit antigo" no rodapé do Command Center',
+  '/dashboard/cockpit': 'aposentado no R5 (a entrada virou o Command Center); desde a faxina pós-renovação /cockpit só redireciona pra entrada',
 };
 const ITENS_ANTIGOS = ITENS_ANTIGOS_TODOS.filter((i) => !(i.href in APOSENTADOS_DO_MENU));
 

@@ -6,7 +6,7 @@
 //    no menu dele (e cuja consulta é da casa) → passou para o Command Center.
 //  - R5 (decisão D1 = a): o Command Center é a entrada de TODO MUNDO (EcoSun e
 //    tenant) — depois do login sem `next`, em `/`, na logo e no convite. O
-//    Cockpit saiu do menu (R25: /cockpit redireciona; o antigo só com ?antigo=1, só casa).
+//    Cockpit saiu do menu e foi aposentado (/cockpit só redireciona pra entrada).
 //  - Sem sessão → tela de login (nunca o Command Center: ele mandaria de volta
 //    pro login e criaria laço).
 // Funções puras: sem banco, sem sessão.

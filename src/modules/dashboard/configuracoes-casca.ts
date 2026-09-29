@@ -30,9 +30,7 @@ const CSS_CONFIG = `
 .cc-cf-nav a.cc-cf-on{color:var(--cc-text);font-weight:600;background:var(--cc-surface);border-color:var(--cc-line);border-left-color:var(--cc-gold)}
 .cc-cf-nav a.cc-cf-on svg{color:var(--cc-gold-2)}
 .cc-cf-conteudo{min-width:0}
-.cc-cf .cc-panel+.cc-panel,.cc-cf .cc-aviso+.cc-panel,.cc-cf .cc-cf-duas+.cc-panel,.cc-cf .cc-panel+.cc-cf-duas{margin-top:16px}
-.cc-cf-duas{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
-.cc-cf .cc-cf-duas .cc-panel{margin:0}
+.cc-cf .cc-panel+.cc-panel,.cc-cf .cc-aviso+.cc-panel{margin-top:16px}
 .cc-cf-grade-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:end}
 .cc-cf-grade-form .cc-cf-cheia{grid-column:1/-1}
 .cc-cf-check{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--cc-text-2)}
@@ -49,7 +47,6 @@ const CSS_CONFIG = `
   .cc-cf-nav{position:static;flex-direction:row;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;gap:6px;padding-bottom:2px}
   .cc-cf-nav a{flex:none;white-space:nowrap;border:1px solid var(--cc-line);border-radius:99px;padding:7px 12px}
   .cc-cf-nav a.cc-cf-on{border-color:rgba(251,191,36,.45)}
-  .cc-cf-duas{grid-template-columns:minmax(0,1fr)}
 }
 @media (max-width:760px){
   .cc-cf-grade-form{grid-template-columns:minmax(0,1fr)}

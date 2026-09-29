@@ -175,12 +175,9 @@ export function travaPapelTv(req: Request, res: Response, next: () => void): voi
 }
 
 /**
- * Trava do Cockpit antigo (R5): a rota continua viva, mas SÓ para a casa.
- * A consulta do Cockpit (cockpit-queries.ts) não filtra empresa — lê os leads,
- * conversas e campanhas de todas — e o tenant caía nela depois do login. O
- * "SYNC AGORA" (POST /cockpit/sync) sincronizava as usinas de TODAS as
- * empresas. Tenant: GET de página → Command Center dele; POST ou JSON → 403.
- * Registrada no router com router.use('/cockpit', …) antes das rotas.
+ * Trava de tela "só da casa": para telas cuja consulta não filtra empresa.
+ * Casa passa; tenant: GET de página → a entrada dele; POST ou JSON → 403.
+ * (Nasceu no R5 para o Cockpit antigo, hoje aposentado.)
  */
 export function travaTelaDaCasa(req: Request, res: Response, next: () => void): void {
   const user = (req as AuthedRequest).dashUser;
@@ -193,8 +190,17 @@ export function travaTelaDaCasa(req: Request, res: Response, next: () => void): 
   res.status(403).json({ ok: false, error: 'Área indisponível para a sua empresa.' });
 }
 
-/** Cockpit antigo: só da casa (ver travaTelaDaCasa). */
-export const travaCockpitDaCasa = travaTelaDaCasa;
+/**
+ * Cockpit ANTIGO — aposentado de vez (faxina pós-renovação, 29/09/2026). O
+ * Command Center é a entrada; /cockpit (com ou sem ?antigo=1) só manda cada um
+ * pra SUA entrada, pra favorito velho continuar abrindo. A tela antiga e as
+ * rotas que só ela usava (/cockpit/data, /cockpit/sync, /cockpit/insights/refresh)
+ * saíram — a consulta dela não filtrava empresa.
+ */
+export function rotaCockpitAposentado(req: Request, res: Response): void {
+  res.redirect(302, paginaInicialDe((req as AuthedRequest).dashUser));
+}
+
 /** Visão geral (/home, R24): a consulta (fetchDashboardKpis e os gráficos
  *  mensais) é da casa e não filtra empresa — o tenant, que nem tem o item no
  *  menu, caía nela digitando o endereço e via os números da casa. */

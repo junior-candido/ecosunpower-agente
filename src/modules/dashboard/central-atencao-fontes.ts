@@ -2,7 +2,7 @@
 // Adaptadores PUROS da Central de Atenção: cada fonte que já existe no sistema
 // vira EventoAtencao. Reusa as regras de cada módulo (não reinventa):
 //   - usinas: estado calculado com classificarSistema (command-center-calc.ts);
-//   - leads esperando: critério do Cockpit (CRITERIO_LEAD_ESPERANDO);
+//   - leads esperando: CRITERIO_LEAD_ESPERANDO (command-center-queries);
 //   - SLA: tarefas de lead_tarefas vencidas (sla-rules / sla-notifier);
 //   - créditos GD: tipoAvisoVencimento (a mesma regra da tela e do PDF);
 //   - manutenção: statusAgendaItem (manutencao-motor);

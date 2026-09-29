@@ -1,8 +1,8 @@
 // Renovação do miolo — R5: nova entrada (Command Center para todos, D1 = a) e
-// o Cockpit sai do menu (D2 = a), com o link discreto "Cockpit antigo" no
-// rodapé do Command Center só para a casa. A rota /cockpit continua viva —
-// mas SÓ da casa: a consulta do Cockpit não filtra empresa (lia os leads de
-// todas as empresas) e o tenant caía nela depois do login (falha achada no R5).
+// o Cockpit sai do menu (D2 = a). O link discreto "Cockpit antigo" do rodapé
+// ficou até a faxina pós-renovação, quando o Cockpit foi aposentado de vez:
+// /cockpit (com ou sem ?antigo=1) só redireciona pra entrada de cada um. A
+// trava "só da casa" (travaTelaDaCasa) segue protegendo a Visão geral.
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -12,7 +12,7 @@ import { paginaInicialDe, linkDaLogo, destinoDepoisDoLogin } from '../src/module
 import { renderLayout } from '../src/modules/dashboard/views.js';
 import { MENU_AREAS, montarMenu } from '../src/modules/dashboard/menu-areas.js';
 import { renderCommandCenterPage, renderCentralAtencaoPage } from '../src/modules/dashboard/command-center-views.js';
-import { rotaCommandCenter, rotaCentralAtencao, rotaModoTv, travaCockpitDaCasa } from '../src/modules/dashboard/command-center-rotas.js';
+import { rotaCommandCenter, rotaCentralAtencao, rotaModoTv, travaTelaDaCasa, rotaCockpitAposentado } from '../src/modules/dashboard/command-center-rotas.js';
 import { URL_CSS_COMMAND_CENTER } from '../src/modules/dashboard/ui/estatico.js';
 
 const ECOSUN = '00000000-0000-0000-0000-000000000001';
@@ -75,13 +75,12 @@ describe('casca — logo e menu', () => {
   });
 });
 
-describe('Command Center — rodapé "Cockpit antigo" e CSS no <head>', () => {
+describe('Command Center — rodapé sem Cockpit e CSS no <head>', () => {
   const pagina = (u: DashUser) => renderCommandCenterPage({ agora: new Date('2026-09-28T12:00:00Z'), nomeUsuario: u.nome, dados: null }, u);
-  it('casa vê o link discreto "Cockpit antigo" no rodapé', () => {
+  it('casa não vê mais o link "Cockpit antigo" (aposentado na faxina)', () => {
     const h = pagina(casa);
-    const pe = h.slice(h.indexOf('class="cc-foot"'));
-    // R25: o /cockpit puro redireciona; o antigo abre com ?antigo=1.
-    expect(pe).toMatch(/<a [^>]*href="\/dashboard\/cockpit\?antigo=1"[^>]*>Cockpit antigo<\/a>/);
+    expect(h).not.toContain('/dashboard/cockpit');
+    expect(h).not.toContain('Cockpit antigo');
   });
   it('tenant não vê o Cockpit em lugar nenhum', () => {
     expect(pagina(tenant)).not.toContain('/dashboard/cockpit');
@@ -114,39 +113,54 @@ describe('rotas do Command Center — redirecionamentos', () => {
   });
 });
 
-describe('/cockpit — continua vivo, só para a casa (segurança)', () => {
+describe('/cockpit — aposentado: só redireciona pra entrada (favorito velho continua abrindo)', () => {
+  it('casa, com ou sem ?antigo=1 → Command Center', () => {
+    for (const query of [{}, { antigo: '1' }]) {
+      const res = resFalso();
+      rotaCockpitAposentado({ dashUser: casa, query } as unknown as Request, res as unknown as Response);
+      expect(res.redirect).toHaveBeenCalledWith(302, '/dashboard/command-center');
+      expect(res.send).not.toHaveBeenCalled();
+    }
+  });
+  it('tenant → a entrada DELE (nunca a tela antiga, que lia leads de todas as empresas)', () => {
+    const res = resFalso();
+    rotaCockpitAposentado({ dashUser: tenant, query: { antigo: '1' } } as unknown as Request, res as unknown as Response);
+    expect(res.redirect).toHaveBeenCalledWith(302, paginaInicialDe(tenant));
+  });
+  it('router: GET /cockpit usa o redirect; as rotas que só a tela antiga usava saíram', () => {
+    expect(fonteRouter).toContain("router.get('/cockpit', rotaCockpitAposentado);");
+    for (const r of ["router.get('/cockpit/data'", "router.post('/cockpit/sync'", "router.post('/cockpit/insights/refresh'", "router.use('/cockpit'", 'renderCockpitPage', 'getCockpitData']) {
+      expect(fonteRouter, r).not.toContain(r);
+    }
+  });
+});
+
+describe('travaTelaDaCasa — telas cuja consulta não filtra empresa (segurança)', () => {
   const chamar = (u: DashUser | undefined, method = 'GET', accept = 'text/html') => {
     const res = resFalso();
     const next = vi.fn();
-    travaCockpitDaCasa({ dashUser: u, method, headers: { accept } } as unknown as Request, res as unknown as Response, next);
+    travaTelaDaCasa({ dashUser: u, method, headers: { accept } } as unknown as Request, res as unknown as Response, next);
     return { res, next };
   };
-  it('casa passa (GET /cockpit segue 200)', () => {
+  it('casa passa', () => {
     expect(chamar(casa).next).toHaveBeenCalled();
     expect(chamar(casa, 'POST').next).toHaveBeenCalled();
   });
-  it('tenant no GET vai para o Command Center (o Cockpit lia leads de todas as empresas)', () => {
+  it('tenant no GET vai para o Command Center dele', () => {
     const { res, next } = chamar(tenant);
     expect(next).not.toHaveBeenCalled();
     expect(res.redirect).toHaveBeenCalledWith('/dashboard/command-center');
   });
-  it('tenant no POST (sync / insights) leva 403 — o SYNC AGORA sincronizava as usinas de todas as empresas', () => {
+  it('tenant no POST leva 403', () => {
     const { res, next } = chamar(tenant, 'POST');
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
   });
-  it('tenant pedindo JSON (GET /cockpit/data) leva 403, não redirect pra HTML', () => {
+  it('tenant pedindo JSON leva 403, não redirect pra HTML', () => {
     const { res, next } = chamar(tenant, 'GET', 'application/json');
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.redirect).not.toHaveBeenCalled();
-  });
-  it('router: a trava vem ANTES das rotas do Cockpit', () => {
-    const trava = fonteRouter.indexOf("router.use('/cockpit', travaCockpitDaCasa)");
-    expect(trava).toBeGreaterThan(-1);
-    for (const r of ["router.get('/cockpit'", "router.get('/cockpit/data'", "router.post('/cockpit/sync'", "router.post('/cockpit/insights/refresh'"]) {
-      expect(fonteRouter.indexOf(r), r).toBeGreaterThan(trava);
-    }
   });
 });
 

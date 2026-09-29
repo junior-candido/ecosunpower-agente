@@ -73,8 +73,6 @@ export const CSS_COMMAND_CENTER = `
 .cc-cc .cc-st .cc-dot{flex:none}
 .cc-cc .cc-st-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cc-cc .cc-foot{margin-top:26px;display:flex;align-items:center;gap:10px;font-size:12px;color:var(--cc-faint)}
-.cc-cc .cc-foot .cc-cockpit-antigo{color:var(--cc-faint);text-decoration:underline;text-underline-offset:2px;margin-left:6px}
-.cc-cc .cc-foot .cc-cockpit-antigo:hover{color:var(--cc-muted)}
 
 /* Vitrine: bloco de módulo fora do plano (cadeado, sem número) */
 .cc-cc .cc-tranc{display:flex;flex-direction:column;gap:9px;align-items:flex-start;border-style:dashed;border-color:rgba(251,191,36,.28)}
