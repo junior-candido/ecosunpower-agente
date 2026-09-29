@@ -32,7 +32,7 @@ describe('avaliarSync', () => {
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.erro).toMatch(/^GoodWe: o portal não devolveu geração desde 23\/09/);
-    expect(r.erro).toMatch(/integração precisa de atualização/);
+    expect(r.erro).toMatch(/inversor sem internet ou a integração/);
   });
 
   it('Deye: último dia devolvido é anteontem → dado parado, erro', () => {

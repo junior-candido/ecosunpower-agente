@@ -1,0 +1,63 @@
+{
+ "code": "00000",
+ "description": "成功",
+ "traceId": "t-st",
+ "data": {
+  "total": 2,
+  "deviceDetailList": [
+   {
+    "deviceType": "INVERTER",
+    "total": 1,
+    "statusDetailList": [
+     {
+      "status": 5,
+      "total": 1,
+      "snList": [
+       "INV-SN-TESTE-01"
+      ],
+      "isHemsMap": {
+       "INV-SN-TESTE-01": false
+      },
+      "detailMap": {
+       "INV-SN-TESTE-01": {
+        "sn": "INV-SN-TESTE-01",
+        "name": "Inversor 1",
+        "deviceType": "INVERTER",
+        "status": 5,
+        "isHems": false,
+        "subtype": "grid",
+        "addTime": "1789391351667"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "deviceType": "DONGLE",
+    "total": 1,
+    "statusDetailList": [
+     {
+      "status": 1,
+      "total": 1,
+      "snList": [
+       "DONGLE-SN-TESTE-01"
+      ],
+      "isHemsMap": {
+       "DONGLE-SN-TESTE-01": false
+      },
+      "detailMap": {
+       "DONGLE-SN-TESTE-01": {
+        "sn": "DONGLE-SN-TESTE-01",
+        "name": "Dongle 1",
+        "deviceType": "DONGLE",
+        "status": 1,
+        "isHems": false,
+        "addTime": "1789391351767"
+       }
+      }
+     }
+    ]
+   }
+  ]
+ }
+}

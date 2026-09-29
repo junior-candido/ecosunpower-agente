@@ -2,7 +2,7 @@
 // Fase 2A do "alerta com motivo": FoxESS e GoodWe passam a derivar status REAL
 // (antes devolviam 'desconhecido' e o alerta saía genérico).
 // FoxESS /op/v0/device/list: status 1=online · 2=falha · 3=offline (por device).
-// GoodWe QueryPowerStationMonitor: status -1=offline · 0=espera · 1=gerando · 2=falha.
+// GoodWe SEMS+ (stationPage): status 0=offline · 1=gerando · 2=falha · 3=espera · 11=em construção.
 import { describe, it, expect } from 'vitest';
 import { derivarStatusFoxDevices } from '../src/modules/monitoring/adapters/foxess.js';
 import { mapStatusGoodweStation } from '../src/modules/monitoring/adapters/goodwe.js';
@@ -33,13 +33,14 @@ describe('derivarStatusFoxDevices', () => {
 });
 
 describe('mapStatusGoodweStation', () => {
-  it('-1 → offline', () => expect(mapStatusGoodweStation(-1)).toBe('offline'));
+  it('0 → offline', () => expect(mapStatusGoodweStation(0)).toBe('offline'));
   it('2 → falha', () => expect(mapStatusGoodweStation(2)).toBe('falha'));
   it('1 (gerando) → ok', () => expect(mapStatusGoodweStation(1)).toBe('ok'));
-  it('0 (em espera, ex.: noite) → ok — standby não é problema', () =>
-    expect(mapStatusGoodweStation(0)).toBe('ok'));
-  it('undefined/estranho → desconhecido', () => {
+  it('3 (em espera, ex.: noite) → ok — standby não é problema', () =>
+    expect(mapStatusGoodweStation(3)).toBe('ok'));
+  it('undefined/estranho/-1 (código do SEMS antigo) → desconhecido', () => {
     expect(mapStatusGoodweStation(undefined)).toBe('desconhecido');
     expect(mapStatusGoodweStation(77)).toBe('desconhecido');
+    expect(mapStatusGoodweStation(-1)).toBe('desconhecido');
   });
 });
