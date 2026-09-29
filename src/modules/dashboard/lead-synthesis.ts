@@ -95,7 +95,7 @@ Gere o JSON da sintese.`;
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],
     });
-    medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'lead-synthesis', usage: response.usage });
+    medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'resumo:lead', usage: response.usage });
 
     const textBlock = response.content.find((b) => b.type === 'text');
     if (!textBlock || textBlock.type !== 'text') return FALLBACK;
@@ -293,7 +293,7 @@ Gere 3-5 insights executivos em JSON.`;
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],
     });
-    medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'bi', usage: response.usage });
+    medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'resumo:bi', usage: response.usage });
 
     const textBlock = response.content.find((b) => b.type === 'text');
     if (!textBlock || textBlock.type !== 'text') return [];

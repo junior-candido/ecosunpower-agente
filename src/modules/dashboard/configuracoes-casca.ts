@@ -13,7 +13,7 @@ import type { NomeIcone } from './ui/icones.js';
 import { temaDaTela } from './ui/tema.js';
 import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
 
-export type SecaoConfig = 'usuarios' | 'whatsapp' | 'minha_assinatura' | 'empresas';
+export type SecaoConfig = 'usuarios' | 'whatsapp' | 'minha_assinatura' | 'empresas' | 'custo_ia';
 
 /** Tenant = usuário de outra empresa (sem usuário = tela legada → trata como casa). */
 export function ehTenant(user: DashUser | undefined): boolean {
@@ -65,6 +65,8 @@ const ITENS: ItemNav[] = [
   { secao: 'whatsapp', href: '/dashboard/whatsapp', rotulo: 'WhatsApp', ic: 'wa', ve: (u) => ehTenant(u) && can(u, 'usuarios', 'administrar') },
   { secao: 'minha_assinatura', href: '/dashboard/minha-assinatura', rotulo: 'Minha assinatura', ic: 'receipt', ve: (u) => ehTenant(u) && can(u, 'usinas', 'visualizar') },
   { secao: 'empresas', href: '/dashboard/empresas', rotulo: 'Empresas', ic: 'grid', ve: (u) => !!u && !ehTenant(u) && can(u, 'usuarios', 'administrar') },
+  // Custo de IA por empresa (28/09/2026) — SÓ a casa, mesmo portão de Empresas.
+  { secao: 'custo_ia', href: '/dashboard/custo-ia', rotulo: 'Custo de IA', ic: 'receipt', ve: (u) => !!u && !ehTenant(u) && can(u, 'usuarios', 'administrar') },
 ];
 
 /** Navegação de seções (só aparece com 2+ seções visíveis pra este usuário). */
@@ -77,7 +79,7 @@ export function navConfiguracoes(user: DashUser | undefined, ativa: SecaoConfig)
 
 /** Página de Configurações: cabeçalho em cima, seções à esquerda, conteúdo à direita. */
 export function paginaConfiguracoes(input: {
-  active: 'usuarios' | 'whatsapp' | 'minha_assinatura' | 'empresas';
+  active: 'usuarios' | 'whatsapp' | 'minha_assinatura' | 'empresas' | 'custo_ia';
   secao: SecaoConfig;
   title: string;
   cabecalhoHtml: string;

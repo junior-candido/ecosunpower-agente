@@ -85,7 +85,7 @@ export async function responderComoElo(
       system,
       messages: [...historicoMsgs, { role: 'user', content: String(pergunta).slice(0, 500) }],
     });
-    medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'elo', usage: resp.usage });
+    medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'admin:elo', usage: resp.usage });
     const txt = resp.content.find((b: any) => b.type === 'text')?.text as string | undefined;
     if (txt && txt.trim()) resposta = txt.trim();
   } catch (err) {

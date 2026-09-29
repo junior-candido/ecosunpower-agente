@@ -11,6 +11,18 @@ export const TELAS_LEVES: MudancaContrato = {
   entra: { links: [URL_CSS_PAINEL, URL_CSS_SEM_TAILWIND] },
 };
 
+/**
+ * Cobrança recorrente (28/09/2026): "Financeiro › Assinaturas" é a carteira de
+ * TODOS os assinantes — virou SÓ da casa (soEcosun). No menu lateral de uma
+ * tela de TENANT o link some. Tela da casa: nada muda (o teste
+ * cobranca-recorrente-menu garante que a casa continua vendo).
+ * Tela de tenant = a que não traz a logo da casa (telas-leves garante isso).
+ */
+export function menuTenantSemAssinaturas(html: string): MudancaContrato[] {
+  if (html.includes('/dashboard/estatico/logo-casa.')) return [];
+  return [{ motivo: 'Assinaturas só da casa — some do menu do tenant', saiSeHouver: { links: ['/dashboard/assinaturas', '/dashboard/conhecer/assinaturas'] } }];
+}
+
 /** Leads sem piscada (28/09): o CSS da grade do Atendimento (Conversas e ficha
  *  do lead) sai do fim do <body> e entra por arquivo, no <head>. */
 export const CSS_ATENDIMENTO_NO_HEAD: MudancaContrato = {

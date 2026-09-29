@@ -100,7 +100,7 @@ export type ChaveAtiva =
   | 'monitoramento' | 'medicao' | 'usinas_kanban' | 'pos_venda' | 'pastas' | 'marketing' | 'blog'
   | 'email' | 'cadencia' | 'leads' | 'conversas' | 'recados' | 'conhecimento' | 'kanban' | 'clientes' | 'financeiro'
   | 'fiscal' | 'cobrar' | 'assinaturas' | 'minha_assinatura' | 'whatsapp' | 'servicos' | 'usuarios'
-  | 'empresas' | 'rh_candidatos' | 'rh_vagas' | 'rh_busca' | 'cerebro' | 'lojas' | 'predio'
+  | 'empresas' | 'custo_ia' | 'rh_candidatos' | 'rh_vagas' | 'rh_busca' | 'cerebro' | 'lojas' | 'predio'
   | 'demonstrativos' | 'tv' | 'atencao' | 'energia';
 
 interface LayoutInput {
@@ -136,6 +136,30 @@ interface LayoutInput {
   // código — nunca dado de cliente. <style> no fim do <body> faz a tela pintar
   // sem ele e "pular" quando o HTML termina de chegar (piscada, 28/09/2026).
   cabeca?: string;
+}
+
+/**
+ * Cobrança recorrente (28/09/2026): faixa no topo do painel do TENANT quando a
+ * assistente dele foi pausada por fatura em aberto (com o link de pagar).
+ * Nunca pra casa. O painel continua funcionando normalmente.
+ */
+export function faixaAssistentePausada(user: DashUser | undefined): string {
+  const p = user?.assistentePausada;
+  if (!p || user.companyId === ECOSUN_COMPANY_ID) return '';
+  const abre = `<div class="cc-aviso cc-aviso-erro cc-faixa-pausa" role="alert" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">${icone('alert', 'sm')}`;
+  // Quem não é admin/proprietário: só o recado (sem valores, sem Pagar).
+  if (p.admin === false) {
+    return `${abre}<span style="flex:1;min-width:220px"><b>Assistente pausada.</b> Fale com a administradora da conta.</span></div>`;
+  }
+  const l = p.linkPagar;
+  const link = l && /^https:\/\//.test(l) ? l : null;
+  const pagar = link
+    ? `<a class="cc-btn cc-btn-sm" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Pagar agora (Pix ou cartão de crédito)</a>`
+    : '';
+  const texto = p.estagio === 2
+    ? '<b>Assistente e mensagens automáticas pausadas por fatura em aberto.</b> A assistente não está respondendo e os acompanhamentos, lembretes e reativações dos seus clientes estão parados — as mensagens continuam chegando aqui no painel. Assim que o pagamento for confirmado, tudo volta sozinho, aos poucos.'
+    : '<b>Assistente pausada por fatura em aberto.</b> Ela não está respondendo os seus clientes — as mensagens continuam chegando aqui no painel. Assim que o pagamento for confirmado, ela volta sozinha.';
+  return `${abre}<span style="flex:1;min-width:220px">${texto}</span>${pagar}<a class="cc-btn cc-btn-sm" href="/dashboard/minha-assinatura">Ver faturas</a></div>`;
 }
 
 export function renderLayout(input: LayoutInput): string {
@@ -260,7 +284,7 @@ ${cabecaEstilos}
       </header>
 
       <main class="cc-main${largo ? ' cc-largo' : ''}${imersivo ? ' cc-imersivo' : ''}">
-        ${body}
+        ${faixaAssistentePausada(user)}${body}
       </main>
 ${imersivo ? '' : `
       <footer class="cc-rodape">

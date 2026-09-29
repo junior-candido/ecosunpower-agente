@@ -19,6 +19,8 @@ export interface MenuDeps {
   scheduling: Handler; caseCreator: Handler; testimonialAdmin: Handler; relatorio: Handler; caixa: Handler;
   resgatarForms: Handler; googleAds: Handler; campanha: Handler;
   acaoImposto: Acao; acaoApagar: Acao; acaoGerarPost: Acao; acaoFecheiVenda: Acao;
+  /** Cobrança recorrente (28/09/2026): resumo das mensalidades (atrasadas, próximas, total do mês). */
+  acaoMensalidades: Acao;
 }
 
 // Limite de linhas de uma lista interativa do WhatsApp.
@@ -83,6 +85,7 @@ export function construirMenu(deps: MenuDeps): MenuCategoria[] {
         { id: 'menu_fin_imposto', title: '🧾 Calcular imposto', description: 'Quanto separar de uma venda', action: deps.acaoImposto },
         { id: 'menu_fin_lancar', title: '💸 Lançar gasto/entrada', description: 'Foto, áudio ou texto', hint: '💸 Manda a foto/áudio do comprovante, ou escreve direto: *paguei 380 no posto* / *entrou 5000 do João*. Eu registro na hora (sem confirmar) e te mostro Corrigir/Apagar. Pra pessoal, diz *PF* na mensagem. PDF grande eu leio em segundo plano.' },
         { id: 'menu_fin_material', title: '💰 Preço de material', description: 'Comparar onde está mais barato', hint: '💰 Pra comparar onde um material está mais barato, pergunta o preço dele:\n*preço do cabo 6mm*\n(eu já te mostro o ranking das lojas)' },
+        { id: 'menu_fin_mensalidades', title: '🔁 Mensalidades', description: 'Quem pagou, quem atrasou, o que vence', action: deps.acaoMensalidades },
         { id: 'menu_fin_painel', title: '📈 Abrir painel', description: 'Tela do financeiro', hint: '📈 Painel do financeiro: dashboard.ecosunpower.eng.br/dashboard/financeiro' },
         { id: 'menu_fin_apagar', title: '🗑️ Apagar lançamento', description: 'Apagar um gasto/entrada errado', action: deps.acaoApagar },
       ],

@@ -188,7 +188,7 @@ export function createAnthropicLlmCaller(apiKey: string): LlmCaller {
         { role: 'user', content: `${stateBlock}\n\n---\nMensagem do ${emp.rtApelido}:\n${userMessage}` },
       ],
     });
-    medirIa({ modelo: 'claude-sonnet-4-6', origem: 'closing', usage: res.usage });
+    medirIa({ modelo: 'claude-sonnet-4-6', origem: 'admin:fechamento', usage: res.usage });
 
     const text = res.content.filter((b) => b.type === 'text').map((b: any) => b.text).join('\n');
     // LLM responde JSON puro OU JSON em bloco ```json...``` OU JSON cercado de

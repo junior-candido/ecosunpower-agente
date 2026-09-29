@@ -10,6 +10,8 @@ import { variantesTelefone } from './phone.js';
 import { ECOSUN_COMPANY_ID } from './tenant-resolver.js';
 import { registrarEvento } from './elo/eventos.js';
 import { clientDaMensagem } from './tenant-client.js';
+// Cobrança recorrente — 2ª trava: ponto ÚNICO que segura os disparos automáticos de tenant inadimplente.
+import { filtrarDisparosLiberados } from './cobranca-recorrente/pausa.js';
 
 // Elo: mapeia a origem livre do lead pro canal canônico do event-stream.
 // Best-effort — a maioria dos leads entra por WhatsApp (default). E-mail e web
@@ -666,7 +668,7 @@ export class SupabaseService {
   async getDueEvaIntros(): Promise<Array<{ id: string; lead_id: string; phone: string; name: string | null }>> {
     const { data, error } = await this.client
       .from('eva_intro_pending')
-      .select('id, lead_id, leads!inner(phone, name)')
+      .select('id, lead_id, company_id, leads!inner(phone, name)')
       .eq('status', 'pending')
       .lte('scheduled_for', new Date().toISOString());
 
@@ -675,7 +677,9 @@ export class SupabaseService {
       return [];
     }
 
-    return (data ?? []).map((row: any) => ({
+    // 2ª trava da cobrança recorrente: empresa com disparos pausados fica na fila.
+    const liberados = await filtrarDisparosLiberados(data ?? [], (r: any) => r.company_id, 'apresentação');
+    return liberados.map((row: any) => ({
       id: row.id,
       lead_id: row.lead_id,
       phone: row.leads.phone,
@@ -761,7 +765,7 @@ export class SupabaseService {
     const today = new Date().toISOString().slice(0, 10);
     const { data, error } = await this.client
       .from('maintenance_reminders')
-      .select('id, lead_id, topic, scheduled_date, leads!inner(phone, name)')
+      .select('id, lead_id, company_id, topic, scheduled_date, leads!inner(phone, name)')
       .eq('status', 'pending')
       .lte('scheduled_date', today);
 
@@ -770,7 +774,9 @@ export class SupabaseService {
       return [];
     }
 
-    return (data ?? []).map((row: any) => ({
+    // 2ª trava da cobrança recorrente: empresa com disparos pausados fica na fila.
+    const liberados = await filtrarDisparosLiberados(data ?? [], (r: any) => r.company_id, 'lembrete de manutenção');
+    return liberados.map((row: any) => ({
       id: row.id,
       lead_id: row.lead_id,
       topic: row.topic,
@@ -1080,7 +1086,7 @@ export class SupabaseService {
     const safeLimit = Math.max(1, Math.min(200, batchLimit));
     const { data, error } = await this.client
       .from('eva_cadence')
-      .select('id, lead_id, step, scheduled_for, leads!inner(phone, name, ad_campaign_id)')
+      .select('id, lead_id, step, scheduled_for, company_id, leads!inner(phone, name, ad_campaign_id)')
       .eq('company_id', '00000000-0000-0000-0000-000000000001') // cron fora de contexto: só EcoSun (tenant = fase 2)
       .eq('status', 'pending')
       .lte('scheduled_for', new Date().toISOString())
@@ -1092,7 +1098,10 @@ export class SupabaseService {
       return [];
     }
 
-    return (data ?? []).map((row: any) => ({
+    // 2ª trava da cobrança recorrente (ponto único). Hoje a cadência é só da casa
+    // (que nunca trava); quando a cadência de tenant ligar, já nasce respeitando.
+    const liberados = await filtrarDisparosLiberados(data ?? [], (r: any) => r.company_id, 'toque de cadência');
+    return liberados.map((row: any) => ({
       id: row.id,
       lead_id: row.lead_id,
       step: row.step,
@@ -1248,7 +1257,8 @@ export class SupabaseService {
       console.warn('[email] getDueEmailSteps:', error.message);
       return [];
     }
-    return data ?? [];
+    // 2ª trava da cobrança recorrente: e-mail de empresa com disparos pausados fica na fila.
+    return filtrarDisparosLiberados(data ?? [], (r: any) => r.company_id ?? r.leads?.company_id, 'e-mail');
   }
 
   async lockEmailForSending(id: string): Promise<boolean> {
