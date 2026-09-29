@@ -4,6 +4,9 @@
 // Estrategia conservadora:
 // - Roda 1x por dia (madrugada, ~3h BRT)
 // - Pra cada sistema, busca os ultimos 7 dias (cobre eventual atraso na API)
+// - 1×/dia por usina (1ª rodada depois das 05:00 de Brasília) busca o mês
+//   anterior + o corrente inteiros — datalogger atrasado / recálculo do
+//   fabricante corrigido, total do mês bate com o app (29/09)
 // - UPSERT em geracao_diaria (sem duplicata)
 // - Erros sao por-sistema — 1 falha NAO interrompe os demais
 // - Marca ultima_sincronizacao + ultimo_erro pra diagnostico no dashboard
@@ -20,6 +23,7 @@ import { serieMesDiaria, serieAnoMensal, navegacao, type Vista } from './detalhe
 import { gravarPosicaoDaApi } from './usinas-posicao.js';
 import {
   hojeBrasilia, somarDias, inicioMesBrasilia, inicioAnoBrasilia, dataBrasiliaComoUtc, janelaSync, limitarAoHoje,
+  horaBrasilia, janelaRefreshMes,
 } from './util/dia-brasilia.js';
 import { avaliarSync } from './sync-avaliacao.js';
 import type { AdapterFetchResult } from './types.js';
@@ -34,7 +38,14 @@ interface SyncResult {
   pulados?: number;
   // true = já havia uma rodada em andamento; esta não fez nada (trava).
   emAndamento?: boolean;
+  // Usinas que nesta rodada buscaram o mês anterior + corrente (refresh diário).
+  refreshMes?: number;
 }
+
+// Refresh diário do mês: a partir desta hora (Brasília) a 1ª rodada de cada
+// usina no dia busca [1º dia do mês anterior, hoje] em vez dos 7 dias.
+// 05:00 = madrugada já fechou o dia anterior nos portais e antes do sol forte.
+export const HORA_REFRESH_MES_BRASILIA = 5;
 
 // SolarEdge: limite de 300 chamadas/dia por chave. A cada 15 min seriam 96
 // chamadas/usina/dia só de geração (+24 da descoberta) → 429 à tarde. Geração
@@ -134,6 +145,11 @@ export class MonitoringService {
   private solarEdgeUltimaTentativa = new Map<string, number>(); // sistema_id → ms
   private solarEdgePausadaAte = new Map<string, number>();      // api_key → ms
   private ultimaDescobertaPorMarca = new Map<string, number>(); // marca → ms
+  // Refresh do mês: sistema_id → dia (Brasília) em que já tentou. 1 tentativa
+  // por dia, dê certo ou não — portal fora do ar não vira busca de ~60 dias a
+  // cada 15 min (GoodWe = 1 chamada por dia pedido). Reiniciar o processo
+  // zera: no pior caso refaz o refresh 1× a mais no dia.
+  private refreshMesFeito = new Map<string, string>();
 
   async syncAll(companyId?: string | null): Promise<SyncResult> {
     // Uma rodada não começa enquanto a anterior ainda roda (cron de 15 min +
@@ -163,6 +179,7 @@ export class MonitoringService {
     let falhas = 0;
     let marcasSemAdapter = 0;
     let pulados = 0;
+    let refreshMes = 0;
 
     for (const sistema of sistemas) {
       try {
@@ -183,7 +200,18 @@ export class MonitoringService {
         }
 
         // Calendário de BRASÍLIA: nunca pede (nem grava) o dia de amanhã.
-        const { dataInicio, dataFim } = janelaSync(agora, 7);
+        // 1×/dia por usina (depois das 05:00): mês anterior + corrente. A
+        // SolarEdge entra aqui só quando o ritmo de 1×/h já liberou a consulta
+        // (checado acima) — o mês vem na MESMA chamada (1 pedido por período),
+        // então a cota diária não muda.
+        const hojeBr = hojeBrasilia(agora);
+        const fazRefreshMes = horaBrasilia(agora) >= HORA_REFRESH_MES_BRASILIA
+          && this.refreshMesFeito.get(sistema.id) !== hojeBr;
+        const { dataInicio, dataFim } = fazRefreshMes ? janelaRefreshMes(agora) : janelaSync(agora, 7);
+        if (fazRefreshMes) {
+          this.refreshMesFeito.set(sistema.id, hojeBr);
+          refreshMes++;
+        }
 
         if (ehSolarEdge) this.solarEdgeUltimaTentativa.set(sistema.id, agora.getTime());
         const result = await adapter.fetchGeneration(
@@ -229,7 +257,8 @@ export class MonitoringService {
       }
     }
 
-    return { totalSistemas: sistemas.length, sucessos, falhas, marcasSemAdapter, pulados };
+    if (refreshMes > 0) console.log(`[monitoring] refresh do mês (anterior + corrente): ${refreshMes} usina(s) nesta rodada`);
+    return { totalSistemas: sistemas.length, sucessos, falhas, marcasSemAdapter, pulados, refreshMes };
   }
 
   // SolarEdge: pula se a usina foi consultada há menos de 1 h ou se a chave

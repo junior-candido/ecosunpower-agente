@@ -351,15 +351,17 @@ describe('statusInversor derivado do echarts', () => {
 
 describe('fetchGeneration year-boundary', () => {
   it('detecta wrap mês-pra-trás e incrementa ano (28/12/2026 → 01/01/2027)', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () =>
-      res(200, {
+    // O adapter pede mês a mês: dezembro e janeiro vêm em pedidos separados,
+    // cada um com o ano certo a partir do início da própria janela.
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: any) => {
+      const dez = String(init?.body ?? '').includes('2026-12-28~2026-12-31');
+      return res(200, {
         code: 200, msg: 'ok',
-        data: {
-          legend: [],
-          xAxisData: ['28/12', '29/12', '30/12', '31/12', '01/01', '02/01'],
-          series: [{ name: 'A', data: [10, 11, 12, 13, 8, 9] }],
-        },
-      })));
+        data: dez
+          ? { legend: [], xAxisData: ['28/12', '29/12', '30/12', '31/12'], series: [{ name: 'A', data: [10, 11, 12, 13] }] }
+          : { legend: [], xAxisData: ['01/01', '02/01'], series: [{ name: 'A', data: [8, 9] }] },
+      });
+    }));
     const r = await nepAdapter.fetchGeneration({ jwt: 'x', sid: 'BR_X' }, '2026-12-28', '2027-01-02');
     if (!r.ok) throw new Error(r.reason);
     const datas = r.geracoes.map((g) => g.data);

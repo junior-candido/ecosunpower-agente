@@ -1768,7 +1768,7 @@ export function renderImportarSitesPage(input: ImportarPageInput): string {
             <option value="nep">NEP (microinversores BDM)</option>
             <option value="abb">ABB / FIMER Aurora Vision</option>
             <option value="foxess">FoxESS (micro Q1 / inversores)</option>
-            <option value="goodwe">GoodWe (SEMS Portal)</option>
+            <option value="goodwe">GoodWe (SEMS+)</option>
             <option value="solis">Solis (SolisCloud API)</option>
             <option value="sungrow">Sungrow (iSolarCloud OpenAPI)</option>
             <option value="saj">SAJ (elekeeper / eSolar)</option>
@@ -1852,10 +1852,10 @@ export function renderImportarSitesPage(input: ImportarPageInput): string {
 
         <fieldset id="campos-goodwe" style="display:none" disabled>
           <div class="cc-us-campos">
-            ${campo('E-mail da conta SEMS Portal', '<input name="goodwe_email" type="email" placeholder="e-mail do instalador SEMS">')}
-            ${campo('Senha da conta SEMS Portal', '<input name="goodwe_password" type="password" placeholder="senha SEMS">')}
+            ${campo('E-mail da conta SEMS+', '<input name="goodwe_email" type="email" placeholder="e-mail do instalador no SEMS+">')}
+            ${campo('Senha da conta SEMS+', '<input name="goodwe_password" type="password" placeholder="senha do SEMS+">')}
           </div>
-          ${nota('ok', `<strong>Renovação automática:</strong> com e-mail e senha do SEMS Portal, o adapter
+          ${nota('ok', `<strong>Renovação automática:</strong> com e-mail e senha do SEMS+, o adapter
             <strong>loga sozinho e renova o token quando expira</strong> — você não mexe mais. A mesma
             conta de instalador lista <strong>todas as usinas</strong> (as novas aparecem sozinhas).`)}
         </fieldset>

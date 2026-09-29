@@ -390,7 +390,8 @@ export const nepAdapter: MonitoringAdapter = {
   marca: 'nep',
 
   // POST /v2/site/statistics/echarts com types=3 → série diária por SN.
-  // Soma todas as séries por índice de dia → geração da planta no dia.
+  // Soma as séries POR MICRO por índice de dia → geração da planta no dia
+  // (série de total, se vier, é usada sozinha — ver separarSeriesNep).
   async fetchGeneration(
     credenciais: Record<string, unknown>,
     dataInicio: string,         // YYYY-MM-DD
@@ -408,22 +409,49 @@ export const nepAdapter: MonitoringAdapter = {
       };
     }
 
-    const body = {
-      types: 3,
-      rangeDate: `${dataInicio}~${dataFim}`,
-      sid: parsed.sid,
-    };
-
-    const r = await nepPostAuth<EchartsRespRaw>('/v2/site/statistics/echarts', body, parsed);
-    if (!r.ok) return r;
-
-    const { xAxisData, series } = r.data;
-    if (!Array.isArray(xAxisData) || !Array.isArray(series)) {
-      return { ok: false, reason: 'NEP echarts: resposta sem xAxisData/series' };
+    // Um pedido por MÊS do calendário (o refresh diário pede 2 meses; o
+    // backfill, anos) — o echarts devolve só "DD/MM" e não documenta limite
+    // de período; mês a mês fica no tamanho que a tela da NEP usa.
+    const geracoes: Array<{ data: string; geracao_kwh: number }> = [];
+    let statusInversor: 'ok' | 'offline' | 'falha' | 'desconhecido' = 'desconhecido';
+    const mesesComFalha: string[] = [];
+    let algumOk = false;
+    let ultimaFalha: { reason: string; invalidCredentials?: boolean } | null = null;
+    for (const [ini, fim] of janelasPorMes(dataInicio, dataFim)) {
+      const r = await nepPostAuth<EchartsRespRaw>('/v2/site/statistics/echarts', {
+        types: 3,
+        rangeDate: `${ini}~${fim}`,
+        sid: parsed.sid,
+      }, parsed);
+      if (!r.ok) {
+        if (r.invalidCredentials) return r;
+        ultimaFalha = r;
+        mesesComFalha.push(ini.slice(0, 7));
+        continue;
+      }
+      const { xAxisData, series } = r.data ?? ({} as Partial<EchartsRespRaw>);
+      if (!Array.isArray(xAxisData) || !Array.isArray(series)) {
+        ultimaFalha = { reason: 'NEP echarts: resposta sem xAxisData/series' };
+        mesesComFalha.push(ini.slice(0, 7));
+        continue;
+      }
+      algumOk = true;
+      // Série de TOTAL da planta (se vier junto das séries por micro) não pode
+      // entrar na soma — dobraria a geração. Status olha só os micros.
+      const { soma, dispositivos } = separarSeriesNep(series);
+      geracoes.push(...agregarGeracaoDiaria(xAxisData, soma, ini));
+      const st = derivarStatusDoEcharts(dispositivos);
+      if (st !== 'desconhecido') statusInversor = st; // o mês mais recente com leitura manda
     }
-
-    const geracoes = agregarGeracaoDiaria(xAxisData, series, dataInicio);
-    const statusInversor = derivarStatusDoEcharts(series);
+    if (!algumOk) {
+      return { ok: false, reason: ultimaFalha?.reason ?? 'NEP echarts: sem resposta' };
+    }
+    if (mesesComFalha.length > 0) {
+      return {
+        ok: true, geracoes, statusInversor,
+        falhaParcial: `mês(es) ${mesesComFalha.join(', ')} não responderam (${ultimaFalha?.reason ?? 'erro'})`,
+      };
+    }
 
     return { ok: true, geracoes, statusInversor };
   },
@@ -491,17 +519,83 @@ export const nepAdapter: MonitoringAdapter = {
     return { ok: true, sites };
   },
 
-  // NEP: credenciais da conta = jwt sem o sid (sid e por planta).
+  // NEP: credenciais da conta = jwt OU e-mail + senha, sem o sid (sid é por
+  // planta). Modo e-mail + senha (renovação automática — é o que a tela
+  // "Atualizar senha da integração" grava) também entra na descoberta.
   extractAccountCreds(credsPlanta) {
-    const cc = credsPlanta as Record<string, unknown>;
-    const jwt = String(cc.jwt ?? '').trim();
-    if (!jwt) return null;
-    return { jwt };
+    const parsed = parseCreds(credsPlanta as Record<string, unknown>);
+    if ('error' in parsed) return null;
+    return parsed.mode === 'jwt' ? { jwt: parsed.jwt } : { email: parsed.email, password: parsed.password };
   },
 };
 
+type SerieNep = { name?: string; data: Array<number | null> };
+
+// Nome de série que é o TOTAL da planta (nunca é um SN de micro).
+// "sum"/"soma" só como palavra solta (SN é alfanumérico e poderia conter as letras).
+const RE_SERIE_TOTAL = /(total|(^|[^a-z0-9])(sum|soma)([^a-z0-9]|$)|合计|总)/i;
+
+// Separa as séries do echarts em:
+//   soma         → o que entra na soma do dia
+//   dispositivos → séries por micro (pra derivar o status)
+// O normal é 1 série por micro (nome = SN) → soma todas. Se vier uma série de
+// TOTAL junto, somar tudo DOBRAVA a geração (auditoria 29/09). Duas defesas:
+//   1. nome de total ("Total", "Sum", "Soma", "合计") → usa SÓ ela na soma;
+//   2. sem nome, mas uma série é a soma EXATA das outras em todo dia com
+//      leitura (≥3 séries e ≥2 dias com geração — 2 micros iguais ou
+//      coincidência de 1 dia não contam) → ela sai da soma.
+export function separarSeriesNep<T extends SerieNep>(series: T[]): { soma: T[]; dispositivos: T[] } {
+  if (series.length < 2) return { soma: series, dispositivos: series };
+
+  const nomeada = series.find((s) => RE_SERIE_TOTAL.test(String(s.name ?? '')));
+  if (nomeada) {
+    return { soma: [nomeada], dispositivos: series.filter((s) => s !== nomeada) };
+  }
+
+  if (series.length >= 3) {
+    for (const cand of series) {
+      const outras = series.filter((s) => s !== cand);
+      if (ehSomaDasOutras(cand, outras)) return { soma: outras, dispositivos: outras };
+    }
+  }
+  return { soma: series, dispositivos: series };
+}
+
+function ehSomaDasOutras(cand: SerieNep, outras: SerieNep[]): boolean {
+  const n = Math.max(cand.data.length, ...outras.map((s) => s.data.length));
+  let diasComGeracao = 0;
+  for (let i = 0; i < n; i++) {
+    const v = cand.data[i];
+    const nums = outras.map((s) => s.data[i]).filter((x): x is number => typeof x === 'number' && Number.isFinite(x));
+    const temV = typeof v === 'number' && Number.isFinite(v);
+    if (!temV && nums.length === 0) continue;
+    if (!temV || nums.length === 0) return false;
+    const soma = nums.reduce((a, b) => a + b, 0);
+    if (Math.abs((v as number) - soma) > Math.max(0.01, Math.abs(soma) * 0.005)) return false;
+    if (soma > 0) diasComGeracao++;
+  }
+  return diasComGeracao >= 2;
+}
+
+// [inicio, fim] quebrado por mês do calendário: 2026-08-15..2026-09-29 →
+// [08-15..08-31], [09-01..09-29].
+export function janelasPorMes(inicio: string, fim: string): Array<[string, string]> {
+  const out: Array<[string, string]> = [];
+  let cursor = inicio;
+  let guard = 0;
+  while (cursor <= fim && guard++ < 600) {
+    const [a, m] = cursor.split('-').map(Number);
+    const ultimoDoMes = new Date(Date.UTC(a, m, 0)).toISOString().slice(0, 10);
+    const fimJanela = ultimoDoMes < fim ? ultimoDoMes : fim;
+    out.push([cursor, fimJanela]);
+    cursor = new Date(Date.UTC(a, m, 1)).toISOString().slice(0, 10);
+  }
+  return out;
+}
+
 // Agrega geração diária da planta a partir das series do echarts.
-// - Soma valores por índice (planta = N microinversores em paralelo).
+// - Soma valores por índice (planta = N microinversores em paralelo). Quem
+//   chama passa SÓ as séries a somar (separarSeriesNep tira a de total).
 // - Mantém dia com 0 kWh REAL (algum SN reportou número finito = leitura
 //   válida, planta apenas não gerou). Descarta dia com TODAS series null
 //   (futuro do mês corrente, leitura inexistente).

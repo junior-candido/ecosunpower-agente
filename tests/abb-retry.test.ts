@@ -45,12 +45,9 @@ function res502(): Response {
 // Resposta de /authenticate: { result: "<TOKEN>" }
 const authOk = { result: 'TOKEN-ABB' };
 
-// Resposta de /dailyProduction: { result: { plantEntityID, dailyProduction: [...] } }
+// Resposta da série diária (timeseries): { result: [{ startLabel, value, units }] }
 const dailyOk = {
-  result: {
-    plantEntityID: 'P1',
-    dailyProduction: [{ timestamp: '2026-07-08', value: 5.5 }],
-  },
+  result: [{ startLabel: '20260708', value: 5.5, units: 'kilowatt-hours' }],
 };
 
 // Resposta de /status: { result: { plantStatus, plantState } }

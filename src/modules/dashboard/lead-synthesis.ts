@@ -5,12 +5,13 @@
 //
 // SEM TELA desde a faxina pós-renovação (29/09/2026): o Cockpit antigo, único
 // que chamava isto, foi aposentado. Fica guardado pro Hero da Eva no Command
-// Center (fase H, design D3). ATENÇÃO ao religar: as consultas daqui NÃO
-// filtram company_id (eram da casa) — prender à empresa da sessão antes.
+// Center (fase H, design D3). MULTI-TENANT (29/09): toda função recebe o
+// company_id DA SESSÃO (nunca da URL) e TODA consulta filtra por ele; os
+// caches também são por empresa.
 
 import Anthropic from '@anthropic-ai/sdk';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { empresa } from '../empresa-config.js';
+import { empresaDe } from '../empresa-config.js';
 import { medirIa } from '../custos/ia-metering.js';
 
 export interface LeadSynthesis {
@@ -36,10 +37,13 @@ const FALLBACK: LeadSynthesis = {
 export async function synthesizeLead(
   supabase: SupabaseClient,
   anthropic: Anthropic,
+  companyId: string,
   leadId: string,
 ): Promise<LeadSynthesis> {
+  if (!companyId) return FALLBACK; // sem empresa = não lê nada (fail-closed)
+  const chaveCache = `${companyId}:${leadId}`;
   // Cache hit?
-  const cached = cache.get(leadId);
+  const cached = cache.get(chaveCache);
   if (cached && cached.expiresAt > Date.now()) return cached.data;
 
   try {
@@ -48,6 +52,7 @@ export async function synthesizeLead(
       .from('leads')
       .select('name, city, status, profile, energy_data, opportunities, updated_at')
       .eq('id', leadId)
+      .eq('company_id', companyId)
       .maybeSingle();
     if (!lead) return FALLBACK;
 
@@ -55,6 +60,7 @@ export async function synthesizeLead(
       .from('conversations')
       .select('messages')
       .eq('lead_id', leadId)
+      .eq('company_id', companyId)
       .order('created_at', { ascending: false })
       .limit(1);
 
@@ -66,7 +72,7 @@ export async function synthesizeLead(
     const energyData = lead.energy_data as Record<string, unknown> | null;
     const opps = lead.opportunities as Record<string, unknown> | null;
 
-    const systemPrompt = `Vc analisa leads de empresa de energia solar (Ecosunpower) e gera resumo executivo pra Junior (Responsavel Tecnico CREA/CFT) decidir em 30 segundos. Retorne SEMPRE em JSON valido com 3 campos:
+    const systemPrompt = `Vc analisa leads de empresa de energia solar (${empresaDe(companyId).nomeFantasia}) e gera resumo executivo pro dono da empresa decidir em 30 segundos. Retorne SEMPRE em JSON valido com 3 campos:
 
 {
   "summary": "1 frase com nome, cidade, perfil e o que quer (max 140 chars)",
@@ -115,7 +121,7 @@ Gere o JSON da sintese.`;
         : '❄️',
       suggested_action: (parsed.suggested_action ?? FALLBACK.suggested_action).slice(0, 150),
     };
-    cache.set(leadId, { data, expiresAt: Date.now() + TTL_MS });
+    cache.set(chaveCache, { data, expiresAt: Date.now() + TTL_MS });
     return data;
   } catch (err) {
     console.warn(`[lead-synthesis] falha pra lead ${leadId}:`, (err as Error).message);
@@ -137,22 +143,30 @@ export interface PlatformInsight {
 }
 
 const PLATFORM_CACHE_TTL_MS = 15 * 60_000;
-let platformCache: { data: PlatformInsight[]; expiresAt: number } | null = null;
+const platformCache = new Map<string, { data: PlatformInsight[]; expiresAt: number }>(); // por empresa
 
 /**
  * Invalida cache de insights gerais + cache individual de leads.
  * Usado quando Junior clica "Recalcular" no cockpit pra forcar regeneracao.
  */
 export function invalidateInsightsCache(): void {
-  platformCache = null;
+  platformCache.clear();
   cache.clear();
 }
 
 export async function getPlatformInsights(
   supabase: SupabaseClient,
   anthropic: Anthropic,
+  companyId: string,
 ): Promise<PlatformInsight[]> {
-  if (platformCache && platformCache.expiresAt > Date.now()) return platformCache.data;
+  if (!companyId) return []; // sem empresa = não lê nada (fail-closed)
+  const emCache = platformCache.get(companyId);
+  if (emCache && emCache.expiresAt > Date.now()) return emCache.data;
+  // Consulta já presa à empresa (contagem head:true quando `contar`).
+  const da = (tabela: string, colunas: string, contar = false) =>
+    supabase.from(tabela)
+      .select(colunas, contar ? { count: 'exact', head: true } : undefined)
+      .eq('company_id', companyId);
 
   try {
     // === Coleta de dados pra dar contexto pra IA
@@ -170,28 +184,23 @@ export async function getPlatformInsights(
       qStatusCount,
       qSilentes,
     ] = await Promise.all([
-      supabase.from('leads').select('id', { count: 'exact', head: true }).gte('created_at', hoje0h.toISOString()),
-      supabase.from('leads').select('id', { count: 'exact', head: true })
-        .gte('created_at', since48h).lt('created_at', hoje0h.toISOString()),
-      supabase.from('leads').select('id', { count: 'exact', head: true })
-        .eq('status', 'qualificado').gte('updated_at', hoje0h.toISOString()),
-      supabase.from('leads').select('id', { count: 'exact', head: true })
-        .eq('status', 'agendado').gte('updated_at', hoje0h.toISOString()),
-      supabase.from('eva_cadence').select('id', { count: 'exact', head: true })
-        .eq('status', 'sent').gte('sent_at', hoje0h.toISOString()),
-      supabase.from('eva_cadence').select('id', { count: 'exact', head: true })
-        .eq('status', 'sent').gte('sent_at', since48h).lt('sent_at', hoje0h.toISOString()),
-      supabase.from('meta_ads_insights')
-        .select('spend_cents, leads, impressions, clicks, date_start, campaign_id')
+      // `da` já vem com .eq('company_id', ...) — nenhuma consulta sai sem empresa.
+      da('leads', 'id', true).gte('created_at', hoje0h.toISOString()),
+      da('leads', 'id', true).gte('created_at', since48h).lt('created_at', hoje0h.toISOString()),
+      da('leads', 'id', true).eq('status', 'qualificado').gte('updated_at', hoje0h.toISOString()),
+      da('leads', 'id', true).eq('status', 'agendado').gte('updated_at', hoje0h.toISOString()),
+      da('eva_cadence', 'id', true).eq('status', 'sent').gte('sent_at', hoje0h.toISOString()),
+      da('eva_cadence', 'id', true).eq('status', 'sent').gte('sent_at', since48h).lt('sent_at', hoje0h.toISOString()),
+      da('meta_ads_insights', 'spend_cents, leads, impressions, clicks, date_start, campaign_id')
         .gte('date_start', since7d.toISOString().slice(0, 10)),
-      supabase.from('leads').select('status').limit(5000),
-      supabase.from('leads').select('id', { count: 'exact', head: true })
+      da('leads', 'status').limit(5000),
+      da('leads', 'id', true)
         .eq('eva_active', true).eq('opt_out', false)
         .in('status', ['novo', 'qualificando', 'qualificado'])
         .lt('updated_at', since24h),
     ]);
 
-    const insights = (qInsights7d.data ?? []) as Array<{ spend_cents: number; leads: number | null; impressions: number; clicks: number; date_start?: string; campaign_id?: number }>;
+    const insights = (qInsights7d.data ?? []) as unknown as Array<{ spend_cents: number; leads: number | null; impressions: number; clicks: number; date_start?: string; campaign_id?: number }>;
     const spend7d = insights.reduce((s, i) => s + (i.spend_cents ?? 0), 0) / 100;
     const leads7d = insights.reduce((s, i) => s + (i.leads ?? 0), 0);
     const cpl7d = leads7d > 0 ? spend7d / leads7d : null;
@@ -212,7 +221,7 @@ export async function getPlatformInsights(
       : 0;
 
     const statusCount: Record<string, number> = {};
-    for (const r of (qStatusCount.data ?? []) as Array<{ status: string }>) {
+    for (const r of (qStatusCount.data ?? []) as unknown as Array<{ status: string }>) {
       statusCount[r.status] = (statusCount[r.status] ?? 0) + 1;
     }
 
@@ -244,7 +253,8 @@ export async function getPlatformInsights(
     };
 
     // === Pede pra Claude gerar insights executivos
-    const systemPrompt = `Vc eh ${empresa().nomeAtendente}, consultora da ${empresa().nomeFantasia}. Analisa o estado da plataforma hoje e gera 3 a 5 insights executivos pro dono da empresa (Responsavel Tecnico) saber em 30 segundos o que esta acontecendo e o que priorizar.
+    const emp = empresaDe(companyId);
+    const systemPrompt = `Vc eh ${emp.nomeAtendente}, consultora da ${emp.nomeFantasia}. Analisa o estado da plataforma hoje e gera 3 a 5 insights executivos pro dono da empresa (Responsavel Tecnico) saber em 30 segundos o que esta acontecendo e o que priorizar.
 
 ⚠️ CONTEXTO CRITICO sobre o que JA EH AUTOMATICO (nao sugira essas acoes pro Junior, ele NAO precisa disparar nada manualmente):
 - Cadencia de reengajamento: cron roda a cada 15min, dispara toques automaticamente
@@ -286,7 +296,7 @@ REGRAS:
 Retorne JSON valido sem outros caracteres:
 [{"icone":"🔥","titulo":"X","mensagem":"Y","prioridade":"alta"}, ...]`;
 
-    const userPrompt = `Estado atual da plataforma EcoSunPower (${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}):
+    const userPrompt = `Estado atual da plataforma ${emp.nomeFantasia} (${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}):
 
 ${JSON.stringify(dados, null, 2)}
 
@@ -314,7 +324,7 @@ Gere 3-5 insights executivos em JSON.`;
         ? p.prioridade : 'media' as PlatformInsight['prioridade'],
     }));
 
-    platformCache = { data: result, expiresAt: Date.now() + PLATFORM_CACHE_TTL_MS };
+    platformCache.set(companyId, { data: result, expiresAt: Date.now() + PLATFORM_CACHE_TTL_MS });
     return result;
   } catch (err) {
     console.warn('[platform-insights] falha:', (err as Error).message);
@@ -330,6 +340,7 @@ Gere 3-5 insights executivos em JSON.`;
 export async function getLeadsAguardandoAcao(
   supabase: SupabaseClient,
   anthropic: Anthropic,
+  companyId: string,
   limit: number = 10,
 ): Promise<Array<{
   id: string;
@@ -340,10 +351,12 @@ export async function getLeadsAguardandoAcao(
   dias_aguardando: number;
   synthesis: LeadSynthesis;
 }>> {
+  if (!companyId) return []; // sem empresa = não lê nada (fail-closed)
   const cutoff = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
   const { data: leads } = await supabase
     .from('leads')
     .select('id, name, phone, status, city, updated_at')
+    .eq('company_id', companyId)
     .in('status', ['qualificado', 'qualificando'])
     .eq('eva_active', true)
     .eq('opt_out', false)
@@ -361,7 +374,7 @@ export async function getLeadsAguardandoAcao(
       status: l.status,
       cidade: l.city,
       dias_aguardando: Math.floor((Date.now() - new Date(l.updated_at).getTime()) / (24 * 60 * 60_000)),
-      synthesis: await synthesizeLead(supabase, anthropic, l.id),
+      synthesis: await synthesizeLead(supabase, anthropic, companyId, l.id),
     })),
   );
 

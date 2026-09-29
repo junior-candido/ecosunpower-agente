@@ -144,6 +144,7 @@ import { rotaCommandCenter, rotaCentralAtencao, rotaModoTv, rotaCockpitAposentad
 import { paginaInicialDe, destinoDepoisDoLogin } from './entrada.js';
 import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
 import { rotaMapaJson, rotaLocalizarPagina, rotaLocalizarUma, rotaSalvarPosicao } from './mapa-usinas-rotas.js';
+import { rotaAtualizarSenha, blocoAtualizarSenha } from './monitoramento-credenciais.js';
 import { blocoMiniMapaUsina } from './mapa-usinas-views.js';
 import { montarRotasEnergia } from './energia-rotas.js';
 import { criarTravaDeModulo } from './modulos-contratados.js';
@@ -2286,6 +2287,20 @@ export function createDashboardRouter(
   router.get('/monitoramento/localizar', rotaLocalizarPagina(supabase));
   router.post('/monitoramento/localizar/:id', rotaLocalizarUma(supabase));
   router.post('/monitoramento/:id/posicao', rotaSalvarPosicao(supabase));
+  // Atualizar senha da integração (29/09): usinas:editar + empresa dona; depois
+  // de gravar, sincroniza as usinas afetadas em segundo plano (1 por vez).
+  router.post('/monitoramento/:id/credenciais', rotaAtualizarSenha(supabase, (ids) => {
+    void (async () => {
+      for (const sid of ids) {
+        try {
+          const r = await monitoringService.syncOne(sid);
+          if (!r.ok) console.warn(`[monitoramento/senha] sync ${sid} depois da senha nova: ${r.reason}`);
+        } catch (err) {
+          console.warn(`[monitoramento/senha] sync ${sid} falhou:`, (err as Error).message);
+        }
+      }
+    })();
+  }));
 
   // Cockpit ANTIGO — aposentado (faxina pós-renovação): /cockpit só redireciona
   // pra entrada (favorito velho continua abrindo). Ver rotaCockpitAposentado.
@@ -5651,7 +5666,7 @@ export function createDashboardRouter(
       if (!email || !password) {
         return res.status(400).send(renderImportarSitesPage({
         user: (req as AuthedRequest).dashUser,
-          errorMsg: 'GoodWe precisa de e-mail e senha da conta SEMS Portal (login do instalador).',
+          errorMsg: 'GoodWe precisa de e-mail e senha da conta SEMS+ (login do instalador).',
         }));
       }
       credenciais = { email, password };
@@ -5801,7 +5816,13 @@ export function createDashboardRouter(
         prontuarioUsina(supabase, id).catch(() => []),
       ]);
       const operador = (req as AuthedRequest).dashUser;
-      const mapaHtml = blocoMiniMapaUsina(detalhe.sistema, { podeEditar: can(operador, 'usinas', 'editar') });
+      const podeEditarUsina = can(operador, 'usinas', 'editar');
+      const nSenha = req.query.senha === 'ok' ? Number(req.query.n) : null;
+      const mapaHtml = blocoMiniMapaUsina(detalhe.sistema, { podeEditar: podeEditarUsina })
+        + blocoAtualizarSenha(detalhe.sistema, {
+          podeEditar: podeEditarUsina,
+          atualizadas: nSenha != null && Number.isInteger(nSenha) && nSenha > 0 && nSenha < 10000 ? nSenha : null,
+        });
       res.send(renderDetalheSistemaPage(detalhe, curvaDia, curvaMsg, donoRow ? { id: donoRow.id, name: donoRow.name } : null, timelineAbordagens, renderProntuarioCc(prontuario), operador, mapaHtml));
     } catch (err) {
       console.error('[dashboard/monitoramento/detalhe]', err);

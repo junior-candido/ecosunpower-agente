@@ -16,9 +16,14 @@
 //   GET /v1/portfolio/{portfolioEntityID}/plants?page=0
 //     → { result: [ { plantEntityID, plantName, plantState, plantStatus, ... } ] }
 //
-// Geração diária:
-//   GET /v1/plant/{entityID}/dailyProduction?startDate=YYYYMMDD&endDate=YYYYMMDD
-//     → { result: { plantEntityID, dailyProduction: [{ timestamp, value }] } }
+// Geração diária (29/09: com UNIDADE informada pela API — antes adivinhava
+// Wh × kWh pelo tamanho do número):
+//   GET /v1/stats/energy/timeseries/{entityID}/GenerationEnergy/delta
+//       ?sampleSize=Day&startDate=YYYYMMDD&endDate=YYYYMMDD(exclusivo)&timeZone=America/Sao_Paulo
+//     → { result: [{ start, startLabel, value, units: "kilowatt-hours" }] }
+//   Reserva (se a série acima não responder): GET /v1/plant/{entityID}/dailyProduction
+//     → { result: { plantEntityID, dailyProduction: [{ timestamp, value }] } } —
+//     só aproveitado quando traz unidade; sem unidade, NÃO grava (falhaParcial).
 //
 // Status:
 //   GET /v1/plant/{entityID}/status
@@ -235,12 +240,21 @@ interface PlantRaw {
   plantAddress?: { city?: string; state?: string; country?: string };
 }
 
+// Um ponto de energia diária (timeseries ou dailyProduction).
+export interface PontoEnergiaRaw {
+  start?: string | number;     // epoch (s) do início do dia (timeseries)
+  startLabel?: string;         // "YYYYMMDD..." (timeseries)
+  timestamp?: string | number; // "YYYY-MM-DD" / "YYYYMMDD" / epoch (dailyProduction)
+  value?: number;
+  units?: string;              // "kilowatt-hours" | "watt-hours" | ...
+  unit?: string;
+}
+
 interface DailyProductionRaw {
   plantEntityID: number | string;
-  dailyProduction?: Array<{
-    timestamp?: string | number; // pode vir como "YYYY-MM-DD" ou epoch ms
-    value?: number;              // Wh
-  }>;
+  units?: string;
+  unit?: string;
+  dailyProduction?: PontoEnergiaRaw[];
 }
 
 // ============================================================================
@@ -270,23 +284,15 @@ export const abbAdapter: MonitoringAdapter = {
       };
     }
 
-    const startDate = dataInicio.replace(/-/g, '');
-    const endDate = dataFim.replace(/-/g, '');
-    const endpoint = `/v1/plant/${encodeURIComponent(parsed.plantEntityID)}/dailyProduction?startDate=${startDate}&endDate=${endDate}`;
-
-    const r = await abbGetAuth<DailyProductionRaw>(endpoint, parsed);
+    const r = await buscarEnergiaDiaria(parsed, parsed.plantEntityID, dataInicio, dataFim);
     if (!r.ok) return r;
-
-    const itens = r.data.dailyProduction;
-    // Fix 7: result OK mas sem o campo dailyProduction (transient API). Loga
-    // warn pra Junior nao confundir com planta sem geracao no S4.
-    if (!Array.isArray(itens)) {
-      console.warn(
-        `[abb] dailyProduction ausente no result da planta ${parsed.plantEntityID} ` +
-        '(API devolveu 200 mas sem o array). Pode ser transient — re-tenta na proxima janela.',
-      );
-    }
-    const geracoes = parseDailyProduction(itens ?? [], { plantEntityID: parsed.plantEntityID });
+    const { geracoes, semUnidade } = r;
+    // Sem unidade = não dá pra saber se é Wh ou kWh (erro de 1000×). Não grava
+    // esses dias e avisa — o sync marca erro visível em vez de número errado.
+    const falhaParcial = semUnidade > 0
+      ? `${semUnidade} dia(s) sem unidade de energia informada pela API — não gravados (sem adivinhar Wh/kWh)`
+      : undefined;
+    if (falhaParcial) console.warn(`[abb] planta ${parsed.plantEntityID}: ${falhaParcial}`);
 
     // Status da planta (chamada barata e isolada — diferente do NEP, ABB tem
     // endpoint dedicado, então vale chamar).
@@ -298,7 +304,7 @@ export const abbAdapter: MonitoringAdapter = {
       ? mapearStatus(statusR.data.plantStatus, statusR.data.plantState)
       : 'desconhecido';
 
-    return { ok: true, geracoes, statusInversor };
+    return { ok: true, geracoes, statusInversor, ...(falhaParcial ? { falhaParcial } : {}) };
   },
 
   // Lista TODAS as plantas do instalador via PortfolioGroup → Portfolios → Plants.
@@ -396,41 +402,98 @@ export const abbAdapter: MonitoringAdapter = {
 // HELPERS (exportados pra testes)
 // ============================================================================
 
-// Aurora Vision pode devolver dailyProduction em formatos ligeiramente
-// diferentes — `value` em Wh ou kWh, timestamp como ISO ou epoch.
-// Normalizamos pra { data: YYYY-MM-DD, geracao_kwh: number }.
-//
-// LIMITAÇÃO: a unit (Wh vs kWh) NÃO é documentada pelo endpoint /dailyProduction.
-// Aurora Vision só crava unit no /aggregated. Aplicamos heurística "valor grande
-// = Wh, valor pequeno = kWh" com threshold 10_000. Loga warn em CADA detecção
-// pra Junior validar contra produção real e remover a ambiguidade depois.
-//
-// TODO(ABB-unit): calibrar com 1 ciclo de cron em prod e cravar a unit.
-// Pesquisa rápida: trocar pro endpoint /v1/stats/energy/aggregated/{entityID}
-// /GenerationEnergy/delta?sampling=Day que documenta unit explicito (kWh).
-export function parseDailyProduction(
-  itens: Array<{ timestamp?: string | number; value?: number }>,
-  contexto?: { plantEntityID?: string },
-): Array<{ data: string; geracao_kwh: number }> {
-  const out: Array<{ data: string; geracao_kwh: number }> = [];
-  let usouHeuristicaWh = 0;
+// Energia diária de UMA planta em [dataInicio, dataFim] com a unidade que a
+// API informa. 1º a série diária (timeseries, unidade por ponto); se ela não
+// responder (endpoint fora / 404), o dailyProduction — que só vale com unidade.
+// Credencial inválida não tenta a reserva (mesma resposta).
+async function buscarEnergiaDiaria(
+  c: ParsedCreds,
+  plantEntityID: string,
+  dataInicio: string,
+  dataFim: string,
+): Promise<
+  | { ok: true; geracoes: Array<{ data: string; geracao_kwh: number }>; semUnidade: number }
+  | { ok: false; reason: string; invalidCredentials?: boolean }
+> {
+  const id = encodeURIComponent(plantEntityID);
+  const startDate = dataInicio.replace(/-/g, '');
+  const fimExclusivo = diaSeguinte(dataFim).replace(/-/g, '');
+  const noPeriodo = (g: { data: string }) => g.data >= dataInicio && g.data <= dataFim;
+
+  const serie = await abbGetAuth<PontoEnergiaRaw[]>(
+    `/v1/stats/energy/timeseries/${id}/GenerationEnergy/delta?sampleSize=Day` +
+      `&startDate=${startDate}&endDate=${fimExclusivo}&timeZone=${encodeURIComponent('America/Sao_Paulo')}`,
+    c,
+  );
+  if (serie.ok) {
+    const p = parseEnergiaDiaria(Array.isArray(serie.data) ? serie.data : []);
+    return { ok: true, geracoes: p.geracoes.filter(noPeriodo), semUnidade: p.semUnidade };
+  }
+  if (serie.invalidCredentials) return serie;
+  console.warn(`[abb] timeseries da planta ${plantEntityID} falhou (${serie.reason}); tentando dailyProduction`);
+
+  const endDate = dataFim.replace(/-/g, '');
+  const r = await abbGetAuth<DailyProductionRaw>(
+    `/v1/plant/${id}/dailyProduction?startDate=${startDate}&endDate=${endDate}`,
+    c,
+  );
+  if (!r.ok) return r;
+  const itens = r.data.dailyProduction;
+  if (!Array.isArray(itens)) {
+    console.warn(`[abb] dailyProduction ausente no result da planta ${plantEntityID} (API devolveu 200 mas sem o array)`);
+  }
+  const p = parseEnergiaDiaria(itens ?? [], r.data.units ?? r.data.unit);
+  return { ok: true, geracoes: p.geracoes.filter(noPeriodo), semUnidade: p.semUnidade };
+}
+
+function diaSeguinte(iso: string): string {
+  const [a, m, d] = iso.split('-').map(Number);
+  return new Date(Date.UTC(a, m - 1, d + 1)).toISOString().slice(0, 10);
+}
+
+/** Fator pra kWh a partir da unidade escrita pela API (null = desconhecida). */
+export function fatorParaKwh(unidade: string | undefined | null): number | null {
+  const u = String(unidade ?? '').trim().toLowerCase().replace(/[\s_]+/g, '-');
+  if (!u) return null;
+  if (/^(kilowatt-hours?|kwh)$/.test(u)) return 1;
+  if (/^(watt-hours?|wh)$/.test(u)) return 1 / 1000;
+  if (/^(megawatt-hours?|mwh)$/.test(u)) return 1000;
+  return null;
+}
+
+// Pontos de energia → { data: YYYY-MM-DD (Brasília), geracao_kwh }. A unidade
+// vem do ponto (`units`/`unit`) ou do corpo (`unidadePadrao`). Sem unidade
+// conhecida o ponto NÃO entra (conta em `semUnidade`) — antes um valor
+// > 10.000 era tratado como Wh, o que dividia por 1000 a geração de usina
+// grande em kWh (e deixava passar Wh pequeno como kWh).
+export function parseEnergiaDiaria(
+  itens: PontoEnergiaRaw[],
+  unidadePadrao?: string,
+): { geracoes: Array<{ data: string; geracao_kwh: number }>; semUnidade: number } {
+  const geracoes: Array<{ data: string; geracao_kwh: number }> = [];
+  let semUnidade = 0;
   for (const item of itens) {
     if (typeof item.value !== 'number' || !Number.isFinite(item.value)) continue;
-    const dataIso = parseTimestamp(item.timestamp);
+    const dataIso = dataDoPonto(item);
     if (!dataIso) continue;
-    const eraWh = item.value > 10_000;
-    const kwh = eraWh ? item.value / 1000 : item.value;
-    if (eraWh) usouHeuristicaWh++;
-    out.push({ data: dataIso, geracao_kwh: Math.max(0, kwh) });
+    const fator = fatorParaKwh(item.units ?? item.unit ?? unidadePadrao);
+    if (fator == null) { semUnidade++; continue; }
+    geracoes.push({ data: dataIso, geracao_kwh: Math.max(0, Number((item.value * fator).toFixed(3))) });
   }
-  if (usouHeuristicaWh > 0) {
-    console.warn(
-      `[abb] heuristica Wh->kWh disparou em ${usouHeuristicaWh}/${itens.length} dias` +
-      (contexto?.plantEntityID ? ` (planta=${contexto.plantEntityID})` : '') +
-      ' — validar unit do endpoint dailyProduction em prod (TODO ABB-unit).',
-    );
+  return { geracoes, semUnidade };
+}
+
+// startLabel "YYYYMMDD..." > start (epoch s, meia-noite de Brasília) > timestamp.
+function dataDoPonto(item: PontoEnergiaRaw): string | null {
+  const label = String(item.startLabel ?? '').trim();
+  if (/^\d{8}/.test(label)) return `${label.slice(0, 4)}-${label.slice(4, 6)}-${label.slice(6, 8)}`;
+  if (typeof item.start === 'number' && Number.isFinite(item.start)) {
+    const ms = item.start > 1e12 ? item.start : item.start * 1000;
+    // Dia de Brasília (UTC-3 fixo): meia-noite BRT = 03:00Z do mesmo dia.
+    return new Date(ms - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
   }
-  return out;
+  if (item.start !== undefined) return parseTimestamp(item.start);
+  return parseTimestamp(item.timestamp);
 }
 
 function parseTimestamp(t: string | number | undefined): string | null {
