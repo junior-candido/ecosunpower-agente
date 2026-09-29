@@ -20,6 +20,7 @@ import {
   type ParsedCreds,
 } from '../src/modules/monitoring/adapters/sungrow.js';
 import { clearAllTokens } from '../src/modules/monitoring/util/token-cache.js';
+import { hojeBrasilia } from '../src/modules/monitoring/util/dia-brasilia.js';
 
 const CONTA = {
   appkey: 'APPKEY123',
@@ -188,7 +189,8 @@ function mockFetch(routes: Record<string, (body: any) => any>) {
   return { calls };
 }
 
-const hoje = new Date().toISOString().slice(0, 10);
+// "hoje" do adapter é o de Brasília (29/09) — em UTC o teste falhava das 21h às 24h.
+const hoje = hojeBrasilia();
 const ymdHoje = hoje.replace(/-/g, '');
 
 describe('fetchGeneration (rede mockada)', () => {

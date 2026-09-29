@@ -412,6 +412,7 @@ export const deyeAdapter: MonitoringAdapter = {
 
     let token = tokenResp.token;
     let jaRetentou = false;
+    let falhaParcial: string | undefined;
     let chunkStart = new Date(startDate);
     while (chunkStart <= endDate) {
       // chunkEnd = min(chunkStart + 30d, endDate)
@@ -454,9 +455,14 @@ export const deyeAdapter: MonitoringAdapter = {
           token = fresh.token;
           continue; // retenta o MESMO chunk com token novo (não avança o cursor)
         }
-        // Se ja pegou alguma coisa, retorna o que tem; senao falha
+        // Se ja pegou alguma coisa, retorna o que tem; senao falha.
+        // 29/09: e AVISA (falhaParcial) — antes o pedaço que faltou sumia calado
+        // e o sync contava "ok". Os dias do pedaço que falhou não vêm (o banco
+        // mantém o valor anterior).
         if (todasGeracoes.length === 0) return { ok: false, reason: result.reason };
         console.warn(`[deye] history chunk ${startAt}..${endAt} falhou, retornando ${todasGeracoes.length} pontos`);
+        const br = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+        falhaParcial = `o período de ${br(startAt)} a ${br(dataFim)} não respondeu`;
         break;
       }
 
@@ -483,7 +489,10 @@ export const deyeAdapter: MonitoringAdapter = {
         }
         if (!data) continue;
 
-        const kwh = Number(it.generationValue ?? 0);
+        // null/ausente = dia SEM leitura → não entra (antes virava 0 kWh e
+        // escondia portal parado atrás de "gerou zero").
+        if (it.generationValue === null || it.generationValue === undefined) continue;
+        const kwh = Number(it.generationValue);
         if (!Number.isFinite(kwh)) continue;
 
         todasGeracoes.push({ data, geracao_kwh: Math.max(0, kwh) });
@@ -494,7 +503,7 @@ export const deyeAdapter: MonitoringAdapter = {
       chunkStart.setUTCDate(chunkStart.getUTCDate() + 1);
     }
 
-    return { ok: true, geracoes: todasGeracoes };
+    return { ok: true, geracoes: todasGeracoes, ...(falhaParcial ? { falhaParcial } : {}) };
   },
 
   // Lista todas as plantas da conta Deye master, paginando ate pegar tudo.

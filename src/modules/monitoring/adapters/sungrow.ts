@@ -40,6 +40,7 @@ import type {
   TelemetryResult,
 } from '../types.js';
 import { fetchWithTimeout } from '../util/fetch-with-timeout.js';
+import { hojeBrasilia } from '../util/dia-brasilia.js';
 import { getOrFetch } from '../util/token-cache.js';
 import { retryTransient, isTransientFailure } from '../util/retry.js';
 import { pontoDaApi } from '../geocodificacao.js';
@@ -494,8 +495,11 @@ function normalizeUf(v: unknown): string | null {
   return s.length === 2 ? s.toUpperCase() : null;
 }
 
+// Dia de BRASÍLIA (não UTC). Antes, das 21h às 24h o "hoje" em UTC já era
+// amanhã: o total do tempo real ia pro dia SEGUINTE e o dia de verdade ficava
+// congelado no último valor antes das 21h.
 function isoHoje(): string {
-  return new Date().toISOString().slice(0, 10);
+  return hojeBrasilia();
 }
 
 // ============================================================================
@@ -562,6 +566,7 @@ export const sungrowAdapter: MonitoringAdapter = {
       for (const g of parseSerieDiaria(r.data, parsed.siteId)) porDia.set(g.data, g.geracao_kwh);
     }
 
+    let falhaParcial: string | undefined;
     // Dia de hoje (se pedido no range): pega do tempo real (histórico não traz).
     if (dataFim >= hoje && dataInicio <= hoje) {
       const rt = await authPost<unknown>(
@@ -573,14 +578,17 @@ export const sungrowAdapter: MonitoringAdapter = {
       if (rt.ok) {
         const hojeKwh = parseGeracaoHojeKwh(rt.data, parsed.siteId);
         if (hojeKwh !== null) porDia.set(hoje, hojeKwh);
+      } else {
+        // erro no tempo real não derruba a sync — o histórico já veio — mas
+        // AVISA: hoje fica com o valor anterior e o sync não conta sucesso.
+        falhaParcial = 'não consegui ler a geração de hoje (tempo real)';
       }
-      // erro no tempo real não derruba a sync — o histórico já veio.
     }
 
     const geracoes: GeracaoDiaria[] = [...porDia.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([data, kwh]) => ({ data, geracao_kwh: Number(kwh.toFixed(3)) }));
-    return { ok: true, geracoes, statusInversor: 'desconhecido' }; // 'ok' era proxy (linhas na resposta ≠ inversor comunicando) — mentia no alerta com motivo; status real desta marca = fase 2
+    return { ok: true, geracoes, statusInversor: 'desconhecido', ...(falhaParcial ? { falhaParcial } : {}) }; // 'ok' era proxy (linhas na resposta ≠ inversor comunicando) — mentia no alerta com motivo; status real desta marca = fase 2
   },
 
   async listSites(credenciaisConta: Record<string, unknown>, ctx?: AdapterContext): Promise<ListSitesResult> {

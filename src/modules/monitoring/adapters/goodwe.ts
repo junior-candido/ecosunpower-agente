@@ -398,6 +398,7 @@ export const goodweAdapter: MonitoringAdapter = {
 
     const porDia = new Map<string, number>();
     let ultimoErro: string | null = null;
+    const janelasComFalha: string[] = [];
     for (const date of janelasParaIntervalo(dataInicio, dataFim)) {
       const r = await semsPostAuth<ChartData>(
         '/api/v2/Charts/GetChartByPlant',
@@ -408,6 +409,7 @@ export const goodweAdapter: MonitoringAdapter = {
         if (r.invalidCredentials) return r;       // credencial ruim: aborta
         // janela pontual falhou: loga e segue (melhor geração parcial que nada)
         ultimoErro = r.reason;
+        janelasComFalha.push(date);
         console.warn(`[goodwe] GetChartByPlant ${parsed.siteId} @${date} falhou (${r.reason}); pula essa janela`);
         continue;
       }
@@ -443,7 +445,11 @@ export const goodweAdapter: MonitoringAdapter = {
         statusInversor = mapStatusGoodweStation(rec?.status);
       }
     } catch { /* best-effort */ }
-    return { ok: true, geracoes, statusInversor };
+    // 29/09: janela que falhou não some calada — o sync não conta como sucesso.
+    const falhaParcial = janelasComFalha.length > 0
+      ? `parte do período não respondeu (janela até ${janelasComFalha.map((d) => `${d.slice(8, 10)}/${d.slice(5, 7)}`).join(', ')})`
+      : undefined;
+    return { ok: true, geracoes, statusInversor, ...(falhaParcial ? { falhaParcial } : {}) };
   },
 
   // GetPlantPowerChart → curva de potência (kW) do dia da usina. Ao vivo.

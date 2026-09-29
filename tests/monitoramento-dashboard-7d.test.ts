@@ -1,6 +1,7 @@
 // tests/monitoramento-dashboard-7d.test.ts
 import { describe, it, expect } from 'vitest';
 import { MonitoringService } from '../src/modules/monitoring/service.js';
+import { hojeBrasilia, somarDias } from '../src/modules/monitoring/util/dia-brasilia.js';
 
 function fakeSupabase(sistemas: any[], geracoes: any[]) {
   return {
@@ -33,8 +34,9 @@ describe('listarParaDashboard inclui geracao_7d_kwh', () => {
   // esperado de 7 dias (fencepost). O hoje parcial segue nos campos
   // geracao_hoje_kwh e geracao_mes_kwh, só sai da régua de 7 dias.
   it('soma janela 7d = 7 dias COMPLETOS, sem o hoje parcial', async () => {
-    const hoje = new Date().toISOString().slice(0, 10);
-    const ha5 = new Date(Date.now() - 5 * 864e5).toISOString().slice(0, 10);
+    // Calendário de Brasília (29/09) — igual ao serviço; em UTC o teste falhava das 21h às 24h.
+    const hoje = hojeBrasilia();
+    const ha5 = somarDias(hoje, -5);
     const svc = new MonitoringService(fakeSupabase(
       [{ id: 's1', apelido: 'A', marca_inversor: 'deye', ativo: true, potencia_kwp: 10, uf: 'DF' }],
       [

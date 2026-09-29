@@ -18,12 +18,40 @@ import { buscarPaginado } from './paginacao.js';
 import { empresaDe } from '../empresa-config.js';
 import { serieMesDiaria, serieAnoMensal, navegacao, type Vista } from './detalhe-series.js';
 import { gravarPosicaoDaApi } from './usinas-posicao.js';
+import {
+  hojeBrasilia, somarDias, inicioMesBrasilia, inicioAnoBrasilia, dataBrasiliaComoUtc, janelaSync, limitarAoHoje,
+} from './util/dia-brasilia.js';
+import { avaliarSync } from './sync-avaliacao.js';
+import type { AdapterFetchResult } from './types.js';
 
 interface SyncResult {
   totalSistemas: number;
   sucessos: number;
   falhas: number;
   marcasSemAdapter: number;
+  // Usinas SolarEdge que ficaram pra próxima rodada (ritmo de 1×/h ou chave
+  // pausada por 429) — não é sucesso nem falha.
+  pulados?: number;
+  // true = já havia uma rodada em andamento; esta não fez nada (trava).
+  emAndamento?: boolean;
+}
+
+// SolarEdge: limite de 300 chamadas/dia por chave. A cada 15 min seriam 96
+// chamadas/usina/dia só de geração (+24 da descoberta) → 429 à tarde. Geração
+// no máximo 1×/hora por usina (24/dia) e descoberta a cada 6 h (4/dia).
+export const SOLAREDGE_INTERVALO_SYNC_MS = 60 * 60 * 1000;
+// Levou 429 (cota do dia estourada): a CHAVE inteira descansa 3 h — repetir
+// só queima mais cota e mantém o bloqueio.
+export const SOLAREDGE_PAUSA_429_MS = 3 * 60 * 60 * 1000;
+export const SOLAREDGE_INTERVALO_DESCOBERTA_MS = 6 * 60 * 60 * 1000;
+const MSG_SOLAREDGE_LIMITE = 'SolarEdge: limite diário de consultas da API atingido — nova tentativa em cerca de 3 h';
+
+function ehLimiteSolarEdge(reason: string | undefined): boolean {
+  return /^SolarEdge 429\b/.test(reason ?? '');
+}
+
+function chaveSolarEdge(sistema: SistemaCliente): string {
+  return String((sistema.api_credentials as Record<string, unknown>)?.api_key ?? '').trim();
 }
 
 // [Fase 2 A3] Toda escrita derivada de um sistema carimba o company_id DO
@@ -99,7 +127,31 @@ export class MonitoringService {
   // Executa sincronizacao de todos os sistemas ativos.
   // companyId (opcional): só as usinas daquela empresa — usado pelo botão
   // "Atualizar todas" do tenant. Sem ele, a frota inteira (cron / EcoSun).
+  // Trava de sobreposição + ritmo da SolarEdge. Memória do PROCESSO (o app roda
+  // numa instância só no EasyPanel) — reiniciar zera, o que no pior caso faz
+  // 1 chamada a mais; nada disso precisa de banco.
+  private syncRodando = false;
+  private solarEdgeUltimaTentativa = new Map<string, number>(); // sistema_id → ms
+  private solarEdgePausadaAte = new Map<string, number>();      // api_key → ms
+  private ultimaDescobertaPorMarca = new Map<string, number>(); // marca → ms
+
   async syncAll(companyId?: string | null): Promise<SyncResult> {
+    // Uma rodada não começa enquanto a anterior ainda roda (cron de 15 min +
+    // botão "Atualizar todas"): duas rodadas juntas dobram as chamadas às
+    // marcas (rate limit) e disputam o mesmo upsert.
+    if (this.syncRodando) {
+      console.warn('[monitoring] syncAll: rodada anterior ainda em andamento — pulando esta');
+      return { totalSistemas: 0, sucessos: 0, falhas: 0, marcasSemAdapter: 0, pulados: 0, emAndamento: true };
+    }
+    this.syncRodando = true;
+    try {
+      return await this.syncAllSemTrava(companyId);
+    } finally {
+      this.syncRodando = false;
+    }
+  }
+
+  private async syncAllSemTrava(companyId?: string | null): Promise<SyncResult> {
     const marcas = marcasSuportadas();
     if (marcas.length === 0) {
       console.warn('[monitoring] Nenhum adapter registrado, skip syncAll');
@@ -110,6 +162,7 @@ export class MonitoringService {
     let sucessos = 0;
     let falhas = 0;
     let marcasSemAdapter = 0;
+    let pulados = 0;
 
     for (const sistema of sistemas) {
       try {
@@ -122,9 +175,17 @@ export class MonitoringService {
           continue;
         }
 
-        const dataFim = isoDate(new Date());
-        const dataInicio = isoDate(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
+        const agora = new Date();
+        const ehSolarEdge = sistema.marca_inversor === 'solaredge';
+        if (ehSolarEdge && this.solarEdgeDeveEsperar(sistema, agora.getTime())) {
+          pulados++;
+          continue;
+        }
 
+        // Calendário de BRASÍLIA: nunca pede (nem grava) o dia de amanhã.
+        const { dataInicio, dataFim } = janelaSync(agora, 7);
+
+        if (ehSolarEdge) this.solarEdgeUltimaTentativa.set(sistema.id, agora.getTime());
         const result = await adapter.fetchGeneration(
           sistema.api_credentials,
           dataInicio,
@@ -134,8 +195,13 @@ export class MonitoringService {
 
         if (!result.ok) {
           falhas++;
+          let reason = result.reason;
+          if (ehSolarEdge && ehLimiteSolarEdge(reason)) {
+            this.solarEdgePausadaAte.set(chaveSolarEdge(sistema), agora.getTime() + SOLAREDGE_PAUSA_429_MS);
+            reason = MSG_SOLAREDGE_LIMITE;
+          }
           await this.atualizarStatusSistema(sistema.id, {
-            ultimo_erro: result.reason,
+            ultimo_erro: reason,
             // Se credenciais invalidas, desativa pra Junior corrigir
             ativo: result.invalidCredentials ? false : undefined,
           });
@@ -145,19 +211,16 @@ export class MonitoringService {
           continue;
         }
 
-        await this.upsertGeracoes(sistema.id, result.geracoes, sistema.company_id);
-        await this.atualizarStatusSistema(sistema.id, {
-          ultima_sincronizacao: new Date().toISOString(),
-          ultimo_erro: null,
-          // 084: guarda o status devolvido pelo adapter (fatia 1 do "alerta
-          // com motivo"). Sem o campo → 'desconhecido' (não deixa valor velho).
-          status_inversor: result.statusInversor ?? 'desconhecido',
-          status_inversor_em: new Date().toISOString(),
-        });
-        sucessos++;
-        console.log(
-          `[monitoring] sistema=${sistema.id} marca=${sistema.marca_inversor} OK (${result.geracoes.length} dias)`,
-        );
+        const av = await this.aplicarResultado(sistema, result, dataFim);
+        if (av.ok) {
+          sucessos++;
+          console.log(
+            `[monitoring] sistema=${sistema.id} marca=${sistema.marca_inversor} OK (${result.geracoes.length} dias)`,
+          );
+        } else {
+          falhas++;
+          console.warn(`[monitoring] sistema=${sistema.id} marca=${sistema.marca_inversor} incompleto: ${av.erro}`);
+        }
       } catch (err) {
         falhas++;
         const msg = (err as Error).message;
@@ -166,7 +229,64 @@ export class MonitoringService {
       }
     }
 
-    return { totalSistemas: sistemas.length, sucessos, falhas, marcasSemAdapter };
+    return { totalSistemas: sistemas.length, sucessos, falhas, marcasSemAdapter, pulados };
+  }
+
+  // SolarEdge: pula se a usina foi consultada há menos de 1 h ou se a chave
+  // está descansando depois de um 429.
+  private solarEdgeDeveEsperar(sistema: SistemaCliente, agoraMs: number): boolean {
+    const pausa = this.solarEdgePausadaAte.get(chaveSolarEdge(sistema));
+    if (pausa != null && agoraMs < pausa) return true;
+    const ultima = this.solarEdgeUltimaTentativa.get(sistema.id);
+    return ultima != null && agoraMs - ultima < SOLAREDGE_INTERVALO_SYNC_MS;
+  }
+
+  // Grava o que veio COMPLETO e decide se foi sucesso (ver sync-avaliacao.ts).
+  // Sucesso: carimba ultima_sincronizacao e limpa o erro. Não-sucesso (falha
+  // parcial / portal vazio / dado parado): ultimo_erro com o motivo em
+  // português e ultima_sincronizacao INTOCADA — a tela para de dizer
+  // "sincronizado agora" pra usina que não recebe dado.
+  private async aplicarResultado(
+    sistema: SistemaCliente,
+    result: AdapterFetchResult,
+    hoje: string,
+  ): Promise<{ ok: true } | { ok: false; erro: string }> {
+    const geracoes = limitarAoHoje(result.geracoes, hoje);
+    const ultimaDataComGeracao = geracoes.length === 0 && !result.falhaParcial
+      ? await this.ultimaDataComGeracao(sistema.id)
+      : null;
+    await this.upsertGeracoes(sistema.id, geracoes, sistema.company_id);
+    const av = avaliarSync({
+      marca: sistema.marca_inversor,
+      geracoes,
+      falhaParcial: result.falhaParcial,
+      ultimaDataComGeracao,
+      hoje,
+    });
+    const agoraIso = new Date().toISOString();
+    // 084: guarda o status devolvido pelo adapter (fatia 1 do "alerta com
+    // motivo"). Sem o campo → 'desconhecido' (não deixa valor velho).
+    const status = { status_inversor: result.statusInversor ?? 'desconhecido', status_inversor_em: agoraIso };
+    if (av.ok) {
+      await this.atualizarStatusSistema(sistema.id, { ultima_sincronizacao: agoraIso, ultimo_erro: null, ...status });
+    } else {
+      await this.atualizarStatusSistema(sistema.id, { ultimo_erro: av.erro, ...status });
+    }
+    return av;
+  }
+
+  // Última data com geração > 0 gravada pra usina (null = nunca teve dado).
+  private async ultimaDataComGeracao(sistemaId: string): Promise<string | null> {
+    const { data, error } = await this.supabase.getClient()
+      .from('geracao_diaria')
+      .select('data')
+      .eq('sistema_id', sistemaId)
+      .gt('geracao_kwh', 0)
+      .order('data', { ascending: false })
+      .limit(1);
+    if (error) throw new Error(`ultimaDataComGeracao: ${error.message}`);
+    const row = Array.isArray(data) ? data[0] : null;
+    return (row?.data as string | undefined) ?? null;
   }
 
   // Backfill: puxa historico COMPLETO do sistema desde data_instalacao.
@@ -212,12 +332,18 @@ export class MonitoringService {
     let chunks = 0;
     let ultimoErro: string | undefined;
 
+    // Calendário de Brasília: o último pedaço termina no hoje de Brasília
+    // (às 21h+ o UTC já é amanhã — nunca pedir/gravar dia que não existe).
+    const hojeBr = hojeBrasilia(hoje);
     while (cursor < hoje) {
       const chunkFim = new Date(Math.min(cursor.getTime() + CHUNK_DIAS * 24 * 60 * 60 * 1000, hoje.getTime()));
+      const inicioChunk = isoDate(cursor);
+      const fimChunk = isoDate(chunkFim) > hojeBr ? hojeBr : isoDate(chunkFim);
+      if (inicioChunk > fimChunk) break;
       const result = await adapter.fetchGeneration(
         sistema.api_credentials,
-        isoDate(cursor),
-        isoDate(chunkFim),
+        inicioChunk,
+        fimChunk,
         this.buildAdapterContext(sistema),
       );
       if (!result.ok) {
@@ -225,8 +351,10 @@ export class MonitoringService {
         if (result.invalidCredentials) break; // sem ponto continuar
         // Erro temporario: tenta proximo chunk mesmo assim
       } else {
-        await this.upsertGeracoes(sistemaId, result.geracoes, sistema.company_id);
-        totalDias += result.geracoes.length;
+        const geracoes = limitarAoHoje(result.geracoes, hojeBr);
+        await this.upsertGeracoes(sistemaId, geracoes, sistema.company_id);
+        totalDias += geracoes.length;
+        if (result.falhaParcial) ultimoErro = result.falhaParcial;
       }
       chunks++;
       cursor = new Date(chunkFim.getTime() + 24 * 60 * 60 * 1000); // dia seguinte
@@ -257,20 +385,26 @@ export class MonitoringService {
     const adapter = getAdapter(sistema.marca_inversor);
     if (!adapter) return { ok: false, reason: `Sem adapter pra marca ${sistema.marca_inversor}` };
 
-    const dataFim = isoDate(new Date());
-    const dataInicio = isoDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
+    const agora = new Date();
+    const { dataInicio, dataFim } = janelaSync(agora, 30);
+    const ehSolarEdge = sistema.marca_inversor === 'solaredge';
+    // SolarEdge com a chave descansando (429): nem tenta — só queimaria cota.
+    const pausa = ehSolarEdge ? this.solarEdgePausadaAte.get(chaveSolarEdge(sistema)) : undefined;
+    if (pausa != null && agora.getTime() < pausa) return { ok: false, reason: MSG_SOLAREDGE_LIMITE };
+    if (ehSolarEdge) this.solarEdgeUltimaTentativa.set(sistema.id, agora.getTime());
 
     const result = await adapter.fetchGeneration(sistema.api_credentials, dataInicio, dataFim, this.buildAdapterContext(sistema));
-    if (!result.ok) return { ok: false, reason: result.reason };
+    if (!result.ok) {
+      if (ehSolarEdge && ehLimiteSolarEdge(result.reason)) {
+        this.solarEdgePausadaAte.set(chaveSolarEdge(sistema), agora.getTime() + SOLAREDGE_PAUSA_429_MS);
+        return { ok: false, reason: MSG_SOLAREDGE_LIMITE };
+      }
+      return { ok: false, reason: result.reason };
+    }
 
-    await this.upsertGeracoes(sistema.id, result.geracoes, sistema.company_id);
-    await this.atualizarStatusSistema(sistema.id, {
-      ultima_sincronizacao: new Date().toISOString(),
-      ultimo_erro: null,
-      status_inversor: result.statusInversor ?? 'desconhecido',
-      status_inversor_em: new Date().toISOString(),
-    });
-    return { ok: true };
+    // Mesma régua do syncAll: falha parcial / portal vazio NÃO é sucesso.
+    const av = await this.aplicarResultado(sistema, result, dataFim);
+    return av.ok ? { ok: true } : { ok: false, reason: av.erro };
   }
 
   // Monta o AdapterContext pra um sistema. Hoje só provê persistAccountCreds:
@@ -413,18 +547,24 @@ export class MonitoringService {
       if (ja) {
         // Atualiza dados que podem ter mudado (apelido renomeado, potencia
         // ajustada, cidade) E renova api_key (caso Junior tenha rotacionado).
+        // 29/09: NUNCA sobrescreve o kWp (a marca devolve estimativa — ex.:
+        // FoxESS soma a potência dos micros; o cadastro à mão é o certo): só
+        // preenche quando está vazio/0. E NUNCA religa (ativo) — usina pausada
+        // à mão fica pausada; nem apaga o ultimo_erro que o sync gravou (quem
+        // limpa é o próximo sync bem-sucedido).
+        const atualizacao: Record<string, unknown> = {
+          apelido: site.apelido,
+          api_credentials: site.credenciais,
+          cidade: site.cidade ?? ja.cidade,
+          data_instalacao: site.data_instalacao ?? ja.data_instalacao,
+          updated_at: new Date().toISOString(),
+        };
+        if (!(Number(ja.potencia_kwp ?? 0) > 0) && site.potencia_kwp != null && site.potencia_kwp > 0) {
+          atualizacao.potencia_kwp = site.potencia_kwp;
+        }
         const { error } = await this.supabase.getClient()
           .from('sistemas_clientes')
-          .update({
-            apelido: site.apelido,
-            api_credentials: site.credenciais,
-            potencia_kwp: site.potencia_kwp ?? ja.potencia_kwp,
-            cidade: site.cidade ?? ja.cidade,
-            data_instalacao: site.data_instalacao ?? ja.data_instalacao,
-            ativo: true,
-            ultimo_erro: null,
-            updated_at: new Date().toISOString(),
-          })
+          .update(atualizacao)
           .eq('id', ja.id);
         // NÃO engolir o erro: antes a gente contava "atualizado" mesmo quando
         // falhava, mascarando bugs (ex: uf_check rejeitando "Acre").
@@ -498,6 +638,15 @@ export class MonitoringService {
     for (const marca of marcasSuportadas()) {
       const adapter = getAdapter(marca);
       if (!adapter || !adapter.listSites) continue;
+
+      // SolarEdge: a descoberta gasta da MESMA cota de 300/dia da geração —
+      // no máximo a cada 6 h (as outras marcas seguem o ritmo do cron).
+      if (marca === 'solaredge') {
+        const agoraMs = Date.now();
+        const ultima = this.ultimaDescobertaPorMarca.get(marca);
+        if (ultima != null && agoraMs - ultima < SOLAREDGE_INTERVALO_DESCOBERTA_MS) continue;
+        this.ultimaDescobertaPorMarca.set(marca, agoraMs);
+      }
 
       // Pega todas api_keys distintas daquela marca (com o dono — [A3]: site
       // novo descoberto nasce na MESMA empresa da conta que o revelou)
@@ -691,8 +840,8 @@ export class MonitoringService {
     let serie: { data: string; kwh: number; esperado: number }[] = [];
     if (granularidade === 'diaria') {
       // Bucket por dia, preenchendo gaps com 0
-      const cursor = new Date(inicio);
-      while (cursor <= new Date(fim)) {
+      const cursor = new Date(`${inicio}T00:00:00Z`);
+      while (cursor <= new Date(`${fim}T00:00:00Z`)) {
         const ds = isoDate(cursor);
         const row = geracoesDoRange.find((g) => g.data === ds);
         serie.push({
@@ -700,17 +849,17 @@ export class MonitoringService {
           kwh: row ? Number(row.geracao_kwh) : 0,
           esperado: esperadoDia,
         });
-        cursor.setDate(cursor.getDate() + 1);
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
       }
     } else {
       // Bucket por mes
-      const inicioBucket = new Date(inicio);
-      inicioBucket.setDate(1);
-      const fimBucket = new Date(fim);
+      const inicioBucket = new Date(`${inicio}T00:00:00Z`);
+      inicioBucket.setUTCDate(1);
+      const fimBucket = new Date(`${fim}T00:00:00Z`);
       const cursor = new Date(inicioBucket);
       while (cursor <= fimBucket) {
-        const ano = cursor.getFullYear();
-        const mes = cursor.getMonth() + 1;
+        const ano = cursor.getUTCFullYear();
+        const mes = cursor.getUTCMonth() + 1;
         const mesKey = `${ano}-${String(mes).padStart(2, '0')}`;
         const diasNoMes = new Date(ano, mes, 0).getDate();
         const kwhMes = geracoesDoRange
@@ -721,7 +870,7 @@ export class MonitoringService {
           kwh: kwhMes,
           esperado: esperadoDia * diasNoMes,
         });
-        cursor.setMonth(cursor.getMonth() + 1);
+        cursor.setUTCMonth(cursor.getUTCMonth() + 1);
       }
     }
 
@@ -748,19 +897,21 @@ export class MonitoringService {
   ): { mes: string; kwh: number; esperado: number }[] {
     const out: { mes: string; kwh: number; esperado: number }[] = [];
     if (geracoesArr.length === 0) return out;
-    const primeiroDia = new Date(geracoesArr[0].data);
-    const cursor = new Date(primeiroDia.getFullYear(), primeiroDia.getMonth(), 1);
-    const fimMensal = new Date(hojeDate.getFullYear(), hojeDate.getMonth(), 1);
+    // Meses como YYYY-MM puros (calendário de Brasília; sem fuso do servidor).
+    const [pa, pm] = geracoesArr[0].data.split('-').map(Number);
+    const [ha, hm] = hojeBrasilia(hojeDate).split('-').map(Number);
+    const cursor = new Date(Date.UTC(pa, pm - 1, 1));
+    const fimMensal = new Date(Date.UTC(ha, hm - 1, 1));
     while (cursor <= fimMensal) {
-      const ano = cursor.getFullYear();
-      const mes = cursor.getMonth() + 1;
+      const ano = cursor.getUTCFullYear();
+      const mes = cursor.getUTCMonth() + 1;
       const mesKey = `${ano}-${String(mes).padStart(2, '0')}`;
       const diasNoMes = new Date(ano, mes, 0).getDate();
       const kwhMes = geracoesArr
         .filter((g) => g.data.startsWith(mesKey))
         .reduce((s2, g) => s2 + Number(g.geracao_kwh), 0);
       out.push({ mes: mesKey, kwh: kwhMes, esperado: esperadoDia * diasNoMes });
-      cursor.setMonth(cursor.getMonth() + 1);
+      cursor.setUTCMonth(cursor.getUTCMonth() + 1);
     }
     return out;
   }
@@ -774,12 +925,13 @@ export class MonitoringService {
     hojeDate: Date,
     medianaCarteira7d: number | null = null,
   ): { kpis: DetalheSistema['kpis']; alertas: DetalheSistema['alertas'] } {
-    const hojeStr = isoDate(hojeDate);
+    // Calendário de Brasília (às 21h+ o UTC já é amanhã — o mês zerava).
+    const hojeStr = hojeBrasilia(hojeDate);
 
     // KPIs (sempre fixos: hoje/mes/ano/total)
     const hojeRow = geracoesArr.find((g) => g.data === hojeStr);
-    const inicioMes = isoDate(new Date(hojeDate.getFullYear(), hojeDate.getMonth(), 1));
-    const inicioAno = isoDate(new Date(hojeDate.getFullYear(), 0, 1));
+    const inicioMes = inicioMesBrasilia(hojeDate);
+    const inicioAno = inicioAnoBrasilia(hojeDate);
     const geracaoMes = geracoesArr.filter((g) => g.data >= inicioMes)
       .reduce((s2, g) => s2 + Number(g.geracao_kwh), 0);
     const geracaoAno = geracoesArr.filter((g) => g.data >= inicioAno)
@@ -792,7 +944,7 @@ export class MonitoringService {
     // Exatamente 7 dias COMPLETOS [hoje-7, hoje) — a janela antiga somava 8
     // datas-calendário contra um esperado de 7 (fencepost); mesma janela da
     // lista/mediana pra card e detalhe contarem a mesma história.
-    const ultimos7Inicio = isoDate(new Date(hojeDate.getTime() - 7 * 24 * 60 * 60 * 1000));
+    const ultimos7Inicio = somarDias(hojeStr, -7);
     const realUltimos7 = geracoesArr.filter((g) => g.data >= ultimos7Inicio && g.data < hojeStr)
       .reduce((s2, d) => s2 + Number(d.geracao_kwh), 0);
     const esperadoUltimos7 = esperadoDia * 7;
@@ -801,7 +953,7 @@ export class MonitoringService {
     // Quantos dias atras teve geracao > 0 (pra detectar offline)
     let offlineHa = 30;
     for (let i = 0; i < 30; i++) {
-      const d = isoDate(new Date(hojeDate.getTime() - i * 24 * 60 * 60 * 1000));
+      const d = somarDias(hojeStr, -i);
       const r = geracoesArr.find((g) => g.data === d);
       if (r && Number(r.geracao_kwh) > 0) {
         offlineHa = i;
@@ -869,7 +1021,8 @@ export class MonitoringService {
     const ger = todasGeracoes as { data: string; geracao_kwh: number }[];
 
     const { kpis, alertas } = this.montarKpisEAlertas(s, ger, hojeDate, await this.medianaDaCarteira7d(s.company_id));
-    const nav = navegacao(opts.vista, opts.ref, hojeDate, s.data_instalacao ?? null);
+    // navegacao lê o "hoje" com getUTC* → entrega o dia de Brasília à meia-noite UTC.
+    const nav = navegacao(opts.vista, opts.ref, dataBrasiliaComoUtc(hojeDate), s.data_instalacao ?? null);
     const serieMensalCompleta = this.montarSerieMensalCompleta(ger, kpis.esperadoDiaKwh, hojeDate);
 
     const [y, mes] = opts.ref.split('-').map(Number);
@@ -896,7 +1049,8 @@ export class MonitoringService {
     label: string;
     presetAtual: '30d' | '90d' | '6m' | '1a' | '2a' | '5a' | 'tudo' | 'custom';
   } {
-    const hoje = new Date();
+    // Dia de Brasília à meia-noite UTC: isoDate/setUTC* abaixo ficam no dia certo.
+    const hoje = dataBrasiliaComoUtc();
     const hojeStr = isoDate(hoje);
 
     // Range customizado tem prioridade
@@ -921,17 +1075,17 @@ export class MonitoringService {
     };
 
     const inicio = new Date(hoje);
-    if (preset === '30d') inicio.setDate(inicio.getDate() - 30);
-    else if (preset === '90d') inicio.setDate(inicio.getDate() - 90);
-    else if (preset === '6m') inicio.setMonth(inicio.getMonth() - 6);
-    else if (preset === '1a') inicio.setFullYear(inicio.getFullYear() - 1);
-    else if (preset === '2a') inicio.setFullYear(inicio.getFullYear() - 2);
-    else if (preset === '5a') inicio.setFullYear(inicio.getFullYear() - 5);
+    if (preset === '30d') inicio.setUTCDate(inicio.getUTCDate() - 30);
+    else if (preset === '90d') inicio.setUTCDate(inicio.getUTCDate() - 90);
+    else if (preset === '6m') inicio.setUTCMonth(inicio.getUTCMonth() - 6);
+    else if (preset === '1a') inicio.setUTCFullYear(inicio.getUTCFullYear() - 1);
+    else if (preset === '2a') inicio.setUTCFullYear(inicio.getUTCFullYear() - 2);
+    else if (preset === '5a') inicio.setUTCFullYear(inicio.getUTCFullYear() - 5);
     else if (preset === 'tudo') {
       if (dataInstalacao) {
         return { inicio: dataInstalacao, fim: hojeStr, label: labels['tudo'], presetAtual: 'tudo' };
       }
-      inicio.setFullYear(inicio.getFullYear() - 10); // fallback 10a
+      inicio.setUTCFullYear(inicio.getUTCFullYear() - 10); // fallback 10a
     }
 
     return { inicio: isoDate(inicio), fim: hojeStr, label: labels[preset] ?? 'Período custom', presetAtual: preset };
@@ -953,9 +1107,11 @@ export class MonitoringService {
     const sistemas = await this.listarSistemasAtivos(companyId);
     if (sistemas.length === 0) return [];
 
-    const hoje = isoDate(new Date());
-    const inicioMes = isoDate(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
-    const ha7 = isoDate(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
+    // Calendário de Brasília (às 21h+ o UTC já é amanhã: "hoje" vazio e mês zerado).
+    const agora = new Date();
+    const hoje = hojeBrasilia(agora);
+    const inicioMes = inicioMesBrasilia(agora);
+    const ha7 = somarDias(hoje, -7);
     const desde = inicioMes < ha7 ? inicioMes : ha7;
     const ids = sistemas.map((s) => s.id);
     // Ordem fixa (sistema_id, data) pra paginação estável — sem ela as páginas

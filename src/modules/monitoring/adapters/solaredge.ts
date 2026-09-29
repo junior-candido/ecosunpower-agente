@@ -63,11 +63,16 @@ async function seGetJson(
   return { ok: true, data: json };
 }
 
-// seGet = seGetJson + retry em erro passageiro (5xx/429/rede). Um blip momentaneo
+// seGet = seGetJson + retry em erro passageiro (5xx/rede). Um blip momentaneo
 // no servidor da SolarEdge nao derruba a sync ate o proximo cron. 401/403
 // (credencial) nunca repete — isTransientFailure ja filtra.
+// 429 NÃO repete (29/09): na SolarEdge é a cota DIÁRIA (300/chave) estourada —
+// repetir só queima mais cota. O service pausa a chave por algumas horas.
+export function seTransiente(r: { ok: boolean; status?: number; reason?: string; invalidCredentials?: boolean }): boolean {
+  return r.status !== 429 && isTransientFailure(r);
+}
 const seGet = (url: string | URL, credErro?: string): Promise<SeGetResult> =>
-  retryTransient(() => seGetJson(url, credErro), isTransientFailure);
+  retryTransient(() => seGetJson(url, credErro), seTransiente);
 
 export const solarEdgeAdapter: MonitoringAdapter = {
   marca: 'solaredge',

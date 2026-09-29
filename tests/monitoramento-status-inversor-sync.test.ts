@@ -21,6 +21,8 @@ function fakeSupabase(sistema: any, updates: any[]) {
             eq() { return q; },
             in() { return q; },
             gte() { return q; },
+            gt() { return q; },     // 29/09: sync consulta a última data com geração
+            limit() { return q; },
             order() { return q; },
             range() { return q; },
             upsert() { return Promise.resolve({ error: null }); },
