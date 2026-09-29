@@ -1,0 +1,2206 @@
+{
+  "notas": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/fiscal/44444444-5555-4666-8777-888888888888",
+      "/dashboard/fiscal/55555555-5555-4666-8777-888888888888",
+      "/dashboard/fiscal/66666666-5555-4666-8777-888888888888",
+      "/dashboard/fiscal/77777777-5555-4666-8777-888888888888",
+      "/dashboard/fiscal/nova",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "notas-cert-vencendo": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/fiscal/44444444-5555-4666-8777-888888888888",
+      "/dashboard/fiscal/55555555-5555-4666-8777-888888888888",
+      "/dashboard/fiscal/nova",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "notas-vazio-sem-config": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/fiscal/nova",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "notas-tenant": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/demonstrativos",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/fiscal/44444444-5555-4666-8777-888888888888",
+      "/dashboard/fiscal/66666666-5555-4666-8777-888888888888",
+      "/dashboard/fiscal/nova",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/minha-assinatura",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/whatsapp"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "nota-nova": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/fiscal/nova",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "bairro",
+            "type": "text"
+          },
+          {
+            "name": "cep",
+            "type": "text"
+          },
+          {
+            "name": "cod_mun_ibge",
+            "type": "hidden"
+          },
+          {
+            "name": "competencia",
+            "type": "date"
+          },
+          {
+            "name": "descricao",
+            "type": "textarea"
+          },
+          {
+            "name": "doc",
+            "type": "text"
+          },
+          {
+            "name": "email",
+            "type": "email"
+          },
+          {
+            "name": "fechamento_id",
+            "type": "hidden"
+          },
+          {
+            "name": "im",
+            "type": "text"
+          },
+          {
+            "name": "iss_retido",
+            "type": "checkbox"
+          },
+          {
+            "name": "lead_id",
+            "type": "hidden"
+          },
+          {
+            "name": "logradouro",
+            "type": "text"
+          },
+          {
+            "name": "municipio",
+            "type": "text"
+          },
+          {
+            "name": "nome",
+            "type": "text"
+          },
+          {
+            "name": "numero",
+            "type": "text"
+          },
+          {
+            "name": "servico_id",
+            "type": "select"
+          },
+          {
+            "name": "tipo",
+            "type": "select"
+          },
+          {
+            "name": "uf",
+            "type": "text"
+          },
+          {
+            "name": "valor",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [
+      "'/dashboard/fiscal/cnpj/'+encodeURIComponent($('doc').value)"
+    ],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary",
+      "form[data-edit=\"1\"]"
+    ],
+    "dataAttrs": [
+      "data-aliq",
+      "data-descr",
+      "data-edit"
+    ],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "nota-nova-do-fechamento": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/fiscal/nova",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "bairro",
+            "type": "text"
+          },
+          {
+            "name": "cep",
+            "type": "text"
+          },
+          {
+            "name": "cod_mun_ibge",
+            "type": "hidden"
+          },
+          {
+            "name": "competencia",
+            "type": "date"
+          },
+          {
+            "name": "descricao",
+            "type": "textarea"
+          },
+          {
+            "name": "doc",
+            "type": "text"
+          },
+          {
+            "name": "email",
+            "type": "email"
+          },
+          {
+            "name": "fechamento_id",
+            "type": "hidden"
+          },
+          {
+            "name": "im",
+            "type": "text"
+          },
+          {
+            "name": "iss_retido",
+            "type": "checkbox"
+          },
+          {
+            "name": "lead_id",
+            "type": "hidden"
+          },
+          {
+            "name": "logradouro",
+            "type": "text"
+          },
+          {
+            "name": "municipio",
+            "type": "text"
+          },
+          {
+            "name": "nome",
+            "type": "text"
+          },
+          {
+            "name": "numero",
+            "type": "text"
+          },
+          {
+            "name": "servico_id",
+            "type": "select"
+          },
+          {
+            "name": "tipo",
+            "type": "select"
+          },
+          {
+            "name": "uf",
+            "type": "text"
+          },
+          {
+            "name": "valor",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [
+      "'/dashboard/fiscal/cnpj/'+encodeURIComponent($('doc').value)"
+    ],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary",
+      "form[data-edit=\"1\"]"
+    ],
+    "dataAttrs": [
+      "data-aliq",
+      "data-descr",
+      "data-edit"
+    ],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "nota-nova-sem-servico": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/fiscal/nova",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "bairro",
+            "type": "text"
+          },
+          {
+            "name": "cep",
+            "type": "text"
+          },
+          {
+            "name": "cod_mun_ibge",
+            "type": "hidden"
+          },
+          {
+            "name": "competencia",
+            "type": "date"
+          },
+          {
+            "name": "descricao",
+            "type": "textarea"
+          },
+          {
+            "name": "doc",
+            "type": "text"
+          },
+          {
+            "name": "email",
+            "type": "email"
+          },
+          {
+            "name": "fechamento_id",
+            "type": "hidden"
+          },
+          {
+            "name": "im",
+            "type": "text"
+          },
+          {
+            "name": "iss_retido",
+            "type": "checkbox"
+          },
+          {
+            "name": "lead_id",
+            "type": "hidden"
+          },
+          {
+            "name": "logradouro",
+            "type": "text"
+          },
+          {
+            "name": "municipio",
+            "type": "text"
+          },
+          {
+            "name": "nome",
+            "type": "text"
+          },
+          {
+            "name": "numero",
+            "type": "text"
+          },
+          {
+            "name": "servico_id",
+            "type": "select"
+          },
+          {
+            "name": "tipo",
+            "type": "select"
+          },
+          {
+            "name": "uf",
+            "type": "text"
+          },
+          {
+            "name": "valor",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [
+      "'/dashboard/fiscal/cnpj/'+encodeURIComponent($('doc').value)"
+    ],
+    "links": [
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/demonstrativos",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/minha-assinatura",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/whatsapp"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary",
+      "form[data-edit=\"1\"]"
+    ],
+    "dataAttrs": [
+      "data-aliq",
+      "data-descr",
+      "data-edit"
+    ],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "nota-editar": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/fiscal/44444444-5555-4666-8777-888888888888/editar",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "bairro",
+            "type": "text"
+          },
+          {
+            "name": "cep",
+            "type": "text"
+          },
+          {
+            "name": "cod_mun_ibge",
+            "type": "hidden"
+          },
+          {
+            "name": "competencia",
+            "type": "date"
+          },
+          {
+            "name": "descricao",
+            "type": "textarea"
+          },
+          {
+            "name": "doc",
+            "type": "text"
+          },
+          {
+            "name": "email",
+            "type": "email"
+          },
+          {
+            "name": "fechamento_id",
+            "type": "hidden"
+          },
+          {
+            "name": "im",
+            "type": "text"
+          },
+          {
+            "name": "iss_retido",
+            "type": "checkbox"
+          },
+          {
+            "name": "lead_id",
+            "type": "hidden"
+          },
+          {
+            "name": "logradouro",
+            "type": "text"
+          },
+          {
+            "name": "municipio",
+            "type": "text"
+          },
+          {
+            "name": "nome",
+            "type": "text"
+          },
+          {
+            "name": "numero",
+            "type": "text"
+          },
+          {
+            "name": "servico_id",
+            "type": "select"
+          },
+          {
+            "name": "tipo",
+            "type": "select"
+          },
+          {
+            "name": "uf",
+            "type": "text"
+          },
+          {
+            "name": "valor",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [
+      "'/dashboard/fiscal/cnpj/'+encodeURIComponent($('doc').value)"
+    ],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary",
+      "form[data-edit=\"1\"]"
+    ],
+    "dataAttrs": [
+      "data-aliq",
+      "data-descr",
+      "data-edit"
+    ],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "nota-preparada-com-cert": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/fiscal/44444444-5555-4666-8777-888888888888/anexar",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "numero",
+            "type": "text"
+          },
+          {
+            "name": "pdf",
+            "type": "file"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/fiscal/44444444-5555-4666-8777-888888888888/emitir",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/fiscal/44444444-5555-4666-8777-888888888888/excluir",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/fiscal/44444444-5555-4666-8777-888888888888/editar",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [
+      "'Emitir esta NFS-e agora?'",
+      "'Excluir este rascunho de nota? Não dá pra desfazer.'"
+    ],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "nota-preparada-homologacao": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/fiscal/44444444-5555-4666-8777-888888888888/anexar",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "numero",
+            "type": "text"
+          },
+          {
+            "name": "pdf",
+            "type": "file"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/fiscal/44444444-5555-4666-8777-888888888888/emitir",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/fiscal/44444444-5555-4666-8777-888888888888/excluir",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/fiscal/44444444-5555-4666-8777-888888888888/editar",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [
+      "'Emitir esta NFS-e agora?'",
+      "'Excluir este rascunho de nota? Não dá pra desfazer.'"
+    ],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "nota-preparada-sem-cert": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/fiscal/44444444-5555-4666-8777-888888888888/anexar",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "numero",
+            "type": "text"
+          },
+          {
+            "name": "pdf",
+            "type": "file"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/fiscal/44444444-5555-4666-8777-888888888888/excluir",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/fiscal/44444444-5555-4666-8777-888888888888/editar",
+      "/dashboard/fiscal/config",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [
+      "'Excluir este rascunho de nota? Não dá pra desfazer.'"
+    ],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "nota-teste-homologacao": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/fiscal/44444444-5555-4666-8777-888888888888/anexar",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "numero",
+            "type": "text"
+          },
+          {
+            "name": "pdf",
+            "type": "file"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/fiscal/44444444-5555-4666-8777-888888888888/emitir",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/fiscal/44444444-5555-4666-8777-888888888888/excluir",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/fiscal/44444444-5555-4666-8777-888888888888/editar",
+      "/dashboard/fiscal/44444444-5555-4666-8777-888888888888/xml",
+      "/dashboard/fiscal/config",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [
+      "'Emitir esta NFS-e agora?'",
+      "'Excluir este rascunho de nota? Não dá pra desfazer.'"
+    ],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "nota-enviada": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/fiscal/44444444-5555-4666-8777-888888888888/voltar",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [
+      "'Conferiu no portal que a nota NÃO saiu? Se ela saiu e você emitir de novo, sai NOTA DUPLICADA.'"
+    ],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "nota-autorizada": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/fiscal/55555555-5555-4666-8777-888888888888/pdf",
+      "/dashboard/fiscal/55555555-5555-4666-8777-888888888888/xml",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "nota-cancelada": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/demonstrativos",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/minha-assinatura",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/whatsapp"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "fiscal-config": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/fiscal/config",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "ambiente",
+            "type": "radio"
+          },
+          {
+            "name": "ambiente",
+            "type": "radio"
+          },
+          {
+            "name": "pfx",
+            "type": "file"
+          },
+          {
+            "name": "senha",
+            "type": "password"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "fiscal-config-teste": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/fiscal/config",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "ambiente",
+            "type": "radio"
+          },
+          {
+            "name": "ambiente",
+            "type": "radio"
+          },
+          {
+            "name": "pfx",
+            "type": "file"
+          },
+          {
+            "name": "senha",
+            "type": "password"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "fiscal-config-vazia": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/fiscal/config",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "ambiente",
+            "type": "radio"
+          },
+          {
+            "name": "ambiente",
+            "type": "radio"
+          },
+          {
+            "name": "pfx",
+            "type": "file"
+          },
+          {
+            "name": "senha",
+            "type": "password"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/demonstrativos",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/minha-assinatura",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/whatsapp"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "cobrar": {
+    "formularios": [],
+    "fetches": [
+      "'/dashboard/cobrancas'",
+      "'/dashboard/cobrancas/par'"
+    ],
+    "links": [],
+    "ids": [
+      "b",
+      "c",
+      "d",
+      "e",
+      "l",
+      "p",
+      "parc",
+      "r",
+      "t",
+      "v",
+      "w"
+    ],
+    "idsAusentes": [],
+    "seletores": [],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": []
+  },
+  "cobrar-sem-infinitepay": {
+    "formularios": [],
+    "fetches": [
+      "'/dashboard/cobrancas'",
+      "'/dashboard/cobrancas/par'"
+    ],
+    "links": [],
+    "ids": [
+      "b",
+      "c",
+      "d",
+      "e",
+      "l",
+      "p",
+      "parc",
+      "r",
+      "t",
+      "v",
+      "w"
+    ],
+    "idsAusentes": [],
+    "seletores": [],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": []
+  },
+  "cobrar-tenant": {
+    "formularios": [],
+    "fetches": [
+      "'/dashboard/cobrancas'",
+      "'/dashboard/cobrancas/par'"
+    ],
+    "links": [],
+    "ids": [
+      "b",
+      "c",
+      "d",
+      "e",
+      "l",
+      "p",
+      "parc",
+      "r",
+      "t",
+      "v",
+      "w"
+    ],
+    "idsAusentes": [],
+    "seletores": [],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": []
+  },
+  "assinaturas": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/assinaturas/11111111-1111-4111-8111-000000000001/cobrar",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/assinaturas/11111111-1111-4111-8111-000000000001/status",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "status",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/assinaturas/11111111-1111-4111-8111-000000000002/cobrar",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/assinaturas/11111111-1111-4111-8111-000000000002/status",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "status",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/assinaturas/11111111-1111-4111-8111-000000000003/cobrar",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/assinaturas/11111111-1111-4111-8111-000000000003/status",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "status",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/assinaturas/11111111-1111-4111-8111-000000000004/status",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "status",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/assinaturas/faturas/22222222-2222-4222-8222-000000000001/reenviar",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/assinaturas/faturas/22222222-2222-4222-8222-000000000002/reenviar",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/assinaturas/nova",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "company_id",
+            "type": "select"
+          },
+          {
+            "name": "descricao",
+            "type": "text"
+          },
+          {
+            "name": "dia_vencimento",
+            "type": "select"
+          },
+          {
+            "name": "documento",
+            "type": "text"
+          },
+          {
+            "name": "email",
+            "type": "email"
+          },
+          {
+            "name": "forma",
+            "type": "select"
+          },
+          {
+            "name": "inicio",
+            "type": "month"
+          },
+          {
+            "name": "limite",
+            "type": "text"
+          },
+          {
+            "name": "nome",
+            "type": "text"
+          },
+          {
+            "name": "observacao",
+            "type": "textarea"
+          },
+          {
+            "name": "produto",
+            "type": "select"
+          },
+          {
+            "name": "telefone",
+            "type": "text"
+          },
+          {
+            "name": "valor",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/assinaturas/11111111-1111-4111-8111-000000000001",
+      "/dashboard/assinaturas/11111111-1111-4111-8111-000000000002",
+      "/dashboard/assinaturas/11111111-1111-4111-8111-000000000003",
+      "/dashboard/assinaturas/11111111-1111-4111-8111-000000000004",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/estatico/sem-tailwind.708ae6c2cb.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary",
+      "[data-copiar]"
+    ],
+    "dataAttrs": [
+      "data-copiar"
+    ],
+    "confirms": [],
+    "scriptsExternos": []
+  },
+  "assinatura-detalhe": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/assinaturas/11111111-1111-4111-8111-000000000001/assistente/prazo",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "dias",
+            "type": "select"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/assinaturas/11111111-1111-4111-8111-000000000001/assistente/reativar",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/assinaturas/11111111-1111-4111-8111-000000000001/assistente/regra",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "dias_pausa",
+            "type": "select"
+          },
+          {
+            "name": "dias_trava_disparos",
+            "type": "select"
+          },
+          {
+            "name": "pausa_automatica",
+            "type": "checkbox"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/assinaturas/11111111-1111-4111-8111-000000000001/cobrar",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/assinaturas/11111111-1111-4111-8111-000000000001/editar",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "descricao",
+            "type": "text"
+          },
+          {
+            "name": "dia_vencimento",
+            "type": "select"
+          },
+          {
+            "name": "documento",
+            "type": "text"
+          },
+          {
+            "name": "email",
+            "type": "email"
+          },
+          {
+            "name": "limite",
+            "type": "text"
+          },
+          {
+            "name": "nome",
+            "type": "text"
+          },
+          {
+            "name": "observacao",
+            "type": "textarea"
+          },
+          {
+            "name": "telefone",
+            "type": "text"
+          },
+          {
+            "name": "valor",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/assinaturas/11111111-1111-4111-8111-000000000001/status",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "status",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/assinaturas/11111111-1111-4111-8111-000000000001/status",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "status",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/assinaturas/faturas/22222222-2222-4222-8222-000000000005/marcar-paga",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/assinaturas/faturas/22222222-2222-4222-8222-000000000005/reenviar",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/assinaturas/faturas/22222222-2222-4222-8222-000000000005/reenviar",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/estatico/sem-tailwind.708ae6c2cb.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary",
+      "[data-copiar]"
+    ],
+    "dataAttrs": [
+      "data-copiar"
+    ],
+    "confirms": [
+      "'Cancelar esta assinatura? O robô para de gerar faturas e de mandar lembretes.'",
+      "'Confirmar que esta fatura foi PAGA por Pix direto? Isso lança a receita no caixa e manda o recibo ao cliente.'",
+      "'Pausar a cobrança? O robô para de mandar faturas e lembretes até você reativar.'",
+      "'Reativar a assistente deste cliente agora, mesmo com fatura em aberto?'"
+    ],
+    "scriptsExternos": []
+  }
+}
