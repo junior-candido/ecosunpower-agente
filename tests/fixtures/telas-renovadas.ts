@@ -19,6 +19,7 @@ import { CASOS_PASTAS } from './casos-pastas.js';
 import { renderFinanceiroPage } from '../../src/modules/dashboard/financeiro-views.js';
 import { usina, ALERTAS_RESUMO, SPARK_7D, KPIS_EVA } from './casos-monitoramento.js';
 import { telasOnda3 } from './telas-onda3.js';
+import { telasCobranca } from './telas-cobranca.js';
 import { USER_CASA, leadRow, leadDetalhe, SERVICOS_LEAD, FILTROS_CHEIOS } from './miolo-leads.js';
 
 const hora = (h: number) => new Date(Date.now() - h * 3600_000).toISOString();
@@ -129,5 +130,7 @@ export function telasRenovadas(n: number, user: DashUser = USER_CASA): Record<No
     monitoramento: renderMonitoramentoPage(frota(n), {}, casa ? ALERTAS_RESUMO : undefined, casa ? SPARK_7D : undefined, casa ? KPIS_EVA : undefined, user),
     // Onda 3 (R13–R19): cada fatia tem o seu arquivo tests/fixtures/telas-rNN.ts
     ...telasOnda3(n, user),
+    // Cobrança recorrente (28/09/2026): Assinaturas (casa) + Minha assinatura com faturas (tenant)
+    ...telasCobranca(n, user),
   };
 }

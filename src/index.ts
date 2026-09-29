@@ -524,6 +524,43 @@ async function main() {
     if (messageId) await takeover.markBotSent(messageId);
   };
 
+  // COBRANÇA RECORRENTE (28/09/2026): o MESMO serviço serve o robô diário, o
+  // webhook da InfinitePay e os botões da tela Financeiro › Assinaturas.
+  // Quem cobra é a CASA (EcoSun): WhatsApp oficial da Eva só com MODELO
+  // aprovado; sem ele, e-mail + aviso pro Junior encaminhar.
+  let servicoCobrancaP: Promise<import('./modules/cobranca-recorrente/servico.js').ServicoCobranca> | null = null;
+  const obterServicoCobranca = () => (servicoCobrancaP ??= (async () => {
+    const { criarServicoCobranca } = await import('./modules/cobranca-recorrente/servico.js');
+    const { EmailSender } = await import('./modules/email/resend-client.js');
+    const remetente = process.env.RESEND_API_KEY
+      ? new EmailSender(process.env.RESEND_API_KEY, process.env.EMAIL_FROM ?? '')
+      : null;
+    return criarServicoCobranca({
+      client: supabase.getClient(),
+      donaId: ECOSUN_COMPANY_ID,
+      handle: config.infinitepayHandle,
+      baseUrl: config.appBaseUrl,
+      criarCobranca: (d) => supabase.criarCobranca(d),
+      salvarLinkCobranca: (id, url) => supabase.salvarLinkCobranca(id, url),
+      waba: metaWaba
+        ? { sendTemplate: (to, nome, idioma, comps) => metaWaba.sendTemplate(to, nome, idioma, comps), listTemplates: () => metaWaba.listTemplates() }
+        : null,
+      email: remetente ? { enviar: (e) => remetente.enviar(e) } : null,
+      avisarJunior: (texto) => sendText(config.engineerPhone, texto),
+      // Acesso suspenso volta sozinho quando paga (ponte calculadora / companies.ativo).
+      liberarAcesso: async (a) => {
+        const { getAssinatura } = await import('./modules/dashboard/assinaturas-store.js');
+        const { aplicarAcesso } = await import('./modules/assinaturas-sync.js');
+        const completa = await getAssinatura(supabase.getClient(), a.id);
+        if (!completa) return;
+        await aplicarAcesso(supabase.getClient(), completa, 'liberar', {
+          env: { calculadoraUrl: config.calculadoraUrl, syncToken: config.assinaturasSyncToken },
+          avisarFalha: (t) => sendText(config.engineerPhone, t).then(() => undefined),
+        });
+      },
+    });
+  })());
+
   // "Campanha via Eva": /campanha no zap -> gera e-mail (Claude + FLUX) -> manda
   // preview pro Junior com botões (aprovar/refazer/descartar) -> ao aprovar,
   // dispara pra base elegível. Precisa do Replicate (FLUX); sem token = null.
@@ -4042,6 +4079,17 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
           await sendText(to, 'Apaga pelo painel: dashboard.ecosunpower.eng.br/dashboard/financeiro');
         }
       },
+      // Cobrança recorrente (28/09/2026): resumo das mensalidades no zap.
+      acaoMensalidades: async (to: string) => {
+        try {
+          const { hojeBrasilia } = await import('./modules/cobranca-recorrente/ciclo.js');
+          const texto = await (await obterServicoCobranca()).resumoMensalidades(hojeBrasilia(), 'https://dashboard.ecosunpower.eng.br/dashboard/assinaturas');
+          await sendText(to, texto);
+        } catch (err) {
+          console.error('[cobranca-recorrente] resumo do menu falhou:', (err as Error).message);
+          await sendText(to, 'Não consegui montar o resumo das mensalidades agora. Abra Financeiro › Assinaturas no painel.');
+        }
+      },
       acaoFecheiVenda: async (to: string) => {
         // Clicável: manda a lista de propostas em aberto; o Junior toca no cliente
         // que fechou e o toque volta como texto 'fechei_pick:<leadId>' (tratado
@@ -7521,7 +7569,14 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
       const handle = config.infinitepayHandle;
       if (!handle) return ack(); // cobrança InfinitePay desligada
       const cob = await supabase.getCobrancaByOrderNsu(String(wh.order_nsu));
-      if (!cob || cob.status !== 'pendente') return ack(); // não é nossa OU já paga
+      if (!cob) return ack(); // não é nossa
+      if (cob.status !== 'pendente') {
+        // Já paga. Só reprocessa se for a FATURA de uma mensalidade que ficou
+        // aberta (o processo caiu entre marcar a cobrança e baixar a fatura).
+        const retomar = cob.status === 'pago' && !!cob.assinaturaId
+          && await (await obterServicoCobranca()).faturaAbertaDaCobranca(cob.id);
+        if (!retomar) return ack();
+      }
       const { verificarPagamento, webhookConfirmado } = await import('./modules/infinitepay.js');
       const verificar = (p: { orderNsu: string; transactionNsu: string; slug: string }) => verificarPagamento({ handle, ...p });
       const r = await webhookConfirmado(
@@ -7530,10 +7585,26 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
       );
       if (r.erroVerificacao) { res.status(400).json({ success: false, message: 'verificacao indisponivel — retry' }); return; }
       if (r.confirmado) {
-        const marcou = await supabase.marcarCobrancaPaga(cob.id, { transactionNsu: wh.transaction_nsu, invoiceSlug: wh.invoice_slug, metodo: r.metodo, pagoCentavos: r.pagoCentavos });
-        if (marcou) {
+        const marcou = cob.status === 'pendente'
+          ? await supabase.marcarCobrancaPaga(cob.id, { transactionNsu: wh.transaction_nsu, invoiceSlug: wh.invoice_slug, metodo: r.metodo, pagoCentavos: r.pagoCentavos })
+          : false;
+        // Cobrança recorrente: a FATURA do mês é baixada (receita no caixa +
+        // recibo + aviso pro Junior). Erro aqui → 400 → a InfinitePay reenvia e
+        // o caminho de "retomar" acima termina o serviço.
+        let tratadoPelaFatura = false;
+        if (cob.assinaturaId) {
+          const rr = await (await obterServicoCobranca()).baixarPorCobranca(cob.id, {
+            pagoCentavos: r.pagoCentavos ?? cob.valorCentavos, metodo: r.metodo ?? null,
+            formaBaixa: 'link', baixadoPor: null, pagoEm: new Date().toISOString(),
+          }, { novo: marcou });
+          tratadoPelaFatura = rr !== 'sem_fatura';
+        }
+        if (marcou && tratadoPelaFatura) {
+          console.log('[infinitepay] cobranca PAGA (fatura de mensalidade)', cob.id, r.metodo, r.pagoCentavos);
+        } else if (marcou) {
           console.log('[infinitepay] cobranca PAGA', cob.id, r.metodo, r.pagoCentavos);
           if (cob.assinaturaId) {
+            // Link avulso antigo de assinatura (sem fatura — antes da 146).
             // Mensalidade: pagou → vencimento anda 1 mês, destrava se travada
             // e o ACESSO real acompanha (ponte calculadora / companies.ativo).
             try {
@@ -9246,6 +9317,8 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     evolutionWebhookUrl: config.appBaseUrl ? `${config.appBaseUrl.replace(/\/$/, '')}/webhook` : undefined,
     evolutionWebhookToken: config.webhookToken,
     infinitepayHandle: config.infinitepayHandle,
+    // Cobrança recorrente: mesmo serviço do robô e do webhook (botões da tela Assinaturas).
+    cobrancaRecorrente: obterServicoCobranca,
     calculadoraUrl: config.calculadoraUrl,
     evolutionConexao: { baseUrl: config.evolutionApiUrl, apiKey: config.evolutionApiKey, instanciaDaEmpresa: (cid) => evolutionTenant.instanciaDaEmpresa(cid) },
     assinaturasSyncToken: config.assinaturasSyncToken,
@@ -10683,85 +10756,34 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     console.log('[email-seq] scheduler started (15min, dias uteis 9-20 BRT)');
   }
 
-  // ===== ASSINATURAS: motor de avisos/trava (fatia 2 — regua 8d/2d/venceu+3d) =====
-  // 1x/dia apos 9h BRT, idempotente (lock em app_flags + UNIQUE por aviso).
+  // ===== COBRANÇA RECORRENTE (28/09/2026) — substitui o motor 8d/2d/trava =====
+  // Régua: a fatura nasce no D−3 (link InfinitePay + envio), lembra no D0 e no
+  // D+3, e no D+7 avisa o Junior que está atrasada. 1x/dia após 9h BRT.
+  // Duas travas contra duplicar (vários servidores / deploy no meio do dia):
+  //  1) app_flags 'cobranca_recorrente_dia' com UPDATE condicional (só um passa);
+  //  2) no banco: 1 fatura por mês (unique) e cada aviso reservado ANTES de enviar.
+  // A trava AUTOMÁTICA de acesso saiu: com 7 dias de atraso o Junior decide
+  // ("Suspender acesso" na tela Assinaturas). Pagou → volta sozinho.
   if (config.infinitepayHandle) {
-    const rodarMotorAssinaturas = async () => {
-      const now = new Date();
-      const brtHour = (now.getUTCHours() - 3 + 24) % 24;
+    let alertouFalhaCobrancaEm = '';
+    const rodarCobrancaRecorrente = async () => {
+      const agora = new Date();
+      const brtHour = (agora.getUTCHours() - 3 + 24) % 24;
       if (brtHour < 9) return;
-      const hoje = new Date(now.getTime() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
-      const { data: flag } = await supabase.getClient().from('app_flags')
-        .select('value').eq('key', 'assinaturas_motor_last_run').maybeSingle();
-      if (flag?.value === hoje) return;
-      const { error: lockErr } = await supabase.getClient().from('app_flags')
-        .upsert({ key: 'assinaturas_motor_last_run', value: hoje }, { onConflict: 'key' });
-      if (lockErr) { console.warn('[assinaturas-motor] lock falhou:', lockErr.message); return; }
-
-      const { processarAssinaturas } = await import('./modules/assinaturas-motor.js');
-      const store = await import('./modules/dashboard/assinaturas-store.js');
-      const { criarLinkPagamento } = await import('./modules/infinitepay.js');
-      const { montarMolduraEmail } = await import('./modules/email/email-moldura.js');
-      const { EmailSender } = await import('./modules/email/resend-client.js');
-      const client = supabase.getClient();
-      const base = (config.appBaseUrl ?? '').replace(/\/$/, '');
-      const sender = process.env.RESEND_API_KEY
-        ? new EmailSender(process.env.RESEND_API_KEY, process.env.EMAIL_FROM ?? '')
-        : null;
-
-      const r = await processarAssinaturas({
-        listarAtivas: () => store.listarAtivas(client),
-        avisosDoCiclo: (id, ciclo) => store.avisosDoCiclo(client, id, ciclo),
-        registrarAviso: async (id, tipo, ciclo) => {
-          const a = await store.getAssinatura(client, id);
-          await store.registrarAviso(client, id, a?.companyId ?? null, tipo, ciclo);
-        },
-        linkDaCobranca: async (a) => {
-          const existente = await store.linkPendente(client, a.id);
-          if (existente) return existente;
-          const descricao = `${a.produtoNome} — mensalidade (${a.nome})`;
-          const cob = await supabase.criarCobranca({ companyId: null, assinaturaId: a.id, descricao, valorCentavos: a.valorCentavos });
-          const link = await criarLinkPagamento({
-            handle: config.infinitepayHandle!, orderNsu: cob.orderNsu,
-            itens: [{ descricao, valorCentavos: a.valorCentavos }],
-            redirectUrl: base ? `${base}/pago` : undefined,
-            webhookUrl: base ? `${base}/webhook/infinitepay` : undefined,
-            cliente: { nome: a.nome, email: a.email ?? undefined, telefone: a.telefone ?? undefined },
-          });
-          if (!link.ok) { console.warn('[assinaturas-motor] link falhou:', link.reason); return null; }
-          await supabase.salvarLinkCobranca(cob.id, link.url);
-          return link.url;
-        },
-        travar: async (id) => {
-          await store.setStatusAssinatura(client, id, 'travada');
-          // O acesso REAL acompanha a trava (ponte calculadora / companies.ativo).
-          const a = await store.getAssinatura(client, id);
-          if (a) {
-            const { aplicarAcesso } = await import('./modules/assinaturas-sync.js');
-            await aplicarAcesso(client, a, 'travar', {
-              env: { calculadoraUrl: config.calculadoraUrl, syncToken: config.assinaturasSyncToken },
-              avisarFalha: (t) => sendText(config.engineerPhone, t).then(() => undefined),
-            });
-          }
-        },
-        enviarEmail: async (to, assunto, corpoHtml, ctaUrl) => {
-          if (!sender) return;
-          const html = montarMolduraEmail({
-            conteudoHtml: corpoHtml, titulo: assunto,
-            ctaLabel: ctaUrl ? 'Pagar agora (Pix ou cartão)' : undefined,
-            ctaUrl: ctaUrl ?? undefined,
-            linkDescadastro: 'https://ecosunpower.eng.br',
-          });
-          await sender.enviar({ to, subject: assunto, html });
-        },
-        enviarZap: (tel, texto) => sendText(tel, texto).then(() => undefined),
-        avisarJunior: (texto) => sendText(config.engineerPhone, texto).then(() => undefined),
-      }, hoje);
-      if (r.avisos + r.travadas > 0) console.log(`[assinaturas-motor] ${r.avisos} avisos, ${r.travadas} travadas (${hoje})`);
+      const { hojeBrasilia } = await import('./modules/cobranca-recorrente/ciclo.js');
+      const r = await (await obterServicoCobranca()).rodarDiario(hojeBrasilia(agora));
+      if (r) console.log(`[cobranca-recorrente] rodada: ${r.criadas} faturas, ${r.avisos} avisos, ${r.atrasos} atrasos, ${r.erros.length} erros`);
     };
-    setInterval(() => rodarMotorAssinaturas().catch((e) => console.error('[assinaturas-motor]', e)), 60 * 60 * 1000);
-    setTimeout(() => rodarMotorAssinaturas().catch((e) => console.error('[assinaturas-motor]', e)), 4 * 60 * 1000);
-    console.log('[assinaturas-motor] scheduler ligado (1x/dia apos 9h BRT, idempotente)');
+    const rodarComAlerta = () => rodarCobrancaRecorrente().catch(async (e) => {
+      console.error('[cobranca-recorrente] robô não rodou:', e);
+      const dia = new Date().toISOString().slice(0, 10);
+      if (alertouFalhaCobrancaEm === dia) return;
+      alertouFalhaCobrancaEm = dia;
+      await sendText(config.engineerPhone, `🚨 O robô da cobrança recorrente não conseguiu rodar (${(e as Error)?.message ?? e}). Ele tenta de novo a cada hora; se precisar, use "Gerar cobrança agora" em Financeiro › Assinaturas.`).catch(() => undefined);
+    });
+    setInterval(rodarComAlerta, 60 * 60 * 1000);
+    setTimeout(rodarComAlerta, 4 * 60 * 1000);
+    console.log('[cobranca-recorrente] robô ligado (1x/dia após 9h BRT, trava por dia + idempotente)');
 
     // Inscricao automatica na jornada de e-mail: a cada 1h, varre TODOS os
     // leads abertos e elegiveis (base existente + leads novos de qualquer

@@ -189,3 +189,17 @@ script); `GET /leads/:id/conversa.json` e `/leads/conversas/contato.json` devolv
 puxa o que a Evolution já guardou (`/chat/findMessages`). Eva/dono/equipe (`definirNumerosInternos` +
 `contatos_internos`) ficam fora da caixa pessoal. A lista pessoal usa `conversas_pessoais_recentes`
 (migration 140: uma linha por contato; sem ela, cai nas 1000 mensagens mais novas).
+
+## Cobrança recorrente — mensalidades por FATURA (28/09/2026)
+`src/modules/cobranca-recorrente/` (puros: `ciclo.ts`, `mensagens.ts`; banco: `faturas-repo.ts`; robô e botões:
+`motor.ts`; pagou: `baixa.ts`; ligação real: `servico.ts`). Migration 146: `assinaturas` (090) ganha dia de
+vencimento (1–28), mês de início, CPF/CNPJ, descrição, observação, `dona_company_id` (quem cobra = casa) e
+status `pausada`; tabela nova `faturas_assinatura` (1 por mês — unique `assinatura_id+competencia`; valor copiado
+na criação; cada aviso tem coluna reservada ANTES de enviar). Robô em `index.ts` (1x/dia após 9h BRT, trava
+`app_flags` com UPDATE condicional): D−3 cria + link InfinitePay + envia; D0 e D+3 lembram; D+7 avisa o Junior.
+WhatsApp só com MODELO (`cobranca_mensalidade_v1` / `recibo_mensalidade_v1`, conferido na Meta); sem modelo →
+e-mail (Resend) + texto pronto no zap do Junior. Webhook `/webhook/infinitepay` (não assinado → payment_check +
+valor) baixa a fatura, lança ENTRADA no caixa (`financeiro_lancamentos` origem `assinatura`, banco `infinitepay`,
+categoria `mensalidades`) e manda recibo. Telas: `dashboard/assinaturas-views.ts` (Financeiro › Assinaturas, SÓ a
+casa — `soDaCasa`) e a seção Faturas em `minha-assinatura-views.ts` (tenant, por `company_id` da sessão). O motor
+antigo (8d/2d + trava automática) saiu. Guia do Junior: `docs/cobranca-recorrente.md`.

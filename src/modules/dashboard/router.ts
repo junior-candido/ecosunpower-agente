@@ -242,6 +242,9 @@ export function createDashboardRouter(
       instanciaDaEmpresa: (companyId: string) => Promise<string | undefined>;
     };
     assinaturasSyncToken?: string;  // token compartilhado da ponte
+    // Cobrança recorrente (28/09/2026): o MESMO serviço do robô/webhook (index.ts)
+    // — botões Gerar cobrança agora / Reenviar / Marcar como paga.
+    cobrancaRecorrente?: () => Promise<import('../cobranca-recorrente/servico.js').ServicoCobranca>;
     // Salva contrato+procuração no Drive/Workspace (vem pronto do index.ts quando
     // o Google está configurado). Retorna o link da pasta do cliente.
     salvarContratoNoDrive?: (input: {
@@ -683,97 +686,213 @@ b.onclick=async function(){
 </script></body></html>`);
   });
 
-  // ----- ASSINATURAS (central de mensalidades — spec 2026-07-29) -----
-  // Fatia 1: lista + botões manuais. Avisos/trava automática = fatia 2.
-  const parseReais = (v: unknown): number => Math.round(Number(String(v ?? '').replace(/\./g, '').replace(',', '.')) * 100);
-  const hojeISO = () => new Date().toISOString().slice(0, 10);
-
-  router.get('/assinaturas', exigir('financeiro', 'visualizar'), async (req: AuthedRequest, res) => {
+  // ----- ASSINATURAS — cobrança recorrente (28/09/2026) -----
+  // SÓ a casa (soDaCasa): cadastro, faturas de todos os clientes e ações. Antes
+  // bastava 'financeiro' — um tenant com esse papel via a lista de TODOS os
+  // assinantes. Toda busca filtra pela empresa DONA (a da sessão) e nenhum id
+  // da URL vale sozinho (getAssinaturaDaDona / getFaturaDaDona).
+  const parseReais = (v: unknown): number => Math.round(Number(String(v ?? '').replace(/[R$\s]/g, '').replace(/\./g, '').replace(',', '.')) * 100);
+  const hojeISO = () => new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10); // Brasília
+  const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const verCasa = [soDaCasa, exigir('financeiro', 'visualizar')];
+  const editarCasa = [soDaCasa, exigir('financeiro', 'editar')];
+  const irPara = (res: Response, caminho: string, q: { ok?: string; erro?: string; link?: string }) => {
+    const p = new URLSearchParams();
+    if (q.ok) p.set('ok', q.ok);
+    if (q.erro) p.set('erro', q.erro);
+    if (q.link) p.set('link', q.link);
+    res.redirect(`${caminho}${p.toString() ? `?${p.toString()}` : ''}`);
+  };
+  const avisoDaQuery = (req: AuthedRequest) => {
+    const q = req.query as Record<string, string | undefined>;
+    // link só se for https de verdade (vem da URL — não confiar cego)
+    const link = q.link && /^https:\/\//.test(q.link) ? q.link : undefined;
+    return q.ok ? { tipo: 'ok' as const, texto: String(q.ok).slice(0, 300), link } : q.erro ? { tipo: 'erro' as const, texto: String(q.erro).slice(0, 300) } : undefined;
+  };
+  const modeloAprovadoAgora = async (): Promise<boolean | null> => {
+    if (!options.metaService || !options.cobrancaRecorrente) return null;
     try {
-      const { listarAssinaturas, listarProdutos, listarEmpresasSimples, contarUsinasAtivas } = await import('./assinaturas-store.js');
+      const { MODELO_COBRANCA } = await import('../cobranca-recorrente/mensagens.js');
+      return await (await options.cobrancaRecorrente()).modeloAprovado(MODELO_COBRANCA);
+    } catch { return null; }
+  };
+  const ROTULO_CANAL: Record<string, string> = { whatsapp: 'WhatsApp', email: 'e-mail', junior: 'no seu WhatsApp pra encaminhar' };
+
+  router.get('/assinaturas', ...verCasa, async (req: AuthedRequest, res) => {
+    try {
+      const dona = req.dashUser!.companyId;
+      const { listarAssinaturas, listarProdutos, listarEmpresasSimples } = await import('./assinaturas-store.js');
+      const { faturasDaDona } = await import('../cobranca-recorrente/faturas-repo.js');
+      const { somarMeses, competenciaDe } = await import('../cobranca-recorrente/ciclo.js');
       const { renderAssinaturasPage } = await import('./assinaturas-views.js');
-      const [produtos, assinaturas, empresas] = await Promise.all([
-        listarProdutos(supabase), listarAssinaturas(supabase), listarEmpresasSimples(supabase),
+      const hoje = hojeISO();
+      const [produtos, assinaturas, empresas, faturas, modeloAprovado] = await Promise.all([
+        listarProdutos(supabase), listarAssinaturas(supabase, dona), listarEmpresasSimples(supabase),
+        faturasDaDona(supabase, dona, somarMeses(competenciaDe(hoje), -3)), modeloAprovadoAgora(),
       ]);
-      // Uso do plano ("87/110 usinas") pras assinaturas de monitoramento com limite.
-      const usoPorAssinatura: Record<string, number> = {};
-      await Promise.all(assinaturas
-        .filter((a) => a.produtoId === 'monitoramento' && a.companyId && a.limite !== null)
-        .map(async (a) => {
-          try { usoPorAssinatura[a.id] = await contarUsinasAtivas(supabase, a.companyId!); } catch { /* sem uso na tela */ }
-        }));
-      const q = req.query as Record<string, string | undefined>;
-      // link só se for https de verdade (vem da URL — não confiar cego)
-      const link = q.link && /^https:\/\//.test(q.link) ? q.link : undefined;
-      const aviso = q.ok ? { tipo: 'ok' as const, texto: q.ok, link } : q.erro ? { tipo: 'erro' as const, texto: q.erro } : undefined;
-      res.type('html').send(renderAssinaturasPage(produtos, assinaturas, hojeISO(), req.dashUser, aviso, empresas, usoPorAssinatura));
+      res.type('html').send(renderAssinaturasPage({
+        assinaturas, faturas, produtos, empresas: empresas.filter((e) => e.id !== dona), hoje,
+        modeloAprovado, infinitepayLigada: !!options.infinitepayHandle,
+      }, req.dashUser, avisoDaQuery(req)));
     } catch (err) {
       console.error('[assinaturas]', err);
-      res.status(500).send('Falha ao carregar as assinaturas. A migration 090 já foi aplicada no banco?');
+      res.status(500).send('Falha ao carregar as assinaturas. A migration 146 já foi aplicada no banco?');
     }
   });
 
-  router.post('/assinaturas/nova', exigir('financeiro', 'editar'), async (req: AuthedRequest, res) => {
+  router.post('/assinaturas/nova', ...editarCasa, async (req: AuthedRequest, res) => {
+    const volta = '/dashboard/assinaturas';
     try {
-      const { criarAssinatura } = await import('./assinaturas-store.js');
+      const dona = req.dashUser!.companyId;
       const b = (req.body ?? {}) as Record<string, unknown>;
+      const txt = (k: string, max: number) => String(b[k] ?? '').trim().slice(0, max);
+      const { criarAssinatura, listarProdutos, listarEmpresasSimples } = await import('./assinaturas-store.js');
+      const { competenciaDoMesInput, vencimentoDaCompetencia, validarDocumento, rotuloCompetencia, dataBr } = await import('../cobranca-recorrente/ciclo.js');
+      const { normalizeBrazilianPhone } = await import('../meta-leadgen.js');
+
+      const nome = txt('nome', 120);
       const valorCentavos = parseReais(b.valor);
-      if (!b.produto || !String(b.nome ?? '').trim() || !(valorCentavos > 0) || !b.vence_em) {
-        res.redirect('/dashboard/assinaturas?erro=' + encodeURIComponent('Preencha produto, nome, valor e vencimento.')); return;
+      const dia = Number(b.dia_vencimento);
+      const inicio = competenciaDoMesInput(String(b.inicio ?? ''));
+      if (!nome || !(valorCentavos > 0) || !Number.isInteger(dia) || dia < 1 || dia > 28 || !inicio) {
+        irPara(res, volta, { erro: 'Preencha nome, valor, dia de vencimento (1 a 28) e o mês da primeira mensalidade.' }); return;
       }
-      await criarAssinatura(supabase, {
-        produtoId: String(b.produto), nome: String(b.nome).trim(),
-        email: String(b.email ?? '').trim() || null, telefone: String(b.telefone ?? '').replace(/\D/g, '') || null,
-        valorCentavos, limite: b.limite ? Number(b.limite) : null, venceEm: String(b.vence_em),
-        companyId: b.company_id ? String(b.company_id) : null,
+      const produtos = await listarProdutos(supabase);
+      const produtoId = String(b.produto ?? '');
+      if (!produtos.some((p) => p.id === produtoId)) { irPara(res, volta, { erro: 'Produto inválido.' }); return; }
+      let documento: string | null;
+      try { documento = validarDocumento(String(b.documento ?? '')); } catch (e) { irPara(res, volta, { erro: (e as Error).message }); return; }
+      const telBruto = txt('telefone', 30);
+      const telefone = telBruto ? normalizeBrazilianPhone(telBruto) : null;
+      if (telBruto && !telefone) { irPara(res, volta, { erro: 'WhatsApp inválido — use DDD + número, ex.: (61) 99999-0000.' }); return; }
+      const email = txt('email', 120) || null;
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { irPara(res, volta, { erro: 'E-mail inválido.' }); return; }
+      // Tenant: só um id que existe na lista de empresas (e nunca a própria casa).
+      const companyIdBruto = String(b.company_id ?? '').trim();
+      let companyId: string | null = null;
+      if (companyIdBruto) {
+        const empresas = await listarEmpresasSimples(supabase);
+        if (companyIdBruto === dona || !empresas.some((e) => e.id === companyIdBruto)) { irPara(res, volta, { erro: 'Empresa inválida.' }); return; }
+        companyId = companyIdBruto;
+      }
+      const limite = b.limite ? Math.max(1, Math.floor(Number(b.limite))) : null;
+      // Lead/cliente da casa com o mesmo WhatsApp → vínculo (variantes do 9º dígito).
+      let leadId: string | null = null;
+      if (telefone) {
+        const { acharLeadPorTelefone } = await import('./cobrancas-store.js');
+        leadId = (await acharLeadPorTelefone(supabase, dona, telefone))?.id ?? null;
+      }
+      const venceEm = vencimentoDaCompetencia(inicio, dia);
+      const id = await criarAssinatura(supabase, {
+        produtoId, nome, email, telefone, valorCentavos, limite: Number.isFinite(limite as number) ? limite : null, venceEm, companyId, leadId,
+        descricao: txt('descricao', 120) || null, documento, diaVencimento: dia, inicioEm: inicio,
+        observacao: txt('observacao', 500) || null, donaId: dona,
       });
-      res.redirect('/dashboard/assinaturas?ok=' + encodeURIComponent('Assinatura criada.'));
+      await audit(supabase, { companyId: dona, userId: req.dashUser!.id, entidade: 'assinatura', entidadeId: id, acao: 'criou' });
+      const saiEm = new Date(Date.parse(venceEm) - 3 * 86_400_000).toISOString().slice(0, 10);
+      irPara(res, `/dashboard/assinaturas/${id}`, { ok: `Assinatura criada. A fatura de ${rotuloCompetencia(inicio)} sai sozinha em ${dataBr(saiEm)} (3 dias antes do vencimento) — ou use "Gerar cobrança agora".` });
     } catch (err) {
       console.error('[assinaturas/nova]', err);
-      res.redirect('/dashboard/assinaturas?erro=' + encodeURIComponent('Falha ao criar assinatura.'));
+      irPara(res, volta, { erro: 'Falha ao criar a assinatura.' });
     }
   });
 
-  router.post('/assinaturas/:id/cobrar', exigir('financeiro', 'editar'), async (req: AuthedRequest, res) => {
+  router.get('/assinaturas/:id', ...verCasa, async (req: AuthedRequest, res) => {
+    const id = String(req.params.id);
+    if (!RE_UUID.test(id)) { res.status(404).send('Assinatura não encontrada.'); return; }
     try {
-      const handle = options.infinitepayHandle;
-      if (!handle) { res.redirect('/dashboard/assinaturas?erro=' + encodeURIComponent('Falta INFINITEPAY_HANDLE no servidor.')); return; }
-      const { getAssinatura } = await import('./assinaturas-store.js');
-      const a = await getAssinatura(supabase, String(req.params.id));
-      if (!a) { res.redirect('/dashboard/assinaturas?erro=' + encodeURIComponent('Assinatura não achada.')); return; }
-      const descricao = `${a.produtoNome} — mensalidade (${a.nome})`;
-      const cob = await supabaseService.criarCobranca({ companyId: req.dashUser!.companyId, leadId: null, assinaturaId: a.id, descricao, valorCentavos: a.valorCentavos });
-      const { criarLinkPagamento } = await import('../infinitepay.js');
-      const base = (options.appBaseUrl ?? '').replace(/\/$/, '');
-      const r = await criarLinkPagamento({
-        handle, orderNsu: cob.orderNsu, itens: [{ descricao, valorCentavos: a.valorCentavos }],
-        redirectUrl: base ? `${base}/pago` : undefined,
-        webhookUrl: base ? `${base}/webhook/infinitepay` : undefined,
-        cliente: { nome: a.nome, email: a.email ?? undefined, telefone: a.telefone ?? undefined },
-      });
-      if (!r.ok) { res.redirect('/dashboard/assinaturas?erro=' + encodeURIComponent(`Falha ao gerar link: ${r.reason}`)); return; }
-      await supabaseService.salvarLinkCobranca(cob.id, r.url);
-      res.redirect('/dashboard/assinaturas?ok=' + encodeURIComponent('Link gerado — manda pro assinante:') + '&link=' + encodeURIComponent(r.url));
+      const dona = req.dashUser!.companyId;
+      const { getAssinaturaDaDona, listarEmpresasSimples, contarUsinasAtivas } = await import('./assinaturas-store.js');
+      const { faturasDaAssinatura } = await import('../cobranca-recorrente/faturas-repo.js');
+      const { renderAssinaturaDetalhePage } = await import('./assinaturas-views.js');
+      const a = await getAssinaturaDaDona(supabase, dona, id);
+      if (!a) { res.status(404).send('Assinatura não encontrada.'); return; }
+      const [faturas, empresas, modeloAprovado] = await Promise.all([
+        faturasDaAssinatura(supabase, dona, id), listarEmpresasSimples(supabase), modeloAprovadoAgora(),
+      ]);
+      const uso = a.companyId && a.limite !== null ? await contarUsinasAtivas(supabase, a.companyId).catch(() => null) : null;
+      res.type('html').send(renderAssinaturaDetalhePage({
+        assinatura: a, faturas, hoje: hojeISO(),
+        empresaNome: a.companyId ? (empresas.find((e) => e.id === a.companyId)?.nome ?? 'empresa inativa') : null,
+        uso, modeloAprovado, infinitepayLigada: !!options.infinitepayHandle,
+      }, req.dashUser, avisoDaQuery(req)));
     } catch (err) {
-      console.error('[assinaturas/cobrar]', err);
-      res.redirect('/dashboard/assinaturas?erro=' + encodeURIComponent('Falha ao gerar cobrança.'));
+      console.error('[assinaturas/detalhe]', err);
+      res.status(500).send('Falha ao carregar a assinatura.');
     }
   });
 
-  router.post('/assinaturas/:id/status', exigir('financeiro', 'editar'), async (req: AuthedRequest, res) => {
+  router.post('/assinaturas/:id/editar', ...editarCasa, async (req: AuthedRequest, res) => {
+    const id = String(req.params.id);
+    const volta = `/dashboard/assinaturas/${id}`;
     try {
+      const dona = req.dashUser!.companyId;
+      const { getAssinaturaDaDona, editarAssinatura } = await import('./assinaturas-store.js');
+      const { validarDocumento, proximoVencimento } = await import('../cobranca-recorrente/ciclo.js');
+      const { faturasDaAssinatura } = await import('../cobranca-recorrente/faturas-repo.js');
+      const { normalizeBrazilianPhone } = await import('../meta-leadgen.js');
+      const a = RE_UUID.test(id) ? await getAssinaturaDaDona(supabase, dona, id) : null;
+      if (!a) { irPara(res, '/dashboard/assinaturas', { erro: 'Assinatura não encontrada.' }); return; }
+      const b = (req.body ?? {}) as Record<string, unknown>;
+      const txt = (k: string, max: number) => String(b[k] ?? '').trim().slice(0, max);
+      const campos: Parameters<typeof editarAssinatura>[2] = {};
+      if (b.nome !== undefined) { const n = txt('nome', 120); if (!n) { irPara(res, volta, { erro: 'O nome não pode ficar vazio.' }); return; } campos.nome = n; }
+      if (b.documento !== undefined) {
+        try { campos.documento = validarDocumento(String(b.documento)); } catch (e) { irPara(res, volta, { erro: (e as Error).message }); return; }
+      }
+      if (b.telefone !== undefined) {
+        const t = txt('telefone', 30);
+        const norm = t ? normalizeBrazilianPhone(t) : null;
+        if (t && !norm) { irPara(res, volta, { erro: 'WhatsApp inválido — use DDD + número.' }); return; }
+        campos.telefone = norm;
+      }
+      if (b.email !== undefined) {
+        const e = txt('email', 120) || null;
+        if (e && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) { irPara(res, volta, { erro: 'E-mail inválido.' }); return; }
+        campos.email = e;
+      }
+      if (b.descricao !== undefined) campos.descricao = txt('descricao', 120) || null;
+      if (b.observacao !== undefined) campos.observacao = txt('observacao', 500) || null;
+      if (b.valor) { const v = parseReais(b.valor); if (!(v > 0)) { irPara(res, volta, { erro: 'Valor inválido.' }); return; } campos.valorCentavos = v; }
+      if (b.limite !== undefined) { const l = Math.floor(Number(b.limite)); campos.limite = b.limite && l > 0 ? l : null; }
+      if (b.dia_vencimento) {
+        const dia = Number(b.dia_vencimento);
+        if (!Number.isInteger(dia) || dia < 1 || dia > 28) { irPara(res, volta, { erro: 'Dia de vencimento vai de 1 a 28.' }); return; }
+        if (dia !== a.diaVencimento) {
+          campos.diaVencimento = dia;
+          const fs = await faturasDaAssinatura(supabase, dona, id);
+          const v = proximoVencimento({ status: a.status, inicioEm: a.inicioEm ?? null, diaVencimento: dia }, fs, hojeISO());
+          if (v) campos.venceEm = v;
+        }
+      }
+      await editarAssinatura(supabase, id, campos, dona);
+      await audit(supabase, { companyId: dona, userId: req.dashUser!.id, entidade: 'assinatura', entidadeId: id, acao: 'editou', campo: Object.keys(campos).join(',') });
+      irPara(res, volta, { ok: campos.valorCentavos && campos.valorCentavos !== a.valorCentavos ? 'Salvo. O valor novo vale a partir da próxima fatura.' : 'Salvo.' });
+    } catch (err) {
+      console.error('[assinaturas/editar]', err);
+      irPara(res, volta, { erro: 'Falha ao salvar.' });
+    }
+  });
+
+  router.post('/assinaturas/:id/status', ...editarCasa, async (req: AuthedRequest, res) => {
+    const id = String(req.params.id);
+    const volta = `/dashboard/assinaturas/${id}`;
+    try {
+      const dona = req.dashUser!.companyId;
       const status = String(req.body?.status ?? '');
-      if (!['ativa', 'travada', 'cancelada'].includes(status)) { res.redirect('/dashboard/assinaturas?erro=' + encodeURIComponent('Status inválido.')); return; }
-      const { setStatusAssinatura, getAssinatura } = await import('./assinaturas-store.js');
-      const id = String(req.params.id);
-      await setStatusAssinatura(supabase, id, status as 'ativa' | 'travada' | 'cancelada');
-      // O acesso REAL acompanha (calculadora via ponte, monitoramento via
-      // companies.ativo). Falha da ponte não desfaz o status — avisa na tela.
-      const a = await getAssinatura(supabase, id);
+      if (!['ativa', 'pausada', 'travada', 'cancelada'].includes(status)) { irPara(res, volta, { erro: 'Situação inválida.' }); return; }
+      const { setStatusAssinatura, getAssinaturaDaDona } = await import('./assinaturas-store.js');
+      const antes = RE_UUID.test(id) ? await getAssinaturaDaDona(supabase, dona, id) : null;
+      if (!antes) { irPara(res, '/dashboard/assinaturas', { erro: 'Assinatura não encontrada.' }); return; }
+      await setStatusAssinatura(supabase, id, status as 'ativa' | 'pausada' | 'travada' | 'cancelada', dona);
+      await audit(supabase, { companyId: dona, userId: req.dashUser!.id, entidade: 'assinatura', entidadeId: id, acao: `status:${status}`, campo: 'status' });
+      // O acesso REAL acompanha só suspender/liberar (calculadora via ponte,
+      // monitoramento via companies.ativo). Falha da ponte não desfaz o status.
       let pontinha = '';
-      if (a && status !== 'cancelada') {
+      const acesso = status === 'travada' ? 'travar' as const : (status === 'ativa' && antes.status === 'travada') ? 'liberar' as const : null;
+      if (acesso) {
         const { aplicarAcesso } = await import('../assinaturas-sync.js');
-        const ok = await aplicarAcesso(supabase, a, status === 'travada' ? 'travar' : 'liberar', {
+        const ok = await aplicarAcesso(supabase, antes, acesso, {
           env: { calculadoraUrl: options.calculadoraUrl, syncToken: options.assinaturasSyncToken },
           avisarFalha: options.sendText && options.engineerPhone
             ? (t) => options.sendText!(options.engineerPhone!, t).then(() => undefined)
@@ -781,29 +900,72 @@ b.onclick=async function(){
         });
         if (!ok) pontinha = ' ⚠️ Mas a ponte de acesso falhou — tente de novo em instantes.';
       }
-      res.redirect('/dashboard/assinaturas?ok=' + encodeURIComponent((status === 'travada' ? 'Assinatura travada.' : 'Assinatura liberada.') + pontinha));
+      const TXT: Record<string, string> = {
+        ativa: antes.status === 'travada' ? 'Acesso liberado.' : 'Assinatura ativa — o robô volta a gerar as faturas.',
+        pausada: 'Assinatura pausada — nenhuma fatura nova nem lembrete até reativar.',
+        travada: 'Acesso suspenso. Ele volta sozinho quando o cliente pagar.',
+        cancelada: 'Assinatura cancelada.',
+      };
+      irPara(res, volta, { ok: TXT[status]! + pontinha });
     } catch (err) {
       console.error('[assinaturas/status]', err);
-      res.redirect('/dashboard/assinaturas?erro=' + encodeURIComponent('Falha ao mudar o status.'));
+      irPara(res, volta, { erro: 'Falha ao mudar a situação.' });
     }
   });
 
-  router.post('/assinaturas/:id/editar', exigir('financeiro', 'editar'), async (req: AuthedRequest, res) => {
+  router.post('/assinaturas/:id/cobrar', ...editarCasa, async (req: AuthedRequest, res) => {
+    const id = String(req.params.id);
+    const volta = `/dashboard/assinaturas/${id}`;
     try {
-      const { editarAssinatura } = await import('./assinaturas-store.js');
-      const b = (req.body ?? {}) as Record<string, unknown>;
-      const campos: { valorCentavos?: number; telefone?: string | null; limite?: number | null; venceEm?: string } = {};
-      if (b.valor) { const v = parseReais(b.valor); if (v > 0) campos.valorCentavos = v; }
-      if (b.telefone !== undefined) campos.telefone = String(b.telefone).replace(/\D/g, '') || null;
-      if (b.limite !== undefined) campos.limite = b.limite ? Number(b.limite) : null;
-      if (b.vence_em) campos.venceEm = String(b.vence_em);
-      // checkbox: desmarcado nem vem no body → false
-      (campos as { zapConfirmado?: boolean }).zapConfirmado = b.zap_ok === '1';
-      await editarAssinatura(supabase, String(req.params.id), campos);
-      res.redirect('/dashboard/assinaturas?ok=' + encodeURIComponent('Assinatura atualizada.'));
+      if (!options.cobrancaRecorrente) { irPara(res, volta, { erro: 'Serviço de cobrança indisponível neste servidor.' }); return; }
+      if (!RE_UUID.test(id)) { irPara(res, '/dashboard/assinaturas', { erro: 'Assinatura não encontrada.' }); return; }
+      const { rotuloCompetencia } = await import('../cobranca-recorrente/ciclo.js');
+      const r = await (await options.cobrancaRecorrente()).gerarAgora(id, hojeISO());
+      if (!r.ok) { irPara(res, volta, { erro: r.erro }); return; }
+      await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'fatura_assinatura', entidadeId: r.faturaId, acao: 'gerou_manual' });
+      const canais = r.canais.map((c) => ROTULO_CANAL[c] ?? c).join(', ') || 'nenhum canal — mande o link na mão';
+      irPara(res, volta, { ok: `Fatura de ${rotuloCompetencia(r.competencia)} gerada e enviada (${canais}).`, link: r.link });
     } catch (err) {
-      console.error('[assinaturas/editar]', err);
-      res.redirect('/dashboard/assinaturas?erro=' + encodeURIComponent('Falha ao salvar.'));
+      console.error('[assinaturas/cobrar]', err);
+      irPara(res, volta, { erro: 'Falha ao gerar a cobrança.' });
+    }
+  });
+
+  router.post('/assinaturas/faturas/:faturaId/reenviar', ...editarCasa, async (req: AuthedRequest, res) => {
+    const fid = String(req.params.faturaId);
+    try {
+      const dona = req.dashUser!.companyId;
+      const { getFaturaDaDona } = await import('../cobranca-recorrente/faturas-repo.js');
+      const f = RE_UUID.test(fid) ? await getFaturaDaDona(supabase, dona, fid) : null;
+      if (!f || !options.cobrancaRecorrente) { irPara(res, '/dashboard/assinaturas', { erro: 'Fatura não encontrada.' }); return; }
+      const volta = `/dashboard/assinaturas/${f.assinaturaId}`;
+      const r = await (await options.cobrancaRecorrente()).reenviar(fid, hojeISO());
+      if (!r.ok) { irPara(res, volta, { erro: r.erro }); return; }
+      await audit(supabase, { companyId: dona, userId: req.dashUser!.id, entidade: 'fatura_assinatura', entidadeId: fid, acao: 'reenviou' });
+      irPara(res, volta, { ok: `Link reenviado (${r.canais.map((c) => ROTULO_CANAL[c] ?? c).join(', ')}).`, link: r.link });
+    } catch (err) {
+      console.error('[assinaturas/reenviar]', err);
+      irPara(res, '/dashboard/assinaturas', { erro: 'Falha ao reenviar.' });
+    }
+  });
+
+  router.post('/assinaturas/faturas/:faturaId/marcar-paga', ...editarCasa, async (req: AuthedRequest, res) => {
+    const fid = String(req.params.faturaId);
+    try {
+      const dona = req.dashUser!.companyId;
+      const { getFaturaDaDona } = await import('../cobranca-recorrente/faturas-repo.js');
+      const f = RE_UUID.test(fid) ? await getFaturaDaDona(supabase, dona, fid) : null;
+      if (!f || !options.cobrancaRecorrente) { irPara(res, '/dashboard/assinaturas', { erro: 'Fatura não encontrada.' }); return; }
+      const volta = `/dashboard/assinaturas/${f.assinaturaId}`;
+      const r = await (await options.cobrancaRecorrente()).marcarPagaManual(fid, req.dashUser!.nome || req.dashUser!.login);
+      if (!r.ok) {
+        irPara(res, volta, { erro: r.motivo === 'ja_paga' ? 'Essa fatura já estava paga.' : 'Não deu pra marcar como paga.' }); return;
+      }
+      await audit(supabase, { companyId: dona, userId: req.dashUser!.id, entidade: 'fatura_assinatura', entidadeId: fid, acao: 'marcou_paga_pix_direto' });
+      irPara(res, volta, { ok: r.lancamentoId ? 'Fatura paga. A receita entrou no caixa e o recibo foi pro cliente.' : 'Fatura paga. ⚠️ O lançamento no caixa falhou — lance na mão (te avisei no WhatsApp).' });
+    } catch (err) {
+      console.error('[assinaturas/marcar-paga]', err);
+      irPara(res, '/dashboard/assinaturas', { erro: 'Falha ao marcar como paga.' });
     }
   });
 
@@ -1649,10 +1811,14 @@ b.onclick=async function(){
       const cid = req.dashUser!.companyId;
       const a = await assinaturaDaEmpresa(supabase, cid);
       const uso = a && a.limite !== null ? await contarUsinasAtivas(supabase, cid).catch(() => null) : null;
-      const linkPagar = a ? await linkPendente(supabase, a.id) : null;
+      // Cobrança recorrente: SÓ as faturas em que a empresa da SESSÃO é a assinante.
+      const { faturasDoTenant } = await import('../cobranca-recorrente/faturas-repo.js');
+      const faturas = a ? await faturasDoTenant(supabase, cid).catch((e) => { console.warn('[minha-assinatura] faturas:', (e as Error).message); return undefined; }) : undefined;
+      const aberta = (faturas ?? []).filter((f) => f.status === 'aberta' && f.linkUrl).sort((x, y) => (x.venceEm < y.venceEm ? -1 : 1))[0];
+      const linkPagar = aberta?.linkUrl ?? (a ? await linkPendente(supabase, a.id) : null);
       const q = req.query as Record<string, string | undefined>;
       const aviso = q.ok ? { tipo: 'ok' as const, texto: q.ok } : q.erro ? { tipo: 'erro' as const, texto: q.erro } : undefined;
-      res.type('html').send(renderMinhaAssinaturaPage(a, hojeISO(), uso, linkPagar, req.dashUser, aviso));
+      res.type('html').send(renderMinhaAssinaturaPage(a, hojeISO(), uso, linkPagar, req.dashUser, aviso, faturas));
     } catch (err) {
       console.error('[minha-assinatura]', err);
       res.status(500).send('Falha ao carregar a assinatura.');

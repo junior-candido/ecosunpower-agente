@@ -10,7 +10,7 @@ import { join } from 'path';
 import { contratoDaTela, aplicarMudancas } from './helpers/contrato-tela.js';
 import { CASOS_SERVICOS } from './fixtures/casos-servicos.js';
 // Troca comum das telas renovadas: sai o Tailwind do CDN (telas leves, #328).
-import { TELAS_LEVES } from './fixtures/mudancas-telas-leves.js';
+import { TELAS_LEVES, menuTenantSemAssinaturas } from './fixtures/mudancas-telas-leves.js';
 import { MUDANCAS_R14 } from './fixtures/mudancas-onda3.js';
 
 const CONTRATO = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contrato-servicos.json'), 'utf-8'));
@@ -18,7 +18,8 @@ const CONTRATO = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures'
 describe('Serviços de campo — contrato das telas do painel não muda', () => {
   for (const [nome, render] of Object.entries(CASOS_SERVICOS)) {
     it(`contrato: ${nome}`, () => {
-      expect(contratoDaTela(render())).toEqual(aplicarMudancas(CONTRATO[nome], TELAS_LEVES, ...(MUDANCAS_R14[nome] ?? [])));
+      const h = render();
+      expect(contratoDaTela(h)).toEqual(aplicarMudancas(CONTRATO[nome], ...menuTenantSemAssinaturas(h), TELAS_LEVES, ...(MUDANCAS_R14[nome] ?? [])));
     });
   }
 });

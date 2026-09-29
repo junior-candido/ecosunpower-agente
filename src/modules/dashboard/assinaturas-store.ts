@@ -3,8 +3,9 @@
 // vencimento ao pagar, e acesso a banco (service-role; RLS nega tenants).
 // Régua do Junior: vencendo = faltam ≤8 dias (dia do 1º aviso automático).
 
-export type StatusAssinatura = 'ativa' | 'travada' | 'cancelada';
-export type Situacao = 'ativa' | 'vencendo' | 'vencida' | 'travada' | 'cancelada';
+// Cobrança recorrente (28/09/2026, migration 146): + 'pausada' (não gera fatura).
+export type StatusAssinatura = 'ativa' | 'pausada' | 'travada' | 'cancelada';
+export type Situacao = 'ativa' | 'vencendo' | 'vencida' | 'pausada' | 'travada' | 'cancelada';
 
 const DIAS_VENCENDO = 8;
 
@@ -43,9 +44,18 @@ export interface AssinaturaRow {
   email: string | null; telefone: string | null; zapConfirmado: boolean;
   valorCentavos: number; limite: number | null; venceEm: string; status: StatusAssinatura;
   companyId: string | null;
+  // Cobrança recorrente (146). Opcionais só pra não quebrar quem monta a linha
+  // na mão (testes/fixtures); o banco sempre devolve.
+  descricao?: string | null;
+  documento?: string | null;
+  diaVencimento?: number | null;
+  inicioEm?: string | null;
+  observacao?: string | null;
+  leadId?: string | null;
+  donaCompanyId?: string;
 }
 
-const CAMPOS = 'id, produto_id, nome, email, telefone, zap_confirmado, valor_centavos, limite, vence_em, status, company_id, assinatura_produtos(nome)';
+const CAMPOS = 'id, produto_id, nome, email, telefone, zap_confirmado, valor_centavos, limite, vence_em, status, company_id, descricao, documento, dia_vencimento, inicio_em, observacao, lead_id, dona_company_id, assinatura_produtos(nome)';
 
 function paraRow(r: any): AssinaturaRow {
   return {
@@ -53,12 +63,23 @@ function paraRow(r: any): AssinaturaRow {
     nome: r.nome, email: r.email, telefone: r.telefone, zapConfirmado: r.zap_confirmado,
     valorCentavos: r.valor_centavos, limite: r.limite, venceEm: r.vence_em, status: r.status,
     companyId: r.company_id ?? null,
+    descricao: r.descricao ?? null, documento: r.documento ?? null,
+    diaVencimento: r.dia_vencimento ?? null, inicioEm: r.inicio_em ?? null,
+    observacao: r.observacao ?? null, leadId: r.lead_id ?? null,
+    donaCompanyId: r.dona_company_id ?? undefined,
   };
 }
 
-export async function listarAssinaturas(client: SupabaseClient): Promise<AssinaturaRow[]> {
-  const { data, error } = await client
-    .from('assinaturas').select(CAMPOS).order('vence_em', { ascending: true });
+/** Descrição que o cliente vê (a da assinatura; senão o nome do produto). */
+export function descricaoDaAssinatura(a: Pick<AssinaturaRow, 'descricao' | 'produtoNome'>): string {
+  return (a.descricao ?? '').trim() || a.produtoNome;
+}
+
+/** Assinaturas da empresa DONA (a casa). Sem dona → todas (legado/testes). */
+export async function listarAssinaturas(client: SupabaseClient, donaId?: string): Promise<AssinaturaRow[]> {
+  let q = client.from('assinaturas').select(CAMPOS);
+  if (donaId) q = q.eq('dona_company_id', donaId);
+  const { data, error } = await q.order('vence_em', { ascending: true });
   if (error) throw new Error(`listarAssinaturas: ${error.message}`);
   return (data ?? []).map(paraRow);
 }
@@ -75,12 +96,23 @@ export async function listarProdutos(client: SupabaseClient): Promise<ProdutoRow
 export async function criarAssinatura(client: SupabaseClient, d: {
   produtoId: string; nome: string; email?: string | null; telefone?: string | null;
   valorCentavos: number; limite?: number | null; venceEm: string; companyId?: string | null; leadId?: string | null;
+  // cobrança recorrente (146)
+  descricao?: string | null; documento?: string | null; diaVencimento?: number | null;
+  inicioEm?: string | null; observacao?: string | null; donaId?: string;
 }): Promise<string> {
-  const { data, error } = await client.from('assinaturas').insert({
+  const row: Record<string, unknown> = {
     produto_id: d.produtoId, nome: d.nome, email: d.email ?? null, telefone: d.telefone ?? null,
     valor_centavos: d.valorCentavos, limite: d.limite ?? null, vence_em: d.venceEm,
     company_id: d.companyId ?? null, lead_id: d.leadId ?? null,
-  }).select('id').single();
+  };
+  if (d.diaVencimento !== undefined) {
+    Object.assign(row, {
+      descricao: d.descricao ?? null, documento: d.documento ?? null, dia_vencimento: d.diaVencimento,
+      inicio_em: d.inicioEm ?? null, observacao: d.observacao ?? null,
+    });
+  }
+  if (d.donaId) row.dona_company_id = d.donaId;
+  const { data, error } = await client.from('assinaturas').insert(row).select('id').single();
   if (error) throw new Error(`criarAssinatura: ${error.message}`);
   return (data as { id: string }).id;
 }
@@ -90,22 +122,40 @@ export async function getAssinatura(client: SupabaseClient, id: string): Promise
   return data ? paraRow(data) : null;
 }
 
+/** A assinatura SÓ se for desta dona (rotas da casa: o id da URL nunca vale sozinho). */
+export async function getAssinaturaDaDona(client: SupabaseClient, donaId: string, id: string): Promise<AssinaturaRow | null> {
+  const { data } = await client.from('assinaturas').select(CAMPOS).eq('dona_company_id', donaId).eq('id', id).maybeSingle();
+  return data ? paraRow(data) : null;
+}
+
 export async function editarAssinatura(client: SupabaseClient, id: string, campos: {
   valorCentavos?: number; telefone?: string | null; limite?: number | null; venceEm?: string; zapConfirmado?: boolean;
-}): Promise<void> {
+  nome?: string; email?: string | null; descricao?: string | null; documento?: string | null;
+  diaVencimento?: number; observacao?: string | null;
+}, donaId?: string): Promise<void> {
   const row: Record<string, unknown> = {};
   if (campos.valorCentavos !== undefined) row.valor_centavos = campos.valorCentavos;
   if (campos.telefone !== undefined) row.telefone = campos.telefone;
   if (campos.limite !== undefined) row.limite = campos.limite;
   if (campos.venceEm !== undefined) row.vence_em = campos.venceEm;
   if (campos.zapConfirmado !== undefined) row.zap_confirmado = campos.zapConfirmado;
+  if (campos.nome !== undefined) row.nome = campos.nome;
+  if (campos.email !== undefined) row.email = campos.email;
+  if (campos.descricao !== undefined) row.descricao = campos.descricao;
+  if (campos.documento !== undefined) row.documento = campos.documento;
+  if (campos.diaVencimento !== undefined) row.dia_vencimento = campos.diaVencimento;
+  if (campos.observacao !== undefined) row.observacao = campos.observacao;
   if (Object.keys(row).length === 0) return;
-  const { error } = await client.from('assinaturas').update(row).eq('id', id);
+  let q = client.from('assinaturas').update(row).eq('id', id);
+  if (donaId) q = q.eq('dona_company_id', donaId);
+  const { error } = await q;
   if (error) throw new Error(`editarAssinatura: ${error.message}`);
 }
 
-export async function setStatusAssinatura(client: SupabaseClient, id: string, status: StatusAssinatura): Promise<void> {
-  const { error } = await client.from('assinaturas').update({ status }).eq('id', id);
+export async function setStatusAssinatura(client: SupabaseClient, id: string, status: StatusAssinatura, donaId?: string): Promise<void> {
+  let q = client.from('assinaturas').update({ status }).eq('id', id);
+  if (donaId) q = q.eq('dona_company_id', donaId);
+  const { error } = await q;
   if (error) throw new Error(`setStatusAssinatura: ${error.message}`);
 }
 
@@ -116,11 +166,12 @@ export async function listarEmpresasSimples(client: SupabaseClient): Promise<{ i
   return (data ?? []).map((c: any) => ({ id: c.id, nome: c.nome }));
 }
 
-/** A assinatura (ativa ou travada) da empresa — "Minha assinatura" do tenant. */
+/** A assinatura (ativa, pausada ou travada) da empresa — "Minha assinatura" do tenant. */
 export async function assinaturaDaEmpresa(client: SupabaseClient, companyId: string): Promise<AssinaturaRow | null> {
+  if (!companyId) return null;
   const { data } = await client.from('assinaturas').select(CAMPOS)
     .eq('company_id', companyId)
-    .in('status', ['ativa', 'travada'])
+    .in('status', ['ativa', 'pausada', 'travada'])
     .order('criado_em', { ascending: false })
     .limit(1);
   const r = (data as any[] | null)?.[0];
@@ -156,28 +207,17 @@ export async function contarUsinasAtivas(client: SupabaseClient, companyId: stri
   return count ?? 0;
 }
 
-// ---- Apoios do motor automático (fatia 2) ----
+// (28/09/2026) O motor antigo (avisos 8d/2d + trava automática, fatia 2) deu
+// lugar à cobrança recorrente por FATURA (src/modules/cobranca-recorrente/).
+// A tabela assinatura_avisos (091) fica só como histórico.
 
-/** Assinaturas ativas (o motor decide o que fazer com cada uma). */
-export async function listarAtivas(client: SupabaseClient): Promise<AssinaturaRow[]> {
-  const { data, error } = await client
-    .from('assinaturas').select(CAMPOS).eq('status', 'ativa');
-  if (error) throw new Error(`listarAtivas: ${error.message}`);
+/** Assinaturas que geram fatura (ativa ou com acesso suspenso), com dia e início. */
+export async function listarCobraveis(client: SupabaseClient, donaId: string): Promise<AssinaturaRow[]> {
+  const { data, error } = await client.from('assinaturas').select(CAMPOS)
+    .eq('dona_company_id', donaId).in('status', ['ativa', 'travada'])
+    .not('dia_vencimento', 'is', null);
+  if (error) throw new Error(`listarCobraveis: ${error.message}`);
   return (data ?? []).map(paraRow);
-}
-
-/** Tipos de aviso já enviados neste ciclo (idempotência do cron). */
-export async function avisosDoCiclo(client: SupabaseClient, assinaturaId: string, ciclo: string): Promise<Set<string>> {
-  const { data } = await client.from('assinatura_avisos').select('tipo')
-    .eq('assinatura_id', assinaturaId).eq('ciclo', ciclo);
-  return new Set((data ?? []).map((r: any) => r.tipo as string));
-}
-
-export async function registrarAviso(client: SupabaseClient, assinaturaId: string, companyId: string | null, tipo: string, ciclo: string): Promise<void> {
-  const { error } = await client.from('assinatura_avisos')
-    .insert({ assinatura_id: assinaturaId, company_id: companyId, tipo, ciclo });
-  // conflito de UNIQUE = alguém registrou no meio — ok, idempotência funcionando
-  if (error && !/duplicate|unique/i.test(error.message)) throw new Error(`registrarAviso: ${error.message}`);
 }
 
 /** Link da cobrança PENDENTE mais recente da assinatura (null se não tem). */
@@ -197,4 +237,22 @@ export async function renovarAssinatura(client: SupabaseClient, id: string, hoje
   const { error } = await client.from('assinaturas')
     .update({ vence_em: novoVencimento(venceEm, hoje), status: 'ativa' }).eq('id', id);
   if (error) throw new Error(`renovarAssinatura: ${error.message}`);
+}
+
+/**
+ * Fatura paga (cobrança recorrente): o vencimento mostrado anda pro próximo
+ * ciclo (nunca volta) e, se o acesso estava SUSPENSO, volta pra ativa.
+ * Pausada/cancelada continuam como estão. true = destravou agora.
+ */
+export async function registrarPagamentoNaAssinatura(client: SupabaseClient, id: string, proximoVenceEm: string | null): Promise<boolean> {
+  const { data } = await client.from('assinaturas').select('vence_em, status').eq('id', id).maybeSingle();
+  if (!data) return false;
+  const atual = data as { vence_em: string; status: StatusAssinatura };
+  const row: Record<string, unknown> = { atualizado_em: new Date().toISOString() };
+  if (proximoVenceEm && proximoVenceEm > atual.vence_em) row.vence_em = proximoVenceEm;
+  const destravar = atual.status === 'travada';
+  if (destravar) row.status = 'ativa';
+  const { error } = await client.from('assinaturas').update(row).eq('id', id);
+  if (error) throw new Error(`registrarPagamentoNaAssinatura: ${error.message}`);
+  return destravar;
 }

@@ -5,13 +5,21 @@
 // Renovação do miolo — R19 (28/09/2026): mesmos 2 formulários do zap
 // (zap/solicitar, zap/confirmar); situação em pílula, uso em barra, "Pagar
 // agora" é a ação dourada. Sem Tailwind, tema escuro, sem marca da casa.
+// Cobrança recorrente (28/09/2026): + seção "Faturas" (aberta com botão Pagar,
+// pagas, próxima). Só as faturas em que a empresa da SESSÃO é a assinante —
+// o router busca por company_id da sessão, nunca por id da URL.
 import { escapeHtml } from './views.js';
 import type { DashUser } from './permissions.js';
 import { situacaoDaAssinatura } from './assinaturas-store.js';
 import type { AssinaturaRow } from './assinaturas-store.js';
-import { cabecalhoPagina, cartaoSecao, pilulaStatus, botao, barra, estadoVazio, aviso as avisoCc, type Tom } from './ui/componentes.js';
+import { cabecalhoPagina, cartaoSecao, pilulaStatus, botao, barra, estadoVazio, tabela, celulaDupla, aviso as avisoCc, type Tom } from './ui/componentes.js';
 import { SEM_DADO } from './ui/html.js';
 import { paginaConfiguracoes } from './configuracoes-casca.js';
+import type { FaturaRow } from '../cobranca-recorrente/faturas-repo.js';
+import {
+  situacaoDaFatura, situacaoDaAssinatura as situacaoPorFatura, proximoVencimento, rotuloCompetencia,
+  competenciaDe, reais as reaisBr, dataBr as dataBrIso, DIAS_ANTES,
+} from '../cobranca-recorrente/ciclo.js';
 
 const reais = (c: number) => (c / 100).toFixed(2).replace('.', ',');
 const dataBr = (iso: string) => iso.split('-').reverse().join('/');
@@ -33,6 +41,8 @@ const CSS_ASSINATURA = `
 .cc-as-linha{display:flex;gap:8px;align-items:center}
 .cc-as-linha input{flex:1;min-width:0}
 .cc-as-ok{margin:0;font-size:13.5px;color:var(--cc-ok)}
+.cc-as-fat .cc-btn{white-space:nowrap}
+.cc-as-prox{margin-top:12px;padding:10px 12px;border:1px dashed var(--cc-line-2);border-radius:10px;font-size:13px;color:var(--cc-text-2)}
 @media (max-width:760px){.cc-as-linha{flex-direction:column;align-items:stretch}.cc-as-linha .cc-btn{justify-content:center}.cc-as-pagar .cc-btn{width:100%;justify-content:center}}
 `;
 
@@ -51,6 +61,8 @@ export function renderMinhaAssinaturaPage(
   linkPagar: string | null,
   user: DashUser | undefined,
   aviso?: { tipo: 'ok' | 'erro'; texto: string },
+  /** Faturas da empresa da sessão (cobrança recorrente). undefined = tela antiga (sem a seção). */
+  faturas?: FaturaRow[],
 ): string {
   const avisoHtml = aviso ? avisoCc({ tom: aviso.tipo, texto: aviso.texto }) : '';
 
@@ -58,8 +70,12 @@ export function renderMinhaAssinaturaPage(
   if (!a) {
     corpo = `${avisoHtml}${cartaoSecao({ titulo: 'Plano', corpoHtml: estadoVazio({ tipo: 'sem_dado', titulo: 'Nenhuma assinatura encontrada pra sua empresa.', texto: 'Se isso parecer errado, fale com o suporte.', icone: 'receipt' }) })}`;
   } else {
+    // Com faturas: a situação sai da fatura aberta mais antiga (a mesma pílula da casa).
+    const ciclo = { status: a.status, inicioEm: a.inicioEm ?? null, diaVencimento: a.diaVencimento ?? null };
+    const sitNova = faturas && a.diaVencimento ? situacaoPorFatura(ciclo, faturas, hoje) : null;
     const sit = situacaoDaAssinatura({ status: a.status, venceEm: a.venceEm }, hoje);
-    const s = SITUACAO[sit] ?? { tom: 'sem_dado' as Tom, texto: sit };
+    const s = sitNova ? { tom: sitNova.tom, texto: sitNova.chave === 'suspensa' ? 'suspensa' : sitNova.texto } : (SITUACAO[sit] ?? { tom: 'sem_dado' as Tom, texto: sit });
+    const venceMostrado = faturas && a.diaVencimento ? (proximoVencimento(ciclo, faturas, hoje) ?? a.venceEm) : a.venceEm;
 
     const suspensaHtml = sit === 'travada'
       ? avisoCc({ tom: 'erro', texto: 'Sua assinatura está suspensa por falta de pagamento. Assim que o pagamento cair, tudo volta sozinho em instantes.' })
@@ -99,12 +115,13 @@ export function renderMinhaAssinaturaPage(
     corpo = `${avisoHtml}
 ${cartaoSecao({ titulo: 'Plano', corpoHtml: `
   <div class="cc-as-plano">
-    <div><strong>${escapeHtml(a.produtoNome)}</strong><small><b>R$ ${reais(a.valorCentavos)}</b>/mês · vence dia <b>${dataBr(a.venceEm)}</b></small></div>
+    <div><strong>${escapeHtml(a.produtoNome)}</strong><small><b>R$ ${reais(a.valorCentavos)}</b>/mês · vence dia <b>${dataBr(venceMostrado)}</b></small></div>
     ${pilulaStatus(s.tom, s.texto)}
   </div>
   ${suspensaHtml}
   ${usoHtml}
   ${pagarHtml}` })}
+${faturas ? cartaoSecao({ titulo: 'Faturas', dica: 'Pix ou cartão, pelo link seguro', corpoHtml: secaoFaturas(a, faturas, hoje) }) : ''}
 ${cartaoSecao({ titulo: 'Avisos no WhatsApp', corpoHtml: zapHtml })}`;
   }
 
@@ -117,4 +134,38 @@ ${cartaoSecao({ titulo: 'Avisos no WhatsApp', corpoHtml: zapHtml })}`;
     }),
     corpoHtml: `<div class="cc-as">${corpo}</div>`,
   });
+}
+
+const METODO_PAGO: Record<string, string> = { pix: 'Pix', credit_card: 'cartão', pix_direto: 'Pix' };
+
+/** Faturas do assinante: aberta com "Pagar" (link), pagas, e quando chega a próxima. */
+function secaoFaturas(a: AssinaturaRow, faturas: FaturaRow[], hoje: string): string {
+  const visiveis = faturas.filter((f) => f.status !== 'cancelada');
+  const lista = visiveis.length
+    ? `<div class="cc-as-fat">${tabela({
+      mobile: 'cartoes',
+      colunas: [{ titulo: 'Mês' }, { titulo: 'Valor', alinhar: 'dir' }, { titulo: 'Situação' }, { titulo: '' }],
+      linhas: visiveis.map((f) => {
+        const s = situacaoDaFatura(f, hoje);
+        const acao = f.status === 'aberta'
+          ? (f.linkUrl ? botao({ rotulo: 'Pagar', href: f.linkUrl, icone: 'wallet', tamanho: 'sm', attrs: { target: '_blank', rel: 'noopener noreferrer' } }) : '<span class="cc-cf-nota">link a caminho</span>')
+          : `<span class="cc-cf-nota">paga em ${escapeHtml(dataBrIso(f.pagoEm))}${f.metodo ? ` · ${escapeHtml(METODO_PAGO[f.metodo] ?? f.metodo)}` : ''}</span>`;
+        return [
+          { html: celulaDupla(rotuloCompetencia(f.competencia), `vence ${dataBrIso(f.venceEm)}`) },
+          `R$ ${reaisBr(f.valorCentavos)}`,
+          { html: pilulaStatus(s.tom, s.texto) },
+          { html: acao },
+        ];
+      }),
+    })}</div>`
+    : estadoVazio({ tipo: 'vazio', titulo: 'Nenhuma fatura ainda', texto: `A fatura chega ${DIAS_ANTES} dias antes do vencimento, com o link de pagamento.`, icone: 'receipt' });
+
+  let prox = '';
+  if ((a.status === 'ativa' || a.status === 'travada') && a.diaVencimento && !visiveis.some((f) => f.status === 'aberta')) {
+    const v = proximoVencimento({ status: a.status, inicioEm: a.inicioEm ?? null, diaVencimento: a.diaVencimento }, faturas, hoje);
+    if (v) prox = `<div class="cc-as-prox">Próxima: <b>${escapeHtml(rotuloCompetencia(competenciaDe(v)))}</b> — R$ ${escapeHtml(reaisBr(a.valorCentavos))}, vence ${escapeHtml(dataBrIso(v))}. O link chega ${DIAS_ANTES} dias antes.</div>`;
+  } else if (a.status === 'pausada') {
+    prox = '<div class="cc-as-prox">Assinatura pausada — nenhuma fatura nova até ela voltar.</div>';
+  }
+  return lista + prox;
 }

@@ -178,12 +178,21 @@ export interface MudancaContrato {
   motivo: string;
   sai?: Partial<Record<Exclude<keyof ContratoTela, 'formularios'>, string[]>> & { formularios?: FormContrato[] };
   entra?: Partial<Record<Exclude<keyof ContratoTela, 'formularios'>, string[]>> & { formularios?: FormContrato[] };
+  /**
+   * Sai SE estiver no contrato gravado (não lança se não estiver). Só para
+   * mudança do MENU LATERAL que depende do papel do usuário do caso (um item
+   * pode já estar escondido naquele papel) — nunca para o miolo da tela.
+   */
+  saiSeHouver?: Partial<Record<'links', string[]>>;
 }
 
 export function aplicarMudancas(base: ContratoTela, ...mudancas: MudancaContrato[]): ContratoTela {
   const out: ContratoTela = JSON.parse(JSON.stringify(base));
   const chaveForm = (f: FormContrato) => JSON.stringify(f);
   for (const m of mudancas) {
+    for (const [k, v] of Object.entries(m.saiSeHouver ?? {})) {
+      (out as any)[k] = ((out as any)[k] as string[]).filter((x) => !(v as string[]).includes(x));
+    }
     for (const [k, v] of Object.entries(m.sai ?? {})) {
       if (k === 'formularios') {
         const tira = new Set((v as FormContrato[]).map(chaveForm));
