@@ -224,6 +224,12 @@ export function createDashboardRouter(
     engineerPhone?: string; // telefone do Junior — recebe o aviso "cliente fechou"
     // Atendimento P2: "Devolver para a Eva" limpa a pausa curta do Redis (takeover) do telefone.
     retomarTakeover?: (telefone: string) => Promise<void>;
+    // Pedidos de agendamento esperando o admin (28/09/2026). Tudo por empresa:
+    // quem chama passa a empresa DA SESSÃO; o serviço confere pedido × lead.
+    agendamentos?: {
+      pendentesDoLead: (companyId: string, leadId: string) => Promise<import('./atendimento-views.js').PedidoAgendaPainel[]>;
+      responder: (companyId: string, leadId: string, pedidoId: string, acao: 'ok' | 'eu' | 'nao' | 'outro', sugestao?: string) => Promise<string>;
+    };
     // Atendimento P2b: WhatsApp PESSOAL do dono (QR/Evolution) — envio pela instância dele.
     enviarPessoal?: import('./atendimento-rotas.js').DepsAtendimento['enviarPessoal'];
     // W2 — responder citando (QR do tenant) e reagir pela Evolution.
@@ -2881,13 +2887,18 @@ b.onclick=async function(){
       // Atendimento: a ficha virou a tela de 3 colunas. O Copiloto IA saiu da
       // tela (decisão do Junior, 28/09) — a rota /ia-copiloto continua viva.
       const [servicosDoCliente, lista, mensagens, donoPessoal] = await extrasP;
+      // Agendamento aguardando confirmação (28/09) — só depois das travas acima.
+      const agendamentos = options.agendamentos
+        ? await options.agendamentos.pendentesDoLead(viewer.companyId, id).catch((e) => { console.warn('[dashboard/agenda-pendente]', (e as Error).message); return []; })
+        : [];
+      const agendaMsg = typeof req.query.agenda === 'string' ? req.query.agenda.slice(0, 300) : undefined;
       // Padrão da resposta = o número em que o cliente escreveu por último (P2b).
       const envio = can(viewer, 'leads', 'editar') ? await rotasAtendimento.envioDaTela(req as AuthedRequest, lead, mensagens ?? []) : undefined;
       // W3: abriu a conversa → marca como lida no WhatsApp pessoal (só o dono, com a opção ligada).
       rotasAtendimento.aoAbrirConversa(req as AuthedRequest, { leadId: id });
       // Conversa na tela: nunca em cache (página inteira ou só o miolo — a URL é a mesma).
       res.set('Cache-Control', 'private, no-store').vary(CABECALHO_MIOLO);
-      res.send(renderLeadDetailPage(lead, [], String(req.query.docs ?? ''), String(req.query.envio ?? ''), servicosDoCliente, viewer, { lista, filtros, mensagens, envio, donoPessoal, soMiolo }));
+      res.send(renderLeadDetailPage(lead, [], String(req.query.docs ?? ''), String(req.query.envio ?? ''), servicosDoCliente, viewer, { lista, filtros, mensagens, envio, donoPessoal, soMiolo, agendamentos, agendaMsg }));
     } catch (err) {
       console.error('[dashboard/leads/:id]', err);
       res.status(500).send(`<h2>Erro ao carregar lead</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
@@ -3326,6 +3337,31 @@ b.onclick=async function(){
     const viewer = (req as AuthedRequest).dashUser;
     if (viewer) await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'arquivou' });
     res.redirect('/dashboard/leads');
+  });
+
+  // Resposta do admin a um pedido de agendamento (28/09/2026): os mesmos botões
+  // do WhatsApp. Só admin da empresa; a trava /leads/:id já garante que o lead
+  // é da empresa da sessão, e o serviço confere que o pedido é deste lead.
+  router.post('/leads/:id/agendamento/:pedidoId', exigir('leads', 'editar'), async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    const pedidoId = String(req.params.pedidoId);
+    if (!UUID_RE.test(id) || !UUID_RE.test(pedidoId)) return res.status(400).send('id inválido');
+    const viewer = (req as AuthedRequest).dashUser!;
+    if (!viewer.isAdmin) return res.status(403).send('<h2>Só o administrador da empresa confirma agendamentos.</h2>');
+    if (!options.agendamentos) return res.status(503).send('Agendamentos indisponíveis neste ambiente.');
+    const acao = String((req.body as Record<string, unknown>)?.acao ?? '');
+    if (acao !== 'ok' && acao !== 'eu' && acao !== 'nao' && acao !== 'outro') return res.status(400).send('ação inválida');
+    const sugestao = String((req.body as Record<string, unknown>)?.sugestao ?? '').trim().slice(0, 200);
+    if (acao === 'outro' && !sugestao) return res.status(400).send('Escreva o horário sugerido.');
+    let msg: string;
+    try {
+      msg = await options.agendamentos.responder(viewer.companyId, id, pedidoId, acao, sugestao || undefined);
+      await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: `agendamento_${acao}` });
+    } catch (err) {
+      console.error('[dashboard/agenda-pendente] responder falhou:', (err as Error).message);
+      msg = '⚠️ Deu erro. O pedido continua pendente — tente de novo.';
+    }
+    res.redirect(303, `/dashboard/leads/${id}?agenda=${encodeURIComponent(msg.replace(/\s+/g, ' ').slice(0, 280))}`);
   });
 
   router.post('/leads/:id/mark-lost', exigir('leads', 'editar'), async (req: Request, res: Response) => {

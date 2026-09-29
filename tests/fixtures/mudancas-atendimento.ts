@@ -212,3 +212,9 @@ export const entraBaixar = (temArquivos: boolean): MudancaContrato => ({
   motivo: 'Junior: baixar foto/PDF com um clique e tudo num .zip',
   entra: { links: temArquivos ? [`/dashboard/leads/${ID}/arquivos.zip`] : [] },
 });
+
+/** Agendamento aguardando confirmação (28/09): os botões do aviso respondem sem recarregar (mesmo POST). */
+export const ENTRA_AGENDA_PENDENTE: MudancaContrato = {
+  motivo: 'Junior: a Eva não marca sozinha — o aviso de agendamento responde sem recarregar a tela',
+  entra: { seletores: ['.cc-at-agenda'] },
+};

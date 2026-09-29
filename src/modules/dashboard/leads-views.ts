@@ -6,7 +6,7 @@ import { renderLayout, escapeHtml } from './views.js';
 import type { DashUser } from './permissions.js';
 import type { LeadRow, LeadDetail } from './leads-queries.js';
 import type { ListaConversas, FiltrosConversa, MensagemChat } from './conversas-queries.js';
-import { renderAtendimentoPage, type ServicoDoLead, type CompositorInput } from './atendimento-views.js';
+import { renderAtendimentoPage, type ServicoDoLead, type CompositorInput, type PedidoAgendaPainel } from './atendimento-views.js';
 import { formatPhoneBR } from '../meta-leadgen.js';
 import {
   cabecalhoPagina, faixaKpis, cartaoSecao, tabela, estadoVazio, pilulaStatus, icone,
@@ -258,7 +258,7 @@ export function renderLeadDetailPage(
   // R0: quem está vendo — sem ele o tenant via o menu e o rodapé da EcoSun.
   user: DashUser | undefined,
   // Atendimento: a lista de conversas (coluna 1) e o chat completo do lead.
-  extras: { lista?: ListaConversas; filtros?: FiltrosConversa; mensagens?: MensagemChat[]; envio?: CompositorInput; donoPessoal?: string | null; soMiolo?: boolean } = {},
+  extras: { lista?: ListaConversas; filtros?: FiltrosConversa; mensagens?: MensagemChat[]; envio?: CompositorInput; donoPessoal?: string | null; agendamentos?: PedidoAgendaPainel[]; agendaMsg?: string; soMiolo?: boolean } = {},
 ): string {
   void conversa; void docsResultado; void envioResultado;
   return renderAtendimentoPage({
@@ -270,6 +270,8 @@ export function renderLeadDetailPage(
     servicos,
     envio: extras.envio,
     donoPessoal: extras.donoPessoal,
+    agendamentos: extras.agendamentos,
+    agendaMsg: extras.agendaMsg,
     soMiolo: extras.soMiolo,
   });
 }

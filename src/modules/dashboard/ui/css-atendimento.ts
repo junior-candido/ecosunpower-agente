@@ -10,6 +10,13 @@ export const CSS_ATENDIMENTO = `
 /* troca suave de contato (28/09): nada de tela branca — esqueleto leve só se demorar */
 .cc-at-chat{position:relative}
 .cc-at-chat-topo:focus{outline:none}
+/* aviso "Agendamento aguardando sua confirmação" (28/09) — dentro da coluna do chat */
+.cc-at-agenda{margin:8px 18px 0;flex:0 0 auto;max-height:40vh;overflow-y:auto}
+.cc-at-agenda-item{margin-top:8px}
+.cc-at-agenda-botoes{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.cc-at-agenda-botoes form{display:inline-flex;margin:0}
+.cc-at-agenda-sugerir{display:inline-flex;gap:6px;align-items:center}
+.cc-at-agenda-sugerir input{min-width:0;width:200px;max-width:100%}
 .cc-at-chat-topo:focus-visible{outline:2px solid var(--cc-gold-2);outline-offset:-2px}
 .cc-at-chat-topo,.cc-at-assumido,.cc-at-cockpit>*{transition:opacity .15s}
 .cc-at-carregando .cc-at-chat-topo,.cc-at-carregando .cc-at-assumido,.cc-at-cockpit.cc-at-carregando>*{opacity:.5}

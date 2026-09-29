@@ -634,7 +634,7 @@ export function estadoDoCompositor(lead: Pick<LeadDetail, 'opt_out' | 'phone'>, 
   return `${c.canal}|${t}|${m}|${c.modelos.length}`;
 }
 
-function colunaChat(lead: LeadDetail, mensagens: MensagemChat[], assistente: string, assistenteMin: string, envio: CompositorInput | undefined, donoPessoal: string | null, podeEditar: boolean, eu: string | null = null): string {
+function colunaChat(lead: LeadDetail, mensagens: MensagemChat[], assistente: string, assistenteMin: string, envio: CompositorInput | undefined, donoPessoal: string | null, podeEditar: boolean, eu: string | null = null, agendaHtml = ''): string {
   const nome = lead.name ?? 'Sem nome';
   const temArquivos = (lead.anexos ?? []).length > 0;
   const corpo = blocoMensagens(mensagens, assistente, nome, temArquivos, donoPessoal, false, podeAgirNoChat(envio), null, antigasDo(lead));
@@ -651,6 +651,7 @@ function colunaChat(lead: LeadDetail, mensagens: MensagemChat[], assistente: str
       <a class="cc-at-aba cc-at-aba-resumo" href="#resumo">Resumo</a>
     </nav>
     ${topo}
+    ${agendaHtml}
     <div class="cc-at-msgs" id="cc-at-msgs" role="log" aria-label="Mensagens">${corpo}</div>
     ${compositor(lead, mensagens, envio, assistente)}
   </section>`;
@@ -974,12 +975,56 @@ export interface AtendimentoInput {
   donoPessoal?: string | null;
   /** Parte 2b: conversa do número pessoal com quem AINDA NÃO é lead (sem lead aberto). */
   contato?: ContatoPessoalTela | null;
+  /** Pedidos de agendamento deste lead esperando a confirmação do admin (28/09/2026). */
+  agendamentos?: PedidoAgendaPainel[];
+  /** Resultado da última ação num pedido (vem na URL depois do POST). */
+  agendaMsg?: string;
   /**
    * Troca suave (28/09): o navegador pediu SÓ o miolo (chat + resumo) para
    * trocar de contato sem recarregar — sem menu, sem lista, sem scripts. A rota
    * é a MESMA (mesmas travas de empresa/vendedor/dono do número).
    */
   soMiolo?: boolean;
+}
+
+export interface PedidoAgendaPainel {
+  id: string;
+  tipo: 'visita' | 'meet';
+  /** Já formatado ("quinta (01/10), às 14h"). */
+  quando: string;
+  endereco?: string;
+  resumo?: string;
+}
+
+/**
+ * "Agendamento aguardando sua confirmação" (28/09/2026). A Eva não marca mais
+ * sozinha: o pedido espera o admin. Os mesmos botões do WhatsApp; só o admin
+ * da empresa responde (os outros veem o aviso).
+ */
+export function blocoAgendaPendente(leadId: string, pedidos: PedidoAgendaPainel[], podeResponder: boolean, msg?: string): string {
+  const flash = msg ? `<div class="cc-aviso cc-aviso-info cc-at-agenda" role="status">${escapeHtml(msg)}</div>` : '';
+  if (pedidos.length === 0) return flash;
+  const itens = pedidos.map((p) => {
+    const acao = `/dashboard/leads/${escapeHtml(leadId)}/agendamento/${escapeHtml(p.id)}`;
+    const botao = (valor: string, rotulo: string, classe: string) =>
+      `<form method="POST" action="${acao}"><input type="hidden" name="acao" value="${valor}"><button type="submit" class="cc-btn ${classe} cc-btn-sm">${rotulo}</button></form>`;
+    const botoes = podeResponder
+      ? `<div class="cc-at-agenda-botoes">
+          ${botao('ok', '✅ Confirmar e avisar', 'cc-btn-gold')}
+          ${botao('eu', '📞 Eu mesmo aviso', 'cc-btn-ghost')}
+          ${botao('nao', '❌ Não posso', 'cc-btn-crit')}
+          <form method="POST" action="${acao}" class="cc-at-agenda-sugerir"><input type="hidden" name="acao" value="outro"><input name="sugestao" required maxlength="200" placeholder="Outro horário (ex.: sexta 10h)" aria-label="Sugerir outro horário"><button type="submit" class="cc-btn cc-btn-ghost cc-btn-sm">🕐 Sugerir</button></form>
+        </div>`
+      : '<div class="cc-faint">Só o administrador da empresa confirma.</div>';
+    return `<div class="cc-at-agenda-item">
+      <strong>${p.tipo === 'meet' ? '🎥 Google Meet' : '🚗 Visita técnica'} — ${escapeHtml(p.quando)}</strong>
+      ${p.endereco ? `<div class="cc-muted">📍 ${escapeHtml(p.endereco)}</div>` : ''}
+      ${p.resumo ? `<div class="cc-muted">📝 ${escapeHtml(p.resumo)}</div>` : ''}
+      ${botoes}
+    </div>`;
+  }).join('');
+  return `${flash}<div class="cc-aviso cc-aviso-atencao cc-at-agenda" role="status" id="cc-agenda-pendente">${icone('alert', 'sm')}<div><strong>Agendamento aguardando sua confirmação</strong>
+    <div class="cc-muted">O cliente escolheu o horário e ouviu que vocês vão confirmar. Nada foi marcado na agenda ainda.</div>${itens}</div></div>`;
 }
 
 /** Cabeçalho que o script da troca suave manda para pedir só o miolo. */
@@ -1108,7 +1153,10 @@ export function renderAtendimentoPage(p: AtendimentoInput): string {
   const raiz = `cc-root cc-at${lead || ct ? ' cc-at-com-lead' : ''}`;
   // nome de quem escreve: o balão "enviando…" já nasce igual ao de verdade ("Junior · pelo painel")
   const eu = p.user?.nome?.trim() || null;
-  const colChat = lead ? colunaChat(lead, mensagens, assistente, assistenteMin, p.envio, p.donoPessoal ?? null, can(p.user, 'leads', 'editar'), eu) : ct ? colunaChatContato(ct, p.donoPessoal ?? null, assistente, eu) : chatSemLead();
+  // Aviso de agendamento esperando o admin (28/09): DENTRO da coluna do chat, pra
+  // vir junto na troca suave de contato (o miolo troca só chat + resumo).
+  const agendaHtml = lead ? blocoAgendaPendente(lead.id, p.agendamentos ?? [], Boolean(p.user?.isAdmin) && can(p.user, 'leads', 'editar'), p.agendaMsg) : '';
+  const colChat = lead ? colunaChat(lead, mensagens, assistente, assistenteMin, p.envio, p.donoPessoal ?? null, can(p.user, 'leads', 'editar'), eu, agendaHtml) : ct ? colunaChatContato(ct, p.donoPessoal ?? null, assistente, eu) : chatSemLead();
   const colResumo = lead ? colunaCockpit(lead, p.servicos ?? [], assistente, assistenteMin, mensagens.some((m) => { const md = (m as MensagemChat).midia; return !!md && (md.tipo === 'imagem' || md.tipo === 'documento'); })) : ct ? cockpitContato(ct, p.donoPessoal ?? null) : cockpitSemLead();
   const modais = `${lead && !CLIENTE_STATUSES.includes(String(lead.installation_status ?? '')) ? modalFechou(lead) : ''}
     ${lead && lead.status !== 'perdido' ? modalPerdido(lead, assistente) : ''}`;
@@ -1443,6 +1491,14 @@ ir(location.href,false,e.state&&typeof e.state.y==='number'?e.state.y:undefined)
 window.ccAtTroca={ir:function(h){var u=new URL(h,location.href);if(!podeTrocar(u))return false;ir(u.href,true);return true;},
   /* redesenha o miolo da conversa aberta (depois de Assumir/Devolver), sem esqueleto nem histórico novo */
   recarregar:function(){ir(location.href,false);}};
+/* Aviso de agendamento (✅/📞/❌/🕐) sem recarregar: o MESMO POST; depois redesenha o miolo e mostra o resultado. */
+document.addEventListener('submit',function(e){var f=e.target;if(!f||!f.closest||!f.closest('.cc-at-agenda'))return;var ac=f.getAttribute('action')||'';
+if(!/^\\/dashboard\\/leads\\/[0-9a-f-]{36}\\/agendamento\\/[0-9a-f-]{36}$/i.test(ac))return;e.preventDefault();
+var bs=f.closest('.cc-at-agenda').querySelectorAll('button');for(var i=0;i<bs.length;i++)bs[i].disabled=true;
+fetch(ac,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(new FormData(f)).toString()})
+.then(function(r){if(!r.ok)throw new Error('http');var msg='';try{msg=new URL(r.url).searchParams.get('agenda')||'';}catch(x){}
+return ir(location.href,false).then(function(){var c=col('.cc-at-chat');if(!c||!msg)return;var d=document.createElement('div');d.className='cc-aviso cc-aviso-info cc-at-agenda';d.setAttribute('role','status');d.textContent=msg;
+var m=c.querySelector('.cc-at-msgs');if(m)c.insertBefore(d,m);else c.appendChild(d);});}).catch(function(){f.submit();});});
 /* ✋ Assumir / ↩ Devolver sem recarregar: o MESMO POST (o servidor confere tudo); depois o miolo é redesenhado. */
 document.addEventListener('submit',function(e){var f=e.target;if(!f||!f.closest||!f.closest('#cc-at-topo'))return;var ac=f.getAttribute('action')||'';
 if(!/^\\/dashboard\\/leads\\/[0-9a-f-]{36}\\/(pause|resume)-eva$/i.test(ac))return;e.preventDefault();var b=f.querySelector('button[type=submit]');if(b)b.disabled=true;
