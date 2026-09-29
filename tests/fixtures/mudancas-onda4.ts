@@ -117,3 +117,11 @@ export const MUDANCAS_R23: Record<string, MudancaContrato[]> = {
   predio: [r23NaCasca('predio')],
   cerebro: [r23NaCasca('cerebro')],
 };
+
+
+// ════════════════════════════════════════════════════════════════════════
+// R24 — Visão geral (/home)
+// ════════════════════════════════════════════════════════════════════════
+
+/** R24: trocas por caso de tests/fixtures/casos-home.ts. */
+export const MUDANCAS_R24: Record<string, MudancaContrato[]> = {};
