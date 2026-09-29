@@ -117,3 +117,50 @@ describe('dps-xml', () => {
     expect(toma).not.toContain('<IM>');
   });
 });
+
+// Reforma tributária: grupo IBSCBS da DPS v1.01 (manual NotaControl v1.01 +
+// GerarNfseEnvio-exemplo.xml oficial). Obrigatório pra competência a partir de
+// 01/10/2026. Campos e ordem do TCRTCInfoIBSCBS: finNFSe → [indFinal] → cIndOp →
+// [tpOper/gRefNFSe/tpEnteGov] → indDest → [dest] → [imovel] → valores{trib{gIBSCBS{CST, cClassTrib}}}.
+describe('dps-xml — grupo IBS/CBS (DPS 1.01)', () => {
+  const ibscbs = { cIndOp: '050102', cst: '000', cClassTrib: '000001' };
+  it('com IBS/CBS a DPS vira versão 1.01; sem, continua 1.00', () => {
+    expect(montarDpsXml({ ...entrada, ibscbs }).xml).toContain('<DPS xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.01">');
+    expect(montarDpsXml(entrada).xml).toContain('versao="1.00"');
+    expect(montarDpsXml(entrada).xml).not.toContain('<IBSCBS>');
+  });
+  it('monta o grupo com os valores da nota 82, na ordem do schema', () => {
+    const { xml } = montarDpsXml({ ...entrada, ibscbs });
+    expect(xml).toContain(
+      '<IBSCBS><finNFSe>0</finNFSe><cIndOp>050102</cIndOp><indDest>0</indDest>' +
+      '<valores><trib><gIBSCBS><CST>000</CST><cClassTrib>000001</cClassTrib></gIBSCBS></trib></valores></IBSCBS>',
+    );
+  });
+  it('o grupo é o ÚLTIMO filho do infDPS (depois de valores, antes da assinatura)', () => {
+    const { xml } = montarDpsXml({ ...entrada, ibscbs });
+    expect(xml.indexOf('</valores><IBSCBS>')).toBeGreaterThan(0);
+    expect(xml).toMatch(/<\/IBSCBS><\/infDPS><\/DPS>$/);
+  });
+  it('NÃO manda alíquota nem tpOper/tpEnteGov (o fisco calcula; tpOper é proibido fora de 25.05/15.09/17.12/10.05)', () => {
+    const { xml } = montarDpsXml({ ...entrada, ibscbs });
+    for (const tag of ['<pCBS>', '<pIBSUF>', '<tpOper>', '<tpEnteGov>', '<dest>', '<imovel>']) expect(xml).not.toContain(tag);
+  });
+  it('nota 83 (alíquota reduzida): CST 200 / cClassTrib 200052 / cIndOp 100301', () => {
+    const { xml } = montarDpsXml({ ...entrada, ibscbs: { cIndOp: '100301', cst: '200', cClassTrib: '200052' } });
+    expect(xml).toContain('<cIndOp>100301</cIndOp>');
+    expect(xml).toContain('<CST>200</CST><cClassTrib>200052</cClassTrib>');
+  });
+  it('recusa código fora do formato (CST 3 dígitos, cClassTrib/cIndOp 6 dígitos)', () => {
+    expect(() => montarDpsXml({ ...entrada, ibscbs: { ...ibscbs, cst: '00' } })).toThrow(/CST/);
+    expect(() => montarDpsXml({ ...entrada, ibscbs: { ...ibscbs, cClassTrib: '1' } })).toThrow(/cClassTrib/);
+    expect(() => montarDpsXml({ ...entrada, ibscbs: { ...ibscbs, cIndOp: 'abc' } })).toThrow(/cIndOp/);
+  });
+  it('NBS vai no cServ depois da descrição, só dígitos (TSCodNBS: N 9)', () => {
+    const { xml } = montarDpsXml({ ...entrada, servico: { ...entrada.servico, nbs: '1.1415.00.00' } });
+    expect(xml).toContain('<xDescServ>adequação do sistema de aterramento elétrico</xDescServ><cNBS>114150000</cNBS></cServ>');
+  });
+  it('NBS inválido (não tem 9 dígitos) não vai pro XML', () => {
+    const { xml } = montarDpsXml({ ...entrada, servico: { ...entrada.servico, nbs: '1.14' } });
+    expect(xml).not.toContain('<cNBS>');
+  });
+});

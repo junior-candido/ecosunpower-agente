@@ -4,7 +4,12 @@
 
 import { Resend } from 'resend';
 
-export type EnvioEmail = { to: string; subject: string; html: string };
+export type AnexoEmail = { filename: string; content: Buffer; contentType?: string };
+export type EnvioEmail = {
+  to: string; subject: string; html: string;
+  /** Anexos (ex.: NFS-e em PDF + XML). A Resend aceita até 40 MB no total. */
+  attachments?: AnexoEmail[];
+};
 
 export class EmailSender {
   private resend: Resend;
@@ -44,6 +49,10 @@ export class EmailSender {
       html: e.html,
       // so manda a chave se houver endereco — evita enviar replyTo vazio
       ...(responder ? { replyTo: responder } : {}),
+      // so manda a chave quando ha anexo — o payload dos outros e-mails nao muda
+      ...(e.attachments && e.attachments.length
+        ? { attachments: e.attachments.map((a) => ({ filename: a.filename, content: a.content, ...(a.contentType ? { contentType: a.contentType } : {}) })) }
+        : {}),
     });
     if (error) throw new Error(error.message ?? 'resend send error');
     return data?.id ?? '';

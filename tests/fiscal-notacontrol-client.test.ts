@@ -1,6 +1,6 @@
 // tests/fiscal-notacontrol-client.test.ts
 import { describe, it, expect } from 'vitest';
-import { montarEnvelope, interpretarResposta } from '../src/modules/financeiro/fiscal/notacontrol-client.js';
+import { montarEnvelope, interpretarResposta, montarConsultaDadosCadastrais, interpretarDadosCadastrais } from '../src/modules/financeiro/fiscal/notacontrol-client.js';
 
 describe('notacontrol-client', () => {
   it('envelopa com os parâmetros nfseCabecMsg e nfseDadosMsg, XML INLINE sem escapar (S000 do validador 31/08)', () => {
@@ -82,5 +82,47 @@ describe('notacontrol-client', () => {
     const r = interpretarResposta(resp);
     expect(r.ok).toBe(false);
     if (!r.ok) { expect(r.erros[0].codigo).toBe('E160'); expect(r.erros[0].mensagem).toContain('desacordo'); }
+  });
+});
+
+describe('notacontrol-client — versão do cabeçalho acompanha a DPS', () => {
+  it('DPS 1.01 (com IBS/CBS) → cabecalho e versaoDados 1.01', () => {
+    const env = montarEnvelope('GerarNfse', '<DPS xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.01"><infDPS/></DPS>');
+    expect(env).toContain('<cabecalho versao="1.01"');
+    expect(env).toContain('<versaoDados>1.01</versaoDados>');
+  });
+  it('DPS 1.00 continua 1.00', () => {
+    const env = montarEnvelope('GerarNfse', '<DPS xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.00"><infDPS/></DPS>');
+    expect(env).toContain('<cabecalho versao="1.00"');
+  });
+});
+
+describe('notacontrol-client — ConsultarDadosCadastrais (atividades = cTribMun)', () => {
+  it('monta o pedido com CNPJ e IM do prestador (tcIdentificacaoPessoaEmpresaComIM)', () => {
+    const corpo = montarConsultaDadosCadastrais('33.020.459/0001-06', '0790506200159');
+    expect(corpo).toBe('<Prestador><CNPJ>33020459000106</CNPJ><IM>0790506200159</IM></Prestador>');
+    const env = montarEnvelope('ConsultarDadosCadastrais', corpo);
+    expect(env).toContain('<ConsultarDadosCadastraisEnvio xmlns="http://www.sped.fazenda.gov.br/nfse"><Prestador>');
+    expect(env).toContain('<nfse:ConsultarDadosCadastrais>');
+  });
+  it('lê as atividades (cTribMun, descrição, alíquota) — resposta escapada dentro do Result', () => {
+    const interno = '<ConsultarDadosCadastraisResposta><Cadastro><Atividades>' +
+      '<Atividade><cTribMun>1401</cTribMun><xTribMun>14.01 - Lubrificação, limpeza</xTribMun><pAliq>5.00</pAliq></Atividade>' +
+      '<Atividade><cTribMun>3101</cTribMun><xTribMun>31.01 - Serviços técnicos</xTribMun><pAliq>5.00</pAliq></Atividade>' +
+      '</Atividades></Cadastro></ConsultarDadosCadastraisResposta>';
+    const soap = `<soap:Envelope><soap:Body><ConsultarDadosCadastraisResponse><ConsultarDadosCadastraisResult>${interno.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</ConsultarDadosCadastraisResult></ConsultarDadosCadastraisResponse></soap:Body></soap:Envelope>`;
+    const r = interpretarDadosCadastrais(soap);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.atividades).toEqual([
+        { cTribMun: '1401', xTribMun: '14.01 - Lubrificação, limpeza', pAliq: 5 },
+        { cTribMun: '3101', xTribMun: '31.01 - Serviços técnicos', pAliq: 5 },
+      ]);
+    }
+  });
+  it('erro do fisco vira lista de mensagens', () => {
+    const r = interpretarDadosCadastrais('<x><MensagemRetorno><Codigo>E004</Codigo><Mensagem>IM inválida</Mensagem></MensagemRetorno></x>');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.erros[0]).toMatchObject({ codigo: 'E004', mensagem: 'IM inválida' });
   });
 });
