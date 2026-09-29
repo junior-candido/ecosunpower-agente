@@ -265,11 +265,11 @@ describe('GET /leads/midia/:id — ver/baixar (LGPD: só quem vê a conversa)', 
     expect(r.destino).toMatch(/^https:\/\/storage\.test\/whatsapp-midia\/.+ttl=120/);
     expect(r.headers['cache-control']).toContain('no-store');
   });
-  it('?baixar=1 força o download com o nome do arquivo', async () => {
+  it('?baixar=1 força o download com nome amigável "<cliente>_<data>_<tipo>.<ext>"', async () => {
     const c = comMidia();
     const r = res();
     await c.rotas.midia(pedir(junior, { baixar: '1' }), r);
-    expect(r.destino).toContain('download=conta.pdf');
+    expect(r.destino).toMatch(/download=Ana-Exemplo_(\d{4}-\d\d-\d\d|sem-data)_pdf\.pdf/);
   });
   it('outra empresa: 404', async () => {
     const c = comMidia();
