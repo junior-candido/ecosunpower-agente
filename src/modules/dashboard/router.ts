@@ -2463,8 +2463,8 @@ b.onclick=async function(){
       // (padrão) é o mesmo supabase de serviço — zero mudança até o Junior virar a chave.
       const db = bancoDoOperador(req as AuthedRequest, supabase);
       const [result, insights] = await Promise.all([
-        listLeads(db, { status, only_alerts, atencao, search, limit, offset, viewerId: viewer.id, viewerIsAdmin: viewer.isAdmin }),
-        buildLeadsInsights(db),
+        listLeads(db, { status, only_alerts, atencao, search, limit, offset, viewerId: viewer.id, viewerIsAdmin: viewer.isAdmin, companyId: viewer.companyId }),
+        buildLeadsInsights(db, viewer.companyId),
       ]);
       res.send(renderLeadsListPage(result.rows, {
         status,
@@ -2532,10 +2532,27 @@ b.onclick=async function(){
     try {
       const { getLeadDetail, leadDaSessao } = await import('./leads-queries.js');
       const { renderLeadDetailPage } = await import('./leads-views.js');
+      const viewer = (req as AuthedRequest).dashUser!;
+      // Demora (28/09): a lista de conversas, o chat e os serviços NÃO dependem
+      // do lead carregado — saem JUNTO com ele (antes: só depois, em fila).
+      // São só LEITURAS, todas presas à empresa da sessão (lista/chat) ou ao id;
+      // nada disso vai pra tela antes das travas de empresa e de vendedor abaixo.
+      const { servicosDoLead } = await import('./servicos-store.js');
+      const { listarConversas, historicoDoLead, lerFiltros } = await import('./conversas-queries.js');
+      const db = bancoDoOperador(req as AuthedRequest, supabase);
+      const filtros = lerFiltros(req.query as Record<string, unknown>);
+      // Parte 2: o chat junta a memória da Eva com o histórico do painel
+      // (envios com autor/canal + "assumiu"/"devolveu") e traz o campo de resposta.
+      const extrasP = Promise.all([
+        servicosDoLead(supabase, id).catch(() => []),
+        listarConversas(db, viewer, filtros, supabase),
+        historicoDoLead(db, id, viewer.companyId, viewer.id, supabase).catch(() => undefined),
+        rotasAtendimento.nomeDoDonoPessoal(req as AuthedRequest),
+      ]);
+      extrasP.catch(() => {}); // saída antecipada (404/403) não deixa rejeição solta
       const lead = await getLeadDetail(supabase, id);
       if (!lead) return res.status(404).send('lead não encontrado');
 
-      const viewer = (req as AuthedRequest).dashUser!;
       // Multi-tenant (Atendimento, 28/09): o lead TEM que ser da empresa da sessão.
       // Antes da trava, qualquer operador abria (e "capturava") lead de outra
       // empresa sabendo o id. Confere ANTES do claim automático, que grava.
@@ -2570,18 +2587,7 @@ b.onclick=async function(){
 
       // Atendimento: a ficha virou a tela de 3 colunas. O Copiloto IA saiu da
       // tela (decisão do Junior, 28/09) — a rota /ia-copiloto continua viva.
-      const { servicosDoLead } = await import('./servicos-store.js');
-      const { listarConversas, historicoDoLead, lerFiltros } = await import('./conversas-queries.js');
-      const db = bancoDoOperador(req as AuthedRequest, supabase);
-      const filtros = lerFiltros(req.query as Record<string, unknown>);
-      // Parte 2: o chat junta a memória da Eva com o histórico do painel
-      // (envios com autor/canal + "assumiu"/"devolveu") e traz o campo de resposta.
-      const [servicosDoCliente, lista, mensagens, donoPessoal] = await Promise.all([
-        servicosDoLead(supabase, id).catch(() => []),
-        listarConversas(db, viewer, filtros, supabase),
-        historicoDoLead(db, id, viewer.companyId, viewer.id, supabase).catch(() => undefined),
-        rotasAtendimento.nomeDoDonoPessoal(req as AuthedRequest),
-      ]);
+      const [servicosDoCliente, lista, mensagens, donoPessoal] = await extrasP;
       // Padrão da resposta = o número em que o cliente escreveu por último (P2b).
       const envio = can(viewer, 'leads', 'editar') ? await rotasAtendimento.envioDaTela(req as AuthedRequest, lead, mensagens ?? []) : undefined;
       // W3: abriu a conversa → marca como lida no WhatsApp pessoal (só o dono, com a opção ligada).

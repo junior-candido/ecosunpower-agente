@@ -132,6 +132,10 @@ interface LayoutInput {
   // miolo não tem utilitário Tailwind. No lugar entra o reset de base servido
   // por arquivo (ui/estatico.ts). perf/telas-leves, 28/09/2026.
   tailwind?: boolean;
+  // CSS PRÓPRIO da tela, no <head> (depois do CSS do painel). Só constante do
+  // código — nunca dado de cliente. <style> no fim do <body> faz a tela pintar
+  // sem ele e "pular" quando o HTML termina de chegar (piscada, 28/09/2026).
+  cabeca?: string;
 }
 
 export function renderLayout(input: LayoutInput): string {
@@ -207,6 +211,7 @@ export function renderLayout(input: LayoutInput): string {
     `<link rel="stylesheet" href="${URL_CSS_PAINEL}">`,
     comTailwind ? '' : `<link rel="stylesheet" href="${URL_CSS_SEM_TAILWIND}">`,
     `<style>\n  :root { --marca: ${corMarca}; }\n</style>`,
+    input.cabeca ?? '',
   ].filter(Boolean).join('\n');
 
   return `<!doctype html>

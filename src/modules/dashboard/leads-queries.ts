@@ -11,6 +11,7 @@ import { tarefasPendentes } from './tarefas.js';
 import { seloSla } from './sla-rules.js';
 import { ORDEM_ETAPAS } from './pipeline.js';
 import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
+import { filtroEmpresa } from './filtro-empresa.js';
 
 export interface LeadRow {
   id: string;
@@ -75,6 +76,9 @@ export interface ListLeadsOptions {
   viewerIsAdmin?: boolean;
   // só leads com tarefa pendente vencida (due_at < agora)
   atencao?: boolean;
+  // Empresa da SESSÃO (multi-tenant, 28/09): lista e contagens só dela (a casa
+  // leva também os legados sem empresa). Ausente = sem filtro (compatibilidade).
+  companyId?: string;
 }
 
 export interface LeadsResult {
@@ -116,6 +120,7 @@ export async function listLeads(
   const visFilter = filters.viewerId && !filters.viewerIsAdmin
     ? `claimed_by.is.null,claimed_by.eq.${filters.viewerId}`
     : null;
+  const empFilter = filters.companyId !== undefined ? filtroEmpresa(filters.companyId) : null;
 
   // Contagens — todos os status ativos do funil + ganhos (cliente) + perdidos. Em paralelo.
   // statusNormais agora cobre TODO o funil (inclui proposta_enviada/negociacao/ganho), senão
@@ -133,6 +138,7 @@ export async function listLeads(
         .is('archived_at', null)
         .eq('status', s);
       if (visFilter) cq = cq.or(visFilter);
+      if (empFilter) cq = cq.or(empFilter);
       return cq;
     }),
     // Perdidos (status='perdido', ignora installation_status)
@@ -142,6 +148,7 @@ export async function listLeads(
         .is('archived_at', null)
         .eq('status', 'perdido');
       if (visFilter) cq = cq.or(visFilter);
+      if (empFilter) cq = cq.or(empFilter);
       return cq;
     })(),
     // Ganhos (installation_status em CLIENTE_STATUSES — virou cliente de fato)
@@ -151,6 +158,7 @@ export async function listLeads(
         .is('archived_at', null)
         .in('installation_status', CLIENTE_STATUSES);
       if (visFilter) cq = cq.or(visFilter);
+      if (empFilter) cq = cq.or(empFilter);
       return cq;
     })(),
   ]);
@@ -164,6 +172,7 @@ export async function listLeads(
     )
     .is('archived_at', null)
     .order('updated_at', { ascending: false });
+  if (empFilter) q = q.or(empFilter);
 
   // Tabs especiais: ganhos e perdidos
   if (filters.status === 'ganhos') {
@@ -300,20 +309,42 @@ export async function getLeadDetail(client: SupabaseClient, id: string): Promise
   if (error) throw new Error(`Failed to load lead: ${error.message}`);
   if (!lead) return null;
 
-  const { data: convo } = await client
-    .from('conversations')
-    .select('messages')
-    .eq('lead_id', id)
-    .order('created_at', { ascending: false })
-    .limit(1);
+  // O resto do lead vai ao banco na MESMA rodada (28/09: eram 6 rodadas em
+  // fila — conversa → cadência → anexos → links → linha do tempo → tarefas).
+  const [convo, cads, anexos, timeline, tarefas] = await Promise.all([
+    Promise.resolve(client
+      .from('conversations')
+      .select('messages')
+      .eq('lead_id', id)
+      .order('created_at', { ascending: false })
+      .limit(1)).then((r) => r.data),
+    Promise.resolve(client
+      .from('eva_cadence')
+      .select('step, scheduled_for, status, sent_at')
+      .eq('lead_id', id)
+      .order('step', { ascending: true })).then((r) => r.data),
+    // Anexos do lead (inclui midia que o cliente enviou pela Eva: conta, foto, etc.)
+    (async () => {
+      const { data: anexosRaw } = await client
+        .from('lead_anexos')
+        .select('id, tipo, descricao, storage_path, mime_type, created_by, created_at')
+        .eq('lead_id', id)
+        .order('created_at', { ascending: false });
+      const anexoPaths = (anexosRaw ?? []).map((a: any) => a.storage_path).filter(Boolean);
+      const anexoUrls = anexoPaths.length > 0 ? await getSignedUrls(client, anexoPaths, 3600) : {};
+      return (anexosRaw ?? []).map((a: any) => ({
+        id: a.id, tipo: a.tipo, descricao: a.descricao,
+        url: anexoUrls[a.storage_path] ?? '',
+        mime_type: a.mime_type, created_by: a.created_by, created_at: a.created_at,
+      }));
+    })(),
+    // Timeline de atividades do lead (best-effort: não quebra o detalhe se falhar)
+    listarTimeline(client, id).catch((): Atividade[] => []),
+    // Tarefas pendentes do lead (best-effort: não quebra o detalhe se falhar)
+    tarefasPendentes(client, id).catch((): Tarefa[] => []),
+  ]);
 
   const conversation_messages = convo && convo.length > 0 ? (convo[0].messages ?? []) : [];
-
-  const { data: cads } = await client
-    .from('eva_cadence')
-    .select('step, scheduled_for, status, sent_at')
-    .eq('lead_id', id)
-    .order('step', { ascending: true });
 
   const now = Date.now();
   const updatedAge = now - new Date(lead.updated_at).getTime();
@@ -325,36 +356,6 @@ export async function getLeadDetail(client: SupabaseClient, id: string): Promise
   if (isSilent && !has_cadence_pending && !lead.opt_out) alerta = 'silente_sem_cadencia';
   else if (isSilent && has_cadence_pending) alerta = 'silente_com_cadencia';
   else if (isNew) alerta = 'novo';
-
-  // Anexos do lead (inclui midia que o cliente enviou pela Eva: conta, foto, etc.)
-  const { data: anexosRaw } = await client
-    .from('lead_anexos')
-    .select('id, tipo, descricao, storage_path, mime_type, created_by, created_at')
-    .eq('lead_id', id)
-    .order('created_at', { ascending: false });
-  const anexoPaths = (anexosRaw ?? []).map((a: any) => a.storage_path).filter(Boolean);
-  const anexoUrls = anexoPaths.length > 0 ? await getSignedUrls(client, anexoPaths, 3600) : {};
-  const anexos = (anexosRaw ?? []).map((a: any) => ({
-    id: a.id, tipo: a.tipo, descricao: a.descricao,
-    url: anexoUrls[a.storage_path] ?? '',
-    mime_type: a.mime_type, created_by: a.created_by, created_at: a.created_at,
-  }));
-
-  // Timeline de atividades do lead (best-effort: não quebra o detalhe se falhar)
-  let timeline: Atividade[] = [];
-  try {
-    timeline = await listarTimeline(client, id);
-  } catch {
-    // silencia: falha na timeline não impede carregar o detalhe
-  }
-
-  // Tarefas pendentes do lead (best-effort: não quebra o detalhe se falhar)
-  let tarefas: Tarefa[] = [];
-  try {
-    tarefas = await tarefasPendentes(client, id);
-  } catch {
-    // silencia: falha nas tarefas não impede carregar o detalhe
-  }
 
   return {
     id: lead.id,
@@ -450,6 +451,7 @@ export async function leadsParaKanban(
     .select('id, name, phone, status, claimed_by, updated_at')
     .is('archived_at', null)
     .or(baseFilter)
+    .or(filtroEmpresa(user.companyId)) // só a empresa da sessão (multi-tenant, 28/09)
     .order('updated_at', { ascending: false })
     .limit(500);
 
