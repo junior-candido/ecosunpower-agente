@@ -8,6 +8,8 @@ import { HiggsfieldImageGenerator } from './marketing/higgsfield-gen.js';
 import { applyBrandLogo } from './marketing/branded-frame.js';
 import { pickScene } from './marketing/solar-scenes.js';
 import { pickTopicType } from './marketing/post-rotation.js';
+import { medirIa } from './custos/ia-metering.js';
+import { ECOSUN_COMPANY_ID } from './tenant-resolver.js';
 
 export type PostTopicType =
   | 'objecao_desmistificada'
@@ -156,6 +158,8 @@ Retorne apenas o JSON, sem explicações.`;
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userPrompt }],
     });
+    // Post do Instagram da casa (cron) — custo da casa.
+    medirIa({ modelo: response.model ?? 'claude-opus-4-7', origem: 'escrita:marketing', usage: response.usage, companyId: ECOSUN_COMPANY_ID });
 
     const text = response.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')

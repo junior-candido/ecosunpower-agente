@@ -2,6 +2,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { registrarEvento } from './elo/eventos.js';
 import { empresa } from './empresa-config.js';
+import { medirIa } from './custos/ia-metering.js';
+import { ECOSUN_COMPANY_ID } from './tenant-resolver.js';
 
 // Enum de installation_status. Fonte unica — importe no endpoint pra
 // validacao, evita drift entre codigo e migration (CHECK constraint espelha
@@ -285,6 +287,8 @@ Gere APENAS o texto da mensagem, sem explicacao.`;
       max_tokens: 300,
       messages: [{ role: 'user', content: prompt }],
     });
+    // Sai pelo número da casa (cron fora de contexto) — custo da casa.
+    medirIa({ modelo: res.model ?? 'claude-haiku-4-5-20251001', origem: 'reativacao:pos-instalacao', usage: res.usage, companyId: ECOSUN_COMPANY_ID });
     return res.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
       .map((b) => b.text)

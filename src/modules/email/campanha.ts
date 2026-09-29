@@ -20,6 +20,7 @@ import { montarMolduraEmail, type NoticiaBlog } from './email-moldura.js';
 import { buscarNoticiasBlog } from './blog-noticias.js';
 import { dicaDoDia } from './dicas-de-ouro.js';
 import { registrarEvento } from '../elo/eventos.js';
+import { medirIa } from '../custos/ia-metering.js';
 
 const RSS_URL_PADRAO = 'https://www.ecosunpower.eng.br/rss.xml';
 
@@ -188,6 +189,7 @@ export class CampanhaService {
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userPrompt }],
     });
+    medirIa({ modelo: (response as any).model ?? 'claude-opus-4-7', origem: 'escrita:email-campanha', usage: (response as any).usage });
     const text = (response.content as any[])
       .filter((b) => b.type === 'text')
       .map((b) => b.text)

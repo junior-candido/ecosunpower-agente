@@ -5,6 +5,7 @@
 // fica vazio (e o gerador põe um branco). Nunca inventa dado.
 import type Anthropic from '@anthropic-ai/sdk';
 import { pdfGrandeDemais, PDF_TIMEOUT_MS } from '../pdf-guard.js';
+import { medirIa } from '../custos/ia-metering.js';
 
 export interface EnderecoDoc {
   rua?: string; numero?: string; bairro?: string; cidade?: string; uf?: string; cep?: string;
@@ -79,6 +80,7 @@ export async function extrairDocsContrato(
     } catch {
       resp = await anthropic.messages.create({ model: MODELO_RAPIDO, max_tokens: 700, messages }, { timeout: PDF_TIMEOUT_MS });
     }
+    medirIa({ modelo: resp.model ?? MODELO_FORTE, origem: 'midia:docs-contrato', usage: resp.usage });
     const txt = resp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('');
     return parseDadosDoc(txt);
   } catch (err) {

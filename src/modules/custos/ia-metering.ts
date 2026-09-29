@@ -8,6 +8,9 @@
 // malformado, etc.) NUNCA pode derrubar a resposta da Eva/Elo. Tudo em try/catch.
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { canalAtual } from '../canal-contexto.js';
+import { empresa, temContextoDeEmpresa } from '../empresa-config.js';
 
 // Preços oficiais Anthropic, em USD por MILHÃO de tokens (cache 2026-06-24).
 // input = tokens de entrada "frescos"; output = tokens gerados.
@@ -34,6 +37,7 @@ const PRECO_FALLBACK: PrecoModelo = PRECOS_USD_POR_MILHAO.sonnet;
 // Multiplicadores de cache, derivados do input de cada modelo.
 const MULT_CACHE_READ = 0.1; // leitura = 0.1 × input
 const MULT_CACHE_WRITE = 1.25; // escrita (5min) = 1.25 × input
+const MULT_CACHE_WRITE_1H = 2; // escrita (1 hora) = 2 × input
 
 // Cotação aproximada — ajustar quando variar muito.
 export const USD_BRL = 5.4;
@@ -45,6 +49,12 @@ export interface IaUsage {
   output_tokens?: number | null;
   cache_read_input_tokens?: number | null;
   cache_creation_input_tokens?: number | null;
+  /** Quebra da escrita de cache por TTL (a SDK devolve quando há cache).
+   *  Escrita de 1 hora custa 2× o input; a de 5 min, 1,25×. */
+  cache_creation?: {
+    ephemeral_5m_input_tokens?: number | null;
+    ephemeral_1h_input_tokens?: number | null;
+  } | null;
 }
 
 // Normaliza o nome do modelo (ex.: 'claude-haiku-4-5-20251001' → 'haiku') e
@@ -75,39 +85,178 @@ export function custoCentsBRL(modelo: string, usage: IaUsage): number {
   const output = usage.output_tokens ?? 0;
   const cacheRead = usage.cache_read_input_tokens ?? 0;
   const cacheWrite = usage.cache_creation_input_tokens ?? 0;
+  // Parte da escrita que foi pro cache de 1 hora (preço 2×). O resto é 5 min.
+  const write1h = Math.min(cacheWrite, Math.max(0, usage.cache_creation?.ephemeral_1h_input_tokens ?? 0));
+  const write5m = cacheWrite - write1h;
 
   const usd =
     (input * preco.input +
       output * preco.output +
       cacheRead * precoCacheRead +
-      cacheWrite * precoCacheWrite) /
+      write5m * precoCacheWrite +
+      write1h * preco.input * MULT_CACHE_WRITE_1H) /
     1_000_000;
 
   return Math.round(usd * USD_BRL * 100);
 }
 
+// ---------------------------------------------------------------------------
+// DE QUEM É O CUSTO (28/09/2026). Antes daqui nada dizia a empresa e o DEFAULT
+// da coluna (migration 077) jogava TUDO na casa — o gasto da Clara (Conquista
+// Solar) aparecia como da Eva. Ordem de quem responde:
+//   1. companyId explícito na chamada;
+//   2. contexto do custo (o painel liga por requisição, com a empresa do login);
+//   3. canal da mensagem (a fila roda cada job dentro de comCanal({companyId}));
+//   4. empresa em contexto (comEmpresaDe).
+// Nada disso → grava na casa (default) mas MARCA a origem com '#sem-empresa'
+// e avisa no log: é assim que a gente acha os buracos que faltam.
+// ---------------------------------------------------------------------------
+export const SUFIXO_SEM_EMPRESA = '#sem-empresa';
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const valido = (id: unknown): id is string => typeof id === 'string' && UUID.test(id);
+
+const alsCusto = new AsyncLocalStorage<string | null>();
+
+/** Roda `fn` dizendo de qual empresa é o custo de IA de tudo que rodar dentro
+ *  (awaits inclusos). Só mexe na MEDIÇÃO — não muda empresa() nem nada da tela. */
+export function comEmpresaDoCusto<T>(companyId: string | null | undefined, fn: () => T): T {
+  return alsCusto.run(valido(companyId) ? companyId.toLowerCase() : null, fn);
+}
+
+/** Empresa do custo pelo contexto (sem o explícito). null = ninguém disse. */
+export function empresaDoCustoNoContexto(): string | null {
+  const doPainel = alsCusto.getStore();
+  if (valido(doPainel)) return doPainel;
+  const doCanal = canalAtual()?.companyId;
+  if (valido(doCanal)) return doCanal.toLowerCase();
+  if (temContextoDeEmpresa()) {
+    const id = empresa().companyId;
+    if (valido(id)) return id.toLowerCase();
+  }
+  return null;
+}
+
+// Aviso de "sem empresa" no máximo 1× por origem a cada 10 min (não inunda o log).
+const ultimoAviso = new Map<string, number>();
+function avisarSemEmpresa(origem: string): void {
+  const agora = Date.now();
+  if ((ultimoAviso.get(origem) ?? -Infinity) > agora - 10 * 60_000) return;
+  ultimoAviso.set(origem, agora);
+  console.warn(`[custos] IA sem empresa (origem=${origem}) — gravado na casa; passe companyId ou rode no contexto da empresa`);
+}
+
+// ---------------------------------------------------------------------------
+// ORIGEM PADRONIZADA: 'tipo:detalhe'. tipo = conversa | midia | resumo |
+// reativacao | escrita | admin. A tela "Custo de IA" agrupa por aqui.
+// ---------------------------------------------------------------------------
+export type TipoUsoIa = 'conversa' | 'midia' | 'resumo' | 'reativacao' | 'escrita' | 'admin';
+
+export const ORIGENS_IA = {
+  'conversa:lead': 'Conversa com lead/cliente (assistente)',
+  'conversa:leadgen': 'Primeira mensagem de lead de formulário',
+  'midia:imagem': 'Leitura de foto enviada',
+  'midia:pdf': 'Leitura de PDF enviado',
+  'midia:tabela-precos': 'Leitura de print da tabela de preços',
+  'midia:docs-contrato': 'Leitura de documentos do contrato',
+  'midia:leitor-conta': 'Leitor de conta (Gerador de Relatórios)',
+  'resumo:lead': 'Resumo do lead no painel',
+  'resumo:bi': 'Resumo de métricas (BI)',
+  'reativacao:followup': 'Follow-up de lead parado',
+  'reativacao:followup-proposta': 'Follow-up da proposta',
+  'reativacao:reabordagem-proposta': 'Reabordagem quando reabre a proposta',
+  'reativacao:cadencia': 'Cadência de mensagens',
+  'reativacao:reengajamento': 'Reengajamento de base',
+  'reativacao:manutencao': 'Lembrete de manutenção',
+  'reativacao:pos-instalacao': 'Mensagem pós-instalação',
+  'escrita:blog': 'Artigo do blog',
+  'escrita:copy': 'Texto de anúncio',
+  'escrita:email': 'E-mail',
+  'escrita:email-campanha': 'Campanha de e-mail',
+  'escrita:marketing': 'Marketing',
+  'escrita:corretor': 'Corretor de texto',
+  'escrita:abordagem-monitoramento': 'Abordagem do monitoramento',
+  'admin:agenda': 'Agenda do dono',
+  'admin:agendamento': 'Agendamento de visita',
+  'admin:proposta': 'Assistente de proposta',
+  'admin:preco': 'Assistente de preço',
+  'admin:fechamento': 'Assistente de fechamento',
+  'admin:contratos': 'Revisão de contrato',
+  'admin:financeiro': 'Lançamentos do financeiro',
+  'admin:elo': 'Elo (cérebro do painel)',
+  'admin:copiloto-pos-venda': 'Copiloto de pós-venda',
+  'admin:ia-comercial': 'IA comercial',
+  'admin:ia-copiloto': 'Copiloto',
+  'admin:ia-engenharia': 'IA de engenharia',
+  'admin:rh': 'RH (busca e triagem)',
+} as const satisfies Record<string, string>;
+
+export type OrigemIa = keyof typeof ORIGENS_IA;
+
+// Nomes ANTIGOS (gravados até 28/09/2026) → catálogo novo. Assim a tela lê
+// setembro inteiro certinho, sem reescrever o banco.
+const LEGADO: Record<string, OrigemIa> = {
+  eva: 'conversa:lead', leadgen: 'conversa:leadgen',
+  'tabela-precos-print': 'midia:tabela-precos',
+  'lead-synthesis': 'resumo:lead', bi: 'resumo:bi',
+  followup: 'reativacao:followup', 'followup-vivo': 'reativacao:followup-proposta',
+  cadence: 'reativacao:cadencia', maintenance: 'reativacao:manutencao',
+  blog: 'escrita:blog', copy: 'escrita:copy', email: 'escrita:email', corretor: 'escrita:corretor',
+  monitoramento: 'escrita:abordagem-monitoramento',
+  agenda: 'admin:agenda', closing: 'admin:fechamento', central_contratos: 'admin:contratos',
+  financeiro: 'admin:financeiro', elo: 'admin:elo', 'pos-venda': 'admin:copiloto-pos-venda',
+  'ia-comercial': 'admin:ia-comercial', 'ia-copiloto': 'admin:ia-copiloto', 'ia-engenharia': 'admin:ia-engenharia',
+};
+
+const TIPOS: ReadonlySet<string> = new Set(['conversa', 'midia', 'resumo', 'reativacao', 'escrita', 'admin']);
+
+/** Traduz a origem gravada (nova, antiga ou com '#sem-empresa') pro uso da tela. */
+export function usoDaOrigem(origem: string | null | undefined): {
+  chave: string; rotulo: string; tipo: TipoUsoIa; semEmpresa: boolean;
+} {
+  let o = String(origem ?? '').trim();
+  const semEmpresa = o.endsWith(SUFIXO_SEM_EMPRESA);
+  if (semEmpresa) o = o.slice(0, -SUFIXO_SEM_EMPRESA.length);
+  if (!o || o === 'sem-origem') return { chave: 'sem-origem', rotulo: 'Sem origem', tipo: 'admin', semEmpresa };
+  const chave: string = LEGADO[o] ?? (o.startsWith('leitor-ia') ? 'midia:leitor-conta' : o);
+  const rotulo = (ORIGENS_IA as Record<string, string>)[chave] ?? chave;
+  const prefixo = chave.split(':')[0];
+  const tipo = (TIPOS.has(prefixo) ? prefixo : 'admin') as TipoUsoIa;
+  return { chave, rotulo, tipo, semEmpresa };
+}
+
 /**
  * Grava 1 linha em custos_ia_uso com os tokens + o custo estimado em centavos
- * de BRL. Best-effort: qualquer erro é engolido (log) e a função nunca lança.
+ * de BRL + a EMPRESA dona do gasto. Best-effort: qualquer erro é engolido (log)
+ * e a função nunca lança.
  *
  * @param client Client Supabase (service role). Se null/undefined, não faz nada.
  */
 export async function registrarUsoIa(
   client: any,
-  args: { modelo: string; origem?: string; usage: IaUsage },
+  args: { modelo: string; origem?: OrigemIa | string; usage: IaUsage; companyId?: string | null },
 ): Promise<void> {
   try {
     if (!client) return;
-    const { modelo, origem, usage } = args;
+    const { modelo } = args;
+    const usage: IaUsage = args.usage ?? {};
+    // Resolve a empresa ANTES de qualquer await (o contexto é o de quem chamou).
+    const companyId = valido(args.companyId) ? args.companyId.toLowerCase() : empresaDoCustoNoContexto();
+    let origem: string = args.origem ?? 'sem-origem';
+    if (!companyId) {
+      avisarSemEmpresa(origem);
+      origem += SUFIXO_SEM_EMPRESA;
+    }
     const custo_cents = custoCentsBRL(modelo, usage);
     await client.from('custos_ia_uso').insert({
       modelo,
-      origem: origem ?? null,
+      origem,
       input_tokens: usage.input_tokens ?? 0,
       output_tokens: usage.output_tokens ?? 0,
       cache_read_tokens: usage.cache_read_input_tokens ?? 0,
       cache_write_tokens: usage.cache_creation_input_tokens ?? 0,
       custo_cents,
+      // Sem empresa → não manda: o DEFAULT da coluna (casa) segura.
+      ...(companyId ? { company_id: companyId } : {}),
     });
   } catch (err) {
     // Best-effort: medir custo nunca pode derrubar o fluxo da IA.
@@ -133,6 +282,8 @@ export function getCustosClient(): SupabaseClient | null {
  * sem precisar de um client Supabase à mão. Resolve o client lazy e dispara
  * registrarUsoIa sem esperar (fire-and-forget). Nunca lança, nunca bloqueia.
  */
-export function medirIa(args: { modelo: string; origem?: string; usage: any }): void {
-  void registrarUsoIa(getCustosClient(), args);
+export function medirIa(args: { modelo: string; origem: OrigemIa | `leitor-ia:${string}`; usage: any; companyId?: string | null }): void {
+  // Empresa resolvida AQUI (síncrono, no contexto de quem chamou).
+  const companyId = valido(args.companyId) ? args.companyId : empresaDoCustoNoContexto();
+  void registrarUsoIa(getCustosClient(), { ...args, companyId });
 }

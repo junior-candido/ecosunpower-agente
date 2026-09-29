@@ -5,6 +5,7 @@
 // (Opus com reserva no Haiku) -> bloco ```json```.
 import type Anthropic from '@anthropic-ai/sdk';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { medirIa } from '../custos/ia-metering.js';
 
 const MODELO_FORTE = 'claude-opus-4-7';
 const MODELO_RAPIDO = 'claude-haiku-4-5-20251001';
@@ -71,6 +72,7 @@ async function chamarComFallback(client: Anthropic, messages: Anthropic.Messages
     console.warn('[rh-triagem] Opus indisponível, fallback Haiku:', (apiErr as Error).message);
     response = await client.messages.create({ model: MODELO_RAPIDO, max_tokens: 800, messages });
   }
+  medirIa({ modelo: response.model ?? MODELO_FORTE, origem: 'admin:rh', usage: response.usage });
   return response.content.filter((b): b is Anthropic.Messages.TextBlock => b.type === 'text').map((b) => b.text).join('');
 }
 

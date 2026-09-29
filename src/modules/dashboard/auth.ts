@@ -9,6 +9,7 @@ import type { Request, Response, NextFunction } from 'express';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { DashUser } from './permissions.js';
 import { getUserById } from './users-store.js';
+import { comEmpresaDoCusto } from '../custos/ia-metering.js';
 
 const COOKIE_NAME = 'ecosun_dash_token';
 const COOKIE_TTL_DAYS = 60;
@@ -75,7 +76,9 @@ export function criarSessionAuth(client: SupabaseClient) {
       const user = await getUserById(client, userId);
       if (user) {
         req.dashUser = user;
-        next();
+        // Custo de IA desta requisição (resumo, Elo, copiloto…) vai pra empresa
+        // de quem está logado. Só a MEDIÇÃO — não muda nada da tela.
+        comEmpresaDoCusto(user.companyId, () => next());
         return;
       }
     }

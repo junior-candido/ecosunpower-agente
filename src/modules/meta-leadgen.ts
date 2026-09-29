@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import Anthropic from '@anthropic-ai/sdk';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { medirIa } from './custos/ia-metering.js';
+import { ECOSUN_COMPANY_ID } from './tenant-resolver.js';
 import { empresa } from './empresa-config.js';
 
 const GRAPH_API = 'https://graph.facebook.com/v21.0';
@@ -305,7 +306,7 @@ Gere APENAS o texto da mensagem, sem nenhuma explicacao, sem prefixo.`;
       max_tokens: 300,
       messages: [{ role: 'user', content: prompt }],
     });
-    medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'leadgen', usage: res.usage });
+    medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'conversa:leadgen', usage: res.usage, companyId: ECOSUN_COMPANY_ID }); // formulários da Meta da casa
     return res.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
       .map((b) => b.text)

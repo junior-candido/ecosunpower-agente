@@ -1,6 +1,7 @@
 // Image analysis using Claude Vision API
 import Anthropic from '@anthropic-ai/sdk';
 import { empresa } from './empresa-config.js';
+import { medirIa } from './custos/ia-metering.js';
 
 // Defesa em profundidade: o caminho de imagem mandava o LAUDO interno pro
 // cliente ("# Análise da Imagem", "Ação necessária:", "Resposta para o
@@ -110,6 +111,8 @@ Máximo 2 parágrafos curtos, tom de WhatsApp, no máximo 1-2 emojis. Só a mens
         console.warn('[vision] Opus indisponivel, fallback Haiku:', (apiErr as Error).message);
         response = await this.client.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: 1024, messages });
       }
+      // Custo (empresa vem do job da fila: Eva → casa, Clara → Conquista).
+      medirIa({ modelo: response.model ?? 'claude-opus-4-7', origem: 'midia:imagem', usage: response.usage });
 
       const raw = response.content
         .filter((block): block is Anthropic.TextBlock => block.type === 'text')

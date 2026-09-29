@@ -804,7 +804,7 @@ async function main() {
         max_tokens: 300,
         messages: [{ role: 'user', content: prompt }],
       });
-      medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'followup-vivo', usage: r.usage });
+      medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'reativacao:followup-proposta', usage: r.usage, companyId: ECOSUN_COMPANY_ID });
       return r.content
         .filter((b): b is Anthropic.TextBlock => b.type === 'text')
         .map((b) => b.text)
@@ -859,7 +859,7 @@ async function main() {
           { type: 'text', text: prompt },
         ] }],
       });
-      medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'tabela-precos-print', usage: r.usage });
+      medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'midia:tabela-precos', usage: r.usage, companyId: ECOSUN_COMPANY_ID });
       return r.content.map((c) => (c.type === 'text' ? c.text : '')).join('');
     },
   });
@@ -1193,11 +1193,11 @@ async function main() {
           let response;
           try {
             response = await anthropic.messages.create({ model: MODELO_AGENDA_FORTE, max_tokens: 512, messages: [{ role: 'user', content: prompt }] });
-            medirIa({ modelo: MODELO_AGENDA_FORTE, origem: 'agenda', usage: response.usage });
+            medirIa({ modelo: MODELO_AGENDA_FORTE, origem: 'admin:agenda', usage: response.usage, companyId: ECOSUN_COMPANY_ID });
           } catch (err) {
             console.warn('[agenda] Opus indisponível, fallback Haiku:', (err as Error).message);
             response = await anthropic.messages.create({ model: MODELO_AGENDA_RAPIDO, max_tokens: 512, messages: [{ role: 'user', content: prompt }] });
-            medirIa({ modelo: MODELO_AGENDA_RAPIDO, origem: 'agenda', usage: response.usage });
+            medirIa({ modelo: MODELO_AGENDA_RAPIDO, origem: 'admin:agenda', usage: response.usage, companyId: ECOSUN_COMPANY_ID });
           }
           return response.content.filter((b): b is Anthropic.Messages.TextBlock => b.type === 'text').map((b) => b.text).join('');
         },
@@ -1316,6 +1316,8 @@ async function main() {
         system: sys,
         messages: [{ role: 'user', content: 'Gere agora a mensagem de reabordagem.' }],
       });
+      // Proposta da casa reaberta (sai pelo número da casa) — custo da casa.
+      medirIa({ modelo: resp.model ?? 'claude-haiku-4-5-20251001', origem: 'reativacao:reabordagem-proposta', usage: resp.usage, companyId: ECOSUN_COMPANY_ID });
       const out = resp.content
         .filter((b): b is Anthropic.TextBlock => b.type === 'text')
         .map((b) => b.text)
@@ -5428,8 +5430,11 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       // RAG do tenant solar — senão a vendedora responderia com conhecimento de solar.
       // Modo SOLAR: híbrido (6 core files + chunks RAG), como sempre.
       let baseKnowledge: string;
+      // [28/09/2026] Começo FIXO da base (vai pro 2º ponto de cache do brain).
+      let conhecimentoFixo = '';
       if (isVitrineEcosof()) {
         baseKnowledge = knowledgeBase.getContent();
+        conhecimentoFixo = baseKnowledge;
         console.log(`[vitrine] conhecimento EcoSof injetado (${baseKnowledge.length} chars)`);
       } else {
         // retrieveChunks nunca lança — retorna [] em qualquer falha (fallback core-only).
@@ -5450,6 +5455,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           console.log(`[rag] ${chunks.length} chunk(s) recuperados para o brain`);
         }
         baseKnowledge = buildHybridKnowledge(coreContent, chunks);
+        conhecimentoFixo = coreContent;
       }
       // contextoAbordagem: bloco do Monitoramento Evolutivo (vazio pra todo
       // mundo, exceto cliente com abordagem ativa) — mesmo canal do leadContext.
@@ -5529,6 +5535,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         conversation.summary,
         conversation.qualification_step,
         fichaDoLead,
+        { conhecimentoEstavel: conhecimentoFixo },
       );
 
       // TRAVA-NÚMERO: no fluxo novo a Eva NÃO crava preço/dimensionamento (faz handoff).
@@ -6906,6 +6913,8 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
         console.warn('[document] Opus indisponivel, fallback Haiku:', (apiErr as Error).message);
         analysisResponse = await pdfClient.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: 1500, messages: pdfMessages }, { timeout: PDF_TIMEOUT_MS });
       }
+      // Custo: empresa vem do job da fila (Eva → casa, Clara → Conquista).
+      medirIa({ modelo: analysisResponse.model ?? 'claude-opus-4-7', origem: 'midia:pdf', usage: analysisResponse.usage });
 
       const analysisText = analysisResponse.content
         .filter((block): block is Anthropic.TextBlock => block.type === 'text')
@@ -7159,7 +7168,8 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
     licencasBloqueadas: (process.env.LEITOR_IA_LICENCAS_BLOQUEADAS ?? '').split(','),
     cabecalhoIp: process.env.LEITOR_IA_IP_HEADER || undefined,
     limites: new LimitesLeitor(limitesDoAmbiente()),
-    medir: (a) => medirIa(a),
+    // Leitor vendido ao Gerador de Relatórios (licença GRS2): custo da casa.
+    medir: (a) => medirIa({ ...a, origem: a.origem as `leitor-ia:${string}`, companyId: ECOSUN_COMPANY_ID }),
   }));
   // Limit 50mb: webhooks da Evolution API chegam com imagem/video em base64
   // inline (PayloadTooLargeError no default de 100kb). 50mb cobre videos curtos
@@ -9071,6 +9081,7 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
       });
+      medirIa({ modelo: aiRes.model ?? 'claude-haiku-4-5-20251001', origem: 'reativacao:reengajamento', usage: aiRes.usage });
       const raw = aiRes.content
         .filter((b): b is Anthropic.TextBlock => b.type === 'text')
         .map((b) => b.text)

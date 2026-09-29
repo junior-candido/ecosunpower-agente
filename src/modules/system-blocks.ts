@@ -23,8 +23,15 @@ export function buildSystemBlocks(input: {
    *  a assistente precisa saber com quem fala antes da primeira palavra. */
   ficha?: string | null;
   now: Date;
+  /** Duração do cache ('1h' = conversa em que o cliente responde depois de
+   *  5+ min continua pegando o cache). Sem valor = padrão da API (5 min). */
+  ttl?: '5m' | '1h';
+  /** Pedaço FIXO do começo da base de conhecimento (os 6 arquivos core, ou a
+   *  base inteira na vitrine). Ganha o próprio ponto de cache. [28/09/2026] */
+  conhecimentoEstavel?: string;
 }): Anthropic.TextBlockParam[] {
-  const { systemPrompt, knowledgeBase, residencialPrompt, qualificationStep, summary, ficha, now } = input;
+  const { systemPrompt, knowledgeBase, residencialPrompt, qualificationStep, summary, ficha, now, ttl, conhecimentoEstavel } = input;
+  const cacheControl: Anthropic.CacheControlEphemeral = ttl ? { type: 'ephemeral', ttl } : { type: 'ephemeral' };
 
   // Bloco volátil: mesma ordem/texto que o buildSystemContent legado montava
   // a partir de "## Base de Conhecimento" em diante.
@@ -65,8 +72,21 @@ a ficha com a ação \`anotar_ficha\`.`;
   volatile += `\n\n## Data e hora atual (Brasilia)\n${brtFormatter.format(now)}`;
   volatile += `\nData ISO: ${now.toISOString()}`;
 
+  // [28/09/2026] 2º ponto de cache logo depois da base FIXA. Só quando ela é
+  // o começo exato do bloco volátil (sem ficha antes): aí o corte não muda uma
+  // letra do texto — só onde o cache termina. Com ficha, fica como sempre.
+  const cabecalhoBase = '\n\n## Base de Conhecimento da Ecosunpower\n\n';
+  const prefixoFixo = conhecimentoEstavel ? cabecalhoBase + conhecimentoEstavel : '';
+  if (conhecimentoEstavel && conhecimentoEstavel.trim() && volatile.startsWith(prefixoFixo)) {
+    return [
+      { type: 'text', text: systemPrompt, cache_control: cacheControl },
+      { type: 'text', text: prefixoFixo, cache_control: cacheControl },
+      { type: 'text', text: volatile.slice(prefixoFixo.length) },
+    ];
+  }
+
   return [
-    { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
+    { type: 'text', text: systemPrompt, cache_control: cacheControl },
     { type: 'text', text: volatile },
   ];
 }

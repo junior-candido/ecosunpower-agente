@@ -236,11 +236,11 @@ async function chamarComFallback(client: Anthropic, messages: Anthropic.Messages
   let response;
   try {
     response = await client.messages.create({ model: MODELO_FORTE, max_tokens: maxTokens, messages }, { timeout: PDF_TIMEOUT_MS });
-    medirIa({ modelo: MODELO_FORTE, origem: 'financeiro', usage: response.usage });
+    medirIa({ modelo: MODELO_FORTE, origem: 'admin:financeiro', usage: response.usage });
   } catch (apiErr) {
     console.warn('[caixa-entrada] Opus indisponível, fallback Haiku:', (apiErr as Error).message);
     response = await client.messages.create({ model: MODELO_RAPIDO, max_tokens: maxTokens, messages }, { timeout: PDF_TIMEOUT_MS });
-    medirIa({ modelo: MODELO_RAPIDO, origem: 'financeiro', usage: response.usage });
+    medirIa({ modelo: MODELO_RAPIDO, origem: 'admin:financeiro', usage: response.usage });
   }
   return response.content.filter((b): b is Anthropic.Messages.TextBlock => b.type === 'text').map((b) => b.text).join('');
 }
@@ -253,7 +253,7 @@ export async function gateTextoFinanceiro(client: Anthropic, texto: string): Pro
       model: MODELO_RAPIDO, max_tokens: 5,
       messages: [{ role: 'user', content: montarPromptGate(texto) }],
     });
-    medirIa({ modelo: MODELO_RAPIDO, origem: 'financeiro', usage: r.usage });
+    medirIa({ modelo: MODELO_RAPIDO, origem: 'admin:financeiro', usage: r.usage });
     const out = r.content.filter((b): b is Anthropic.Messages.TextBlock => b.type === 'text').map((b) => b.text).join('');
     return out.trim().toUpperCase().startsWith('SIM');
   } catch (err) {
