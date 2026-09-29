@@ -140,8 +140,10 @@ import { tickVencimentos, dentroDaJanela8h } from './modules/financeiro/tick-ven
 import { mensagemAlertaCertificado } from './modules/financeiro/fiscal/alerta-certificado.js';
 import { tickResumoSemanal, responderFavorecido } from './modules/financeiro/resumo-semanal.js';
 import { runPosInstalacaoNotifCycle } from './modules/relatorios/pos-instalacao/cron.js';
-import { tickEnvioAutoPasta, criarEnvioAutoDb, proximoLembrete9h } from './modules/relatorios/pasta/envio-auto.js';
-import { tickDetectarMedidor, criarDetectarMedidorDb, textoAvisoMedidor } from './modules/monitoring/detectar-medidor.js';
+import { tickEnvioAutoPasta, criarEnvioAutoDb, proximoLembrete9h, empresaDaPasta } from './modules/relatorios/pasta/envio-auto.js';
+import { tickDetectarMedidor, criarDetectarMedidorDb, criarAoMarcarMedidor } from './modules/monitoring/detectar-medidor.js';
+import { criarRotasAutomaticas, ehCasa } from './modules/canal-automatico.js';
+import { lerModulosAtivos } from './modules/dashboard/modulos-contratados.js';
 import { PosInstalacaoService } from './modules/relatorios/pos-instalacao/service.js';
 import { renderPosInstalacaoHtml } from './modules/relatorios/pos-instalacao/template.js';
 import { PastaService } from './modules/relatorios/pasta/service.js';
@@ -670,10 +672,26 @@ async function main() {
     sendText,
     () => knowledgeBase.getContent(),
   );
+  // ⚖️ LGPD (28/09/2026) — rotinas AUTOMÁTICAS de pós-venda/medidor rodam por
+  // relógio, fora do contexto de empresa. Estas rotas decidem, por lead: casa →
+  // Eva/WABA; tenant → a instância DELE (só com a assistente contratada e sem
+  // pausa); aviso admin → o admin DA empresa do lead, nunca o Junior pra lead
+  // de tenant. Ver src/modules/canal-automatico.ts.
+  const rotasAutomaticas = criarRotasAutomaticas(
+    {
+      instanciaDaEmpresa: (cid) => evolutionTenant.instanciaDaEmpresa(cid),
+      modulosAtivos: (cid) => lerModulosAtivos(supabase.getClient(), cid),
+      // empresaPausada: ligar aqui quando a cobrança recorrente chegar na main
+      // (padrão: empresaPausadaPorCobranca, em canal-automatico.ts).
+    },
+    config.engineerPhone,
+  );
+
   const maintenance = new MaintenanceService(
     supabase,
     new Anthropic({ apiKey: config.anthropicApiKey }),
     sendText,
+    rotasAutomaticas.lead,
   );
   const cadence = new CadenceService(
     supabase,
@@ -4838,6 +4856,15 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
             ? (to: string, name: string, lang: string, components: unknown[]) =>
               metaWaba!.sendTemplate(to, name, lang, components as Parameters<NonNullable<typeof metaWaba>['sendTemplate']>[3])
             : undefined;
+          // LGPD (28/09/2026): este botão sai pelo número da CASA. Pasta de
+          // tenant (aviso antigo que ficou no zap, id digitado) não sai por
+          // aqui — a empresa dona envia pelo painel dela, pelo canal dela.
+          const pastaAlvo = await supabase.getPastaClienteById(pastaId).catch(() => null);
+          const leadDaPasta = pastaAlvo?.lead_id ? await supabase.getClienteByLeadId(pastaAlvo.lead_id).catch(() => null) : null;
+          if (!pastaAlvo || !leadDaPasta || !ehCasa(empresaDaPasta(pastaAlvo.company_id, (leadDaPasta as { company_id?: string | null } | null)?.company_id))) {
+            await sendText(from, '⛔ Esta pasta não é da EcoSunPower (ou não foi encontrada). Nada foi enviado.');
+            return;
+          }
           // enviarPorWhatsApp não usa o resolver de sistema — instância leve aqui.
           const pastaSvc = new PastaService(supabase, async () => null);
           const r = await pastaSvc.enviarPorWhatsApp(pastaId, sendText, sendTemplateFn as any);
@@ -11542,7 +11569,11 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
       const avisarMedidor = criarAvisoMedidor({
         modulosAtivos: (cid) => lerModulosAtivos(supabase.getClient(), cid),
         engineerPhone: config.engineerPhone,
-        enviar: async (to, texto) => { await sendAdminWithButtons({ metaWaba, sendText }, to, texto, []); },
+        // Roda dentro de comEmpresaDe(empresa do medidor): sai pelo canal DELA
+        // (instância própria do tenant), nunca pelo número da casa (LGPD 28/09).
+        enviar: async (to, texto) => {
+          await rotasAutomaticas.lead(empresa().companyId, () => sendAdminWithButtons({ metaWaba, sendText }, to, texto, []), 'medicao');
+        },
         dryRun: () => process.env.PROACTIVE_ALERTS_DRY_RUN === '1',
       });
 
@@ -11846,6 +11877,7 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
           sendText,
           adminPhone: config.engineerPhone,
           dashboardBaseUrl: 'https://dashboard.ecosunpower.eng.br',
+          avisarAdmin: rotasAutomaticas.avisoAdmin,
         });
       } catch (err) {
         console.error('[pos-instalacao] cron falhou:', (err as Error).message);
@@ -11868,6 +11900,7 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
           adminPhone: config.engineerPhone,
           enviarComBotoes: (to, body, buttons, footer) =>
             sendAdminWithButtons({ metaWaba, sendText }, to, body, buttons, footer),
+          avisarAdmin: rotasAutomaticas.avisoAdmin,
         });
       } catch (err) { console.error('[pasta-envio-auto] tick falhou:', (err as Error).message); }
     };
@@ -11879,10 +11912,12 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
       try {
         await tickDetectarMedidor({
           db: detectarDb,
-          onMarcado: async (lead, kwh) => {
-            if (postInstall) await postInstall.scheduleOnMeterSwap(lead.leadId).catch(() => undefined);
-            await sendText(config.engineerPhone, textoAvisoMedidor(lead, kwh));
-          },
+          // Aviso vai pro admin DA empresa do lead, pelo canal dela (LGPD 28/09).
+          onMarcado: criarAoMarcarMedidor({
+            agendarToques: postInstall ? (leadId) => postInstall.scheduleOnMeterSwap(leadId) : undefined,
+            avisarAdmin: rotasAutomaticas.avisoAdmin,
+            sendText,
+          }),
         });
       } catch (err) { console.error('[detectar-medidor] tick falhou:', (err as Error).message); }
     };

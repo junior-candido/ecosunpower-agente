@@ -5,6 +5,7 @@
 // toque dele. "Segurar" lembra de novo no dia seguinte às 9h (máx. 5 lembretes).
 // Spec: docs/superpowers/specs/2026-08-26-pasta-envio-automatico-design.md
 import { dentroDaJanela } from '../../monitoring/proactive-alerts/janela.js';
+import { avisoAdminSoDaCasa, ehCasa, type RotaAvisoAdmin } from '../../canal-automatico.js';
 
 export const MAX_LEMBRETES = 5;
 const DASHBOARD_BASE = 'https://dashboard.ecosunpower.eng.br';
@@ -17,6 +18,8 @@ export interface PastaCandidata {
   aviso_segurado_ate: string | null;
   avisos_enviados: number;
   lead: { name: string | null; phone: string | null; meter_swapped_at: string | null };
+  /** Empresa do lead (leads.company_id). null/ausente = legado = casa. */
+  company_id?: string | null;
 }
 
 export interface EnvioAutoDb {
@@ -33,6 +36,11 @@ export interface EnvioAutoCtx {
   adminPhone: string;
   enviarComBotoes: (to: string, body: string, buttons: Array<{ id: string; title: string }>, footer?: string) => Promise<void>;
   agora?: () => Date;
+  /**
+   * LGPD (28/09/2026): aviso pro admin DA empresa do lead, pelo canal dela
+   * (canal-automatico.ts). Ausente = só a casa é avisada.
+   */
+  avisarAdmin?: RotaAvisoAdmin;
 }
 
 /** Quem precisa de aviso NESTE tick (regra R6/R8). */
@@ -48,6 +56,21 @@ export function proximoLembrete9h(agora: Date): Date {
   const brt = new Date(agora.getTime() - 3 * 60 * 60 * 1000);
   const d = new Date(Date.UTC(brt.getUTCFullYear(), brt.getUTCMonth(), brt.getUTCDate() + 1, 12, 0, 0));
   return d;
+}
+
+/**
+ * Aviso pro admin de TENANT: texto simples com o link do painel. Os botões
+ * [Enviar agora][Segurar][Ver pasta] são da casa — o handler só aceita o admin
+ * da EcoSun, e a resposta do admin do tenant cairia na assistente dele como
+ * mensagem de cliente. O envio ele faz pelo painel.
+ */
+export function montarAvisoTenant(p: PastaCandidata): string {
+  const nome = p.lead.name ?? 'Cliente sem nome';
+  const quando = p.lead.meter_swapped_at
+    ? new Date(p.lead.meter_swapped_at).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+    : 'data não informada';
+  return `📁 Pasta digital de *${nome}* está pronta e o medidor foi trocado em ${quando}.\n\n` +
+    `Para enviar ao cliente, abra a pasta no painel:\n${linkPastaDashboard(p.id)}`;
 }
 
 export function montarAviso(p: PastaCandidata, lembrete: boolean): { body: string; buttons: Array<{ id: string; title: string }>; footer: string } {
@@ -73,6 +96,7 @@ export function montarAviso(p: PastaCandidata, lembrete: boolean): { body: strin
 export async function tickEnvioAutoPasta(ctx: EnvioAutoCtx): Promise<{ avisados: number; janelaAberta: boolean }> {
   const agora = (ctx.agora ?? (() => new Date()))();
   if (!dentroDaJanela(agora)) return { avisados: 0, janelaAberta: false };
+  const avisar = ctx.avisarAdmin ?? avisoAdminSoDaCasa(ctx.adminPhone);
   const candidatas = await ctx.db.listarCandidatas();
   let avisados = 0;
   for (const p of candidatas) {
@@ -80,7 +104,11 @@ export async function tickEnvioAutoPasta(ctx: EnvioAutoCtx): Promise<{ avisados:
     const lembrete = !!p.aviso_envio_em;
     const msg = montarAviso(p, lembrete);
     try {
-      await ctx.enviarComBotoes(ctx.adminPhone, msg.body, msg.buttons, msg.footer);
+      const r = ehCasa(p.company_id)
+        ? await avisar(p.company_id, (to) => ctx.enviarComBotoes(to, msg.body, msg.buttons, msg.footer), 'pasta_digital')
+        : await avisar(p.company_id, (to) => ctx.enviarComBotoes(to, montarAvisoTenant(p), []), 'pasta_digital');
+      // Barrado (sem canal/admin/módulo): NÃO marca — avisa quando a empresa ligar.
+      if (r !== 'enviado') continue;
       await ctx.db.marcarAvisado(p.id, agora.toISOString());
       avisados++;
     } catch (err) {
@@ -89,6 +117,16 @@ export async function tickEnvioAutoPasta(ctx: EnvioAutoCtx): Promise<{ avisados:
   }
   if (avisados > 0) console.log(`[pasta-envio-auto] tick: ${avisados} aviso(s), ${candidatas.length} candidata(s)`);
   return { avisados, janelaAberta: true };
+}
+
+/**
+ * Dona da pasta pro roteamento do aviso: se a pasta OU o lead for de tenant,
+ * é do tenant (o mais restritivo — nunca avisa o Junior por engano).
+ */
+export function empresaDaPasta(daPasta: string | null | undefined, doLead: string | null | undefined): string | null {
+  if (!ehCasa(doLead)) return doLead ?? null;
+  if (!ehCasa(daPasta)) return daPasta ?? null;
+  return doLead ?? daPasta ?? null;
 }
 
 export function linkPastaDashboard(pastaId: string): string {
@@ -101,7 +139,7 @@ export function criarEnvioAutoDb(client: any): EnvioAutoDb {
     async listarCandidatas() {
       const { data, error } = await client
         .from('pastas_cliente')
-        .select('id, lead_id, slug, aviso_envio_em, aviso_segurado_ate, avisos_enviados, leads!inner(name, phone, installation_status, meter_swapped_at)')
+        .select('id, lead_id, slug, company_id, aviso_envio_em, aviso_segurado_ate, avisos_enviados, leads!inner(name, phone, installation_status, meter_swapped_at, company_id)')
         .eq('status', 'publicada')
         .is('enviado_em', null)
         .eq('leads.installation_status', 'medidor_trocado')
@@ -113,6 +151,7 @@ export function criarEnvioAutoDb(client: any): EnvioAutoDb {
         aviso_segurado_ate: r.aviso_segurado_ate ?? null,
         avisos_enviados: Number(r.avisos_enviados ?? 0),
         lead: { name: r.leads?.name ?? null, phone: r.leads?.phone ?? null, meter_swapped_at: r.leads?.meter_swapped_at ?? null },
+        company_id: empresaDaPasta(r.company_id, r.leads?.company_id),
       }));
     },
     async marcarAvisado(pastaId, agoraIso) {

@@ -761,11 +761,13 @@ export class SupabaseService {
     scheduled_date: string;
     phone: string;
     name: string | null;
+    /** Empresa do lead — o lembrete sai pelo canal DELA (canal-automatico.ts). */
+    company_id: string | null;
   }>> {
     const today = new Date().toISOString().slice(0, 10);
     const { data, error } = await this.client
       .from('maintenance_reminders')
-      .select('id, lead_id, company_id, topic, scheduled_date, leads!inner(phone, name)')
+      .select('id, lead_id, company_id, topic, scheduled_date, leads!inner(phone, name, company_id)')
       .eq('status', 'pending')
       .lte('scheduled_date', today);
 
@@ -783,6 +785,10 @@ export class SupabaseService {
       scheduled_date: row.scheduled_date,
       phone: row.leads.phone,
       name: row.leads.name,
+      // Mais restritivo: lembrete OU lead de tenant = tenant (nunca sai pela casa por engano).
+      company_id: (row.leads?.company_id && row.leads.company_id !== '00000000-0000-0000-0000-000000000001')
+        ? row.leads.company_id
+        : (row.company_id ?? row.leads?.company_id ?? null),
     }));
   }
 
@@ -3060,9 +3066,13 @@ export class SupabaseService {
   async getLeadsMedidorTrocadoSemRelatorio(): Promise<any[]> {
     const { data, error } = await this.client
       .from('leads')
-      .select('id, name, phone, installation_status, meter_swapped_at')
+      .select('id, name, phone, installation_status, meter_swapped_at, company_id')
       .eq('installation_status', 'medidor_trocado')
       .is('post_install_report_sent_at', null)
+      // Aviso de relatório pós-instalação é só da CASA por enquanto (a tela é
+      // soEcosunPorEnquanto). Filtra aqui pra lead de tenant não ocupar as 20
+      // vagas; o cron confere de novo (LGPD 28/09/2026).
+      .or('company_id.is.null,company_id.eq.00000000-0000-0000-0000-000000000001')
       .order('updated_at', { ascending: false })
       .limit(20);
     if (error) return [];
