@@ -53,9 +53,14 @@ export interface AssinaturaRow {
   observacao?: string | null;
   leadId?: string | null;
   donaCompanyId?: string;
+  // Pausa da assistente do tenant por fatura em aberto (146)
+  pausaAutomatica?: boolean;
+  diasPausa?: number;
+  pausaAdiadaAte?: string | null;
+  assistentePausadaEm?: string | null;
 }
 
-const CAMPOS = 'id, produto_id, nome, email, telefone, zap_confirmado, valor_centavos, limite, vence_em, status, company_id, descricao, documento, dia_vencimento, inicio_em, observacao, lead_id, dona_company_id, assinatura_produtos(nome)';
+const CAMPOS = 'id, produto_id, nome, email, telefone, zap_confirmado, valor_centavos, limite, vence_em, status, company_id, descricao, documento, dia_vencimento, inicio_em, observacao, lead_id, dona_company_id, pausa_automatica, dias_pausa, pausa_adiada_ate, assistente_pausada_em, assinatura_produtos(nome)';
 
 function paraRow(r: any): AssinaturaRow {
   return {
@@ -67,6 +72,8 @@ function paraRow(r: any): AssinaturaRow {
     diaVencimento: r.dia_vencimento ?? null, inicioEm: r.inicio_em ?? null,
     observacao: r.observacao ?? null, leadId: r.lead_id ?? null,
     donaCompanyId: r.dona_company_id ?? undefined,
+    pausaAutomatica: r.pausa_automatica ?? true, diasPausa: r.dias_pausa ?? 3,
+    pausaAdiadaAte: r.pausa_adiada_ate ?? null, assistentePausadaEm: r.assistente_pausada_em ?? null,
   };
 }
 
@@ -132,6 +139,7 @@ export async function editarAssinatura(client: SupabaseClient, id: string, campo
   valorCentavos?: number; telefone?: string | null; limite?: number | null; venceEm?: string; zapConfirmado?: boolean;
   nome?: string; email?: string | null; descricao?: string | null; documento?: string | null;
   diaVencimento?: number; observacao?: string | null;
+  pausaAutomatica?: boolean; diasPausa?: number; pausaAdiadaAte?: string | null;
 }, donaId?: string): Promise<void> {
   const row: Record<string, unknown> = {};
   if (campos.valorCentavos !== undefined) row.valor_centavos = campos.valorCentavos;
@@ -145,6 +153,9 @@ export async function editarAssinatura(client: SupabaseClient, id: string, campo
   if (campos.documento !== undefined) row.documento = campos.documento;
   if (campos.diaVencimento !== undefined) row.dia_vencimento = campos.diaVencimento;
   if (campos.observacao !== undefined) row.observacao = campos.observacao;
+  if (campos.pausaAutomatica !== undefined) row.pausa_automatica = campos.pausaAutomatica;
+  if (campos.diasPausa !== undefined) row.dias_pausa = campos.diasPausa;
+  if (campos.pausaAdiadaAte !== undefined) row.pausa_adiada_ate = campos.pausaAdiadaAte;
   if (Object.keys(row).length === 0) return;
   let q = client.from('assinaturas').update(row).eq('id', id);
   if (donaId) q = q.eq('dona_company_id', donaId);
@@ -244,15 +255,50 @@ export async function renovarAssinatura(client: SupabaseClient, id: string, hoje
  * ciclo (nunca volta) e, se o acesso estava SUSPENSO, volta pra ativa.
  * Pausada/cancelada continuam como estão. true = destravou agora.
  */
-export async function registrarPagamentoNaAssinatura(client: SupabaseClient, id: string, proximoVenceEm: string | null): Promise<boolean> {
+export async function registrarPagamentoNaAssinatura(client: SupabaseClient, id: string, proximoVenceEm: string | null, podeDestravar = true): Promise<boolean> {
   const { data } = await client.from('assinaturas').select('vence_em, status').eq('id', id).maybeSingle();
   if (!data) return false;
   const atual = data as { vence_em: string; status: StatusAssinatura };
   const row: Record<string, unknown> = { atualizado_em: new Date().toISOString() };
   if (proximoVenceEm && proximoVenceEm > atual.vence_em) row.vence_em = proximoVenceEm;
-  const destravar = atual.status === 'travada';
+  const destravar = atual.status === 'travada' && podeDestravar;
   if (destravar) row.status = 'ativa';
   const { error } = await client.from('assinaturas').update(row).eq('id', id);
   if (error) throw new Error(`registrarPagamentoNaAssinatura: ${error.message}`);
   return destravar;
+}
+
+// ---- Pausa da assistente do tenant por fatura em aberto (146) ----
+// O campo é da ASSINATURA; quem pergunta "está pausada?" a cada mensagem é o
+// consumer da fila (index.ts) via pausa.ts (cache de 60 s). A casa nunca.
+
+/** Pausa SÓ se estava atendendo (update condicional — idempotente). Nunca a casa nem avulso. */
+export async function pausarAssistenteNoBanco(client: SupabaseClient, id: string, casaId: string): Promise<boolean> {
+  const agora = new Date().toISOString();
+  const { data, error } = await client.from('assinaturas')
+    .update({ assistente_pausada_em: agora, atualizado_em: agora })
+    .eq('id', id).is('assistente_pausada_em', null).neq('company_id', casaId).not('company_id', 'is', null)
+    .select('id');
+  if (error) throw new Error(`pausarAssistenteNoBanco: ${error.message}`);
+  return (data?.length ?? 0) > 0;
+}
+
+/** Reativa SÓ se estava pausada (update condicional — idempotente). */
+export async function reativarAssistenteNoBanco(client: SupabaseClient, id: string): Promise<boolean> {
+  const { data, error } = await client.from('assinaturas')
+    .update({ assistente_pausada_em: null, atualizado_em: new Date().toISOString() })
+    .eq('id', id).not('assistente_pausada_em', 'is', null)
+    .select('id');
+  if (error) throw new Error(`reativarAssistenteNoBanco: ${error.message}`);
+  return (data?.length ?? 0) > 0;
+}
+
+/** A assistente desta empresa (tenant) está pausada por fatura? (banner do painel + consumer da fila) */
+export async function pausaDaEmpresa(client: SupabaseClient, companyId: string): Promise<{ pausada: boolean; assinaturaId: string | null }> {
+  if (!companyId) return { pausada: false, assinaturaId: null };
+  const { data, error } = await client.from('assinaturas').select('id')
+    .eq('company_id', companyId).not('assistente_pausada_em', 'is', null).limit(1);
+  if (error) throw new Error(`pausaDaEmpresa: ${error.message}`);
+  const id = (data as { id: string }[] | null)?.[0]?.id ?? null;
+  return { pausada: !!id, assinaturaId: id };
 }

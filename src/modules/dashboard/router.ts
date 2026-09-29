@@ -149,6 +149,7 @@ import { criarTravaLeadDaEmpresa } from './trava-lead-empresa.js';
 import { criarTravaPropostaDaEmpresa, leadIdConferido } from './trava-proposta-empresa.js';
 import { criarRotasAtendimento } from './atendimento-rotas.js';
 import { criarRotasNumeroPessoal } from './numero-pessoal-rotas.js';
+import { criarCachePausa, empresaPausadaNoCache } from '../cobranca-recorrente/pausa.js';
 
 // Página do botão de importação dos leads da campanha Meta junho/2026.
 // didApply=false: prévia + botão pra gravar. didApply=true: resultado da gravação.
@@ -264,6 +265,12 @@ export function createDashboardRouter(
 ): Router {
   const router = Router();
   const supabase = supabaseService.getClient();
+  // Cobrança recorrente: "a assistente desta empresa está pausada?" (faixa do painel do tenant).
+  const ECOSUN_CASA = '00000000-0000-0000-0000-000000000001';
+  const cachePausaPainel = criarCachePausa(async (cid) => {
+    const { pausaDaEmpresa } = await import('./assinaturas-store.js');
+    return (await pausaDaEmpresa(supabase, cid)).pausada;
+  });
   const telemetriaService = new TelemetriaService(supabaseService, monitoringService);
   // Upload em memória, reusado por várias rotas (fotos, anexos, docs do contrato).
   const upload = multer({
@@ -494,6 +501,25 @@ export function createDashboardRouter(
   // EcoSun passa direto. Mapa rota → módulo: modulos-contratados.ts.
   router.use(criarTravaDeModulo(supabase));
 
+  // Cobrança recorrente (28/09/2026): assistente do TENANT pausada por fatura
+  // em aberto → faixa "pagar agora" no topo do painel dele. NÃO bloqueia nada
+  // (login, dados e telas seguem). Cache de 60 s; erro → sem faixa. Nunca a casa.
+  router.use(async (req: AuthedRequest, _res, next) => {
+    const u = req.dashUser;
+    if (!u || u.companyId === ECOSUN_CASA) { next(); return; }
+    try {
+      if (await empresaPausadaNoCache(cachePausaPainel, u.companyId, ECOSUN_CASA)) {
+        const { faturasDoTenant } = await import('../cobranca-recorrente/faturas-repo.js');
+        const aberta = (await faturasDoTenant(supabase, u.companyId))
+          .filter((f) => f.status === 'aberta' && f.linkUrl).sort((x, y) => (x.venceEm < y.venceEm ? -1 : 1))[0];
+        u.assistentePausada = { linkPagar: aberta?.linkUrl ?? null };
+      }
+    } catch (err) {
+      console.warn('[cobranca-recorrente] faixa da pausa falhou:', (err as Error).message);
+    }
+    next();
+  });
+
   // Terceiro portão (hotfix 28/09): TODA rota /leads/:id… só age em lead da
   // empresa da sessão — antes de qualquer efeito, inclusive o claim automático.
   // Outra empresa → 404. Ver trava-lead-empresa.ts e tests/leads-trava-empresa.test.ts.
@@ -696,17 +722,24 @@ b.onclick=async function(){
   const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const verCasa = [soDaCasa, exigir('financeiro', 'visualizar')];
   const editarCasa = [soDaCasa, exigir('financeiro', 'editar')];
-  const irPara = (res: Response, caminho: string, q: { ok?: string; erro?: string; link?: string }) => {
+  // Revisão de segurança: o link de pagamento NUNCA vem da URL (dava pra forjar
+  // "?link=https://golpe…" e o Junior copiar pro cliente). Vem o id da FATURA e
+  // o link é lido do banco, só se a fatura for desta dona.
+  const irPara = (res: Response, caminho: string, q: { ok?: string; erro?: string; fatura?: string }) => {
     const p = new URLSearchParams();
     if (q.ok) p.set('ok', q.ok);
     if (q.erro) p.set('erro', q.erro);
-    if (q.link) p.set('link', q.link);
+    if (q.fatura) p.set('fatura', q.fatura);
     res.redirect(`${caminho}${p.toString() ? `?${p.toString()}` : ''}`);
   };
-  const avisoDaQuery = (req: AuthedRequest) => {
+  const avisoDaQuery = async (req: AuthedRequest) => {
     const q = req.query as Record<string, string | undefined>;
-    // link só se for https de verdade (vem da URL — não confiar cego)
-    const link = q.link && /^https:\/\//.test(q.link) ? q.link : undefined;
+    let link: string | undefined;
+    if (q.ok && q.fatura && RE_UUID.test(q.fatura)) {
+      const { getFaturaDaDona } = await import('../cobranca-recorrente/faturas-repo.js');
+      const f = await getFaturaDaDona(supabase, req.dashUser!.companyId, q.fatura).catch(() => null);
+      link = f?.linkUrl && /^https:\/\//.test(f.linkUrl) ? f.linkUrl : undefined;
+    }
     return q.ok ? { tipo: 'ok' as const, texto: String(q.ok).slice(0, 300), link } : q.erro ? { tipo: 'erro' as const, texto: String(q.erro).slice(0, 300) } : undefined;
   };
   const modeloAprovadoAgora = async (): Promise<boolean | null> => {
@@ -733,7 +766,7 @@ b.onclick=async function(){
       res.type('html').send(renderAssinaturasPage({
         assinaturas, faturas, produtos, empresas: empresas.filter((e) => e.id !== dona), hoje,
         modeloAprovado, infinitepayLigada: !!options.infinitepayHandle,
-      }, req.dashUser, avisoDaQuery(req)));
+      }, req.dashUser, await avisoDaQuery(req)));
     } catch (err) {
       console.error('[assinaturas]', err);
       res.status(500).send('Falha ao carregar as assinaturas. A migration 146 já foi aplicada no banco?');
@@ -790,7 +823,10 @@ b.onclick=async function(){
       });
       await audit(supabase, { companyId: dona, userId: req.dashUser!.id, entidade: 'assinatura', entidadeId: id, acao: 'criou' });
       const saiEm = new Date(Date.parse(venceEm) - 3 * 86_400_000).toISOString().slice(0, 10);
-      irPara(res, `/dashboard/assinaturas/${id}`, { ok: `Assinatura criada. A fatura de ${rotuloCompetencia(inicio)} sai sozinha em ${dataBr(saiEm)} (3 dias antes do vencimento) — ou use "Gerar cobrança agora".` });
+      const passou = saiEm < hojeISO();
+      irPara(res, `/dashboard/assinaturas/${id}`, { ok: passou
+        ? `Assinatura criada. A data de envio da fatura de ${rotuloCompetencia(inicio)} já passou — clique em "Gerar cobrança agora" pra mandar.`
+        : `Assinatura criada. A fatura de ${rotuloCompetencia(inicio)} sai sozinha em ${dataBr(saiEm)} (3 dias antes do vencimento) — ou use "Gerar cobrança agora".` });
     } catch (err) {
       console.error('[assinaturas/nova]', err);
       irPara(res, volta, { erro: 'Falha ao criar a assinatura.' });
@@ -815,7 +851,7 @@ b.onclick=async function(){
         assinatura: a, faturas, hoje: hojeISO(),
         empresaNome: a.companyId ? (empresas.find((e) => e.id === a.companyId)?.nome ?? 'empresa inativa') : null,
         uso, modeloAprovado, infinitepayLigada: !!options.infinitepayHandle,
-      }, req.dashUser, avisoDaQuery(req)));
+      }, req.dashUser, await avisoDaQuery(req)));
     } catch (err) {
       console.error('[assinaturas/detalhe]', err);
       res.status(500).send('Falha ao carregar a assinatura.');
@@ -885,6 +921,11 @@ b.onclick=async function(){
       const antes = RE_UUID.test(id) ? await getAssinaturaDaDona(supabase, dona, id) : null;
       if (!antes) { irPara(res, '/dashboard/assinaturas', { erro: 'Assinatura não encontrada.' }); return; }
       await setStatusAssinatura(supabase, id, status as 'ativa' | 'pausada' | 'travada' | 'cancelada', dona);
+      // Cancelou: as faturas em aberto dela são canceladas (somem de "em aberto" e do "Pagar" do cliente).
+      if (status === 'cancelada') {
+        const { cancelarFaturasAbertas } = await import('../cobranca-recorrente/faturas-repo.js');
+        await cancelarFaturasAbertas(supabase, dona, id);
+      }
       await audit(supabase, { companyId: dona, userId: req.dashUser!.id, entidade: 'assinatura', entidadeId: id, acao: `status:${status}`, campo: 'status' });
       // O acesso REAL acompanha só suspender/liberar (calculadora via ponte,
       // monitoramento via companies.ativo). Falha da ponte não desfaz o status.
@@ -924,7 +965,7 @@ b.onclick=async function(){
       if (!r.ok) { irPara(res, volta, { erro: r.erro }); return; }
       await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'fatura_assinatura', entidadeId: r.faturaId, acao: 'gerou_manual' });
       const canais = r.canais.map((c) => ROTULO_CANAL[c] ?? c).join(', ') || 'nenhum canal — mande o link na mão';
-      irPara(res, volta, { ok: `Fatura de ${rotuloCompetencia(r.competencia)} gerada e enviada (${canais}).`, link: r.link });
+      irPara(res, volta, { ok: `Fatura de ${rotuloCompetencia(r.competencia)} gerada e enviada (${canais}).`, fatura: r.faturaId });
     } catch (err) {
       console.error('[assinaturas/cobrar]', err);
       irPara(res, volta, { erro: 'Falha ao gerar a cobrança.' });
@@ -942,12 +983,60 @@ b.onclick=async function(){
       const r = await (await options.cobrancaRecorrente()).reenviar(fid, hojeISO());
       if (!r.ok) { irPara(res, volta, { erro: r.erro }); return; }
       await audit(supabase, { companyId: dona, userId: req.dashUser!.id, entidade: 'fatura_assinatura', entidadeId: fid, acao: 'reenviou' });
-      irPara(res, volta, { ok: `Link reenviado (${r.canais.map((c) => ROTULO_CANAL[c] ?? c).join(', ')}).`, link: r.link });
+      irPara(res, volta, { ok: `Link reenviado (${r.canais.map((c) => ROTULO_CANAL[c] ?? c).join(', ')}).`, fatura: r.faturaId });
     } catch (err) {
       console.error('[assinaturas/reenviar]', err);
       irPara(res, '/dashboard/assinaturas', { erro: 'Falha ao reenviar.' });
     }
   });
+
+  // ── "Se não pagar, a assistente para" — botões do Junior (só a casa) ──
+  // Pausar/Reativar agora, Dar mais prazo, regra (pausa automática + dias).
+  // A assistente da CASA nunca pausa (o serviço recusa); só cliente do painel.
+  const acaoAssistente = (acao: 'pausar' | 'reativar' | 'prazo' | 'regra') => async (req: AuthedRequest, res: Response) => {
+    const id = String(req.params.id);
+    const volta = `/dashboard/assinaturas/${id}`;
+    try {
+      if (!RE_UUID.test(id) || !options.cobrancaRecorrente) { irPara(res, '/dashboard/assinaturas', { erro: 'Assinatura não encontrada.' }); return; }
+      const dona = req.dashUser!.companyId;
+      const svc = await options.cobrancaRecorrente();
+      const { getAssinaturaDaDona, editarAssinatura } = await import('./assinaturas-store.js');
+      const a = await getAssinaturaDaDona(supabase, dona, id);
+      if (!a) { irPara(res, '/dashboard/assinaturas', { erro: 'Assinatura não encontrada.' }); return; }
+      let ok = '';
+      if (acao === 'pausar') {
+        const r = await svc.pausarAgora(id, hojeISO());
+        if (!r.ok) { irPara(res, volta, { erro: r.erro }); return; }
+        ok = 'Assistente pausada. O cliente foi avisado; ela volta sozinha quando ele pagar.';
+      } else if (acao === 'reativar') {
+        const r = await svc.reativarAgora(id);
+        if (!r.ok) { irPara(res, volta, { erro: r.erro }); return; }
+        ok = 'Assistente reativada — voltou a atender os clientes dele.';
+      } else if (acao === 'prazo') {
+        const r = await svc.darMaisPrazo(id, Number(req.body?.dias), hojeISO());
+        if (!r.ok) { irPara(res, volta, { erro: r.erro }); return; }
+        const { dataBr } = await import('../cobranca-recorrente/ciclo.js');
+        ok = `Prazo dado: a assistente não pausa até ${dataBr(r.ate!)}.${r.reativou ? ' Ela estava pausada e já voltou a atender.' : ''}`;
+      } else {
+        const { diasPausaValidos } = await import('../cobranca-recorrente/pausa.js');
+        const pausaAutomatica = req.body?.pausa_automatica === '1';
+        const diasPausa = diasPausaValidos(Number(req.body?.dias_pausa));
+        await editarAssinatura(supabase, id, { pausaAutomatica, diasPausa }, dona);
+        await audit(supabase, { companyId: dona, userId: req.dashUser!.id, entidade: 'assinatura', entidadeId: id, acao: 'regra_pausa', campo: `auto=${pausaAutomatica};dias=${diasPausa}` });
+        ok = pausaAutomatica ? `Regra salva: se atrasar, a assistente pausa ${diasPausa} dias depois do vencimento.` : 'Regra salva: esta assistente nunca pausa automaticamente.';
+      }
+      if (acao !== 'regra') await audit(supabase, { companyId: dona, userId: req.dashUser!.id, entidade: 'assinatura', entidadeId: id, acao: `assistente_${acao}_manual` });
+      if (a.companyId) cachePausaPainel.limpar(a.companyId);
+      irPara(res, volta, { ok });
+    } catch (err) {
+      console.error(`[assinaturas/assistente/${acao}]`, err);
+      irPara(res, volta, { erro: 'Falha ao mudar a assistente.' });
+    }
+  };
+  router.post('/assinaturas/:id/assistente/pausar', ...editarCasa, acaoAssistente('pausar'));
+  router.post('/assinaturas/:id/assistente/reativar', ...editarCasa, acaoAssistente('reativar'));
+  router.post('/assinaturas/:id/assistente/prazo', ...editarCasa, acaoAssistente('prazo'));
+  router.post('/assinaturas/:id/assistente/regra', ...editarCasa, acaoAssistente('regra'));
 
   router.post('/assinaturas/faturas/:faturaId/marcar-paga', ...editarCasa, async (req: AuthedRequest, res) => {
     const fid = String(req.params.faturaId);
@@ -962,7 +1051,8 @@ b.onclick=async function(){
         irPara(res, volta, { erro: r.motivo === 'ja_paga' ? 'Essa fatura já estava paga.' : 'Não deu pra marcar como paga.' }); return;
       }
       await audit(supabase, { companyId: dona, userId: req.dashUser!.id, entidade: 'fatura_assinatura', entidadeId: fid, acao: 'marcou_paga_pix_direto' });
-      irPara(res, volta, { ok: r.lancamentoId ? 'Fatura paga. A receita entrou no caixa e o recibo foi pro cliente.' : 'Fatura paga. ⚠️ O lançamento no caixa falhou — lance na mão (te avisei no WhatsApp).' });
+      if (f.companyId) cachePausaPainel.limpar(f.companyId);
+      irPara(res, volta, { ok: (r.lancamentoId ? 'Fatura paga. A receita entrou no caixa e o recibo foi pro cliente.' : 'Fatura paga. ⚠️ O lançamento no caixa falhou — lance na mão (te avisei no WhatsApp).') + (r.reativou ? ' A assistente do cliente voltou a atender.' : '') });
     } catch (err) {
       console.error('[assinaturas/marcar-paga]', err);
       irPara(res, '/dashboard/assinaturas', { erro: 'Falha ao marcar como paga.' });
@@ -1815,7 +1905,9 @@ b.onclick=async function(){
       const { faturasDoTenant } = await import('../cobranca-recorrente/faturas-repo.js');
       const faturas = a ? await faturasDoTenant(supabase, cid).catch((e) => { console.warn('[minha-assinatura] faturas:', (e as Error).message); return undefined; }) : undefined;
       const aberta = (faturas ?? []).filter((f) => f.status === 'aberta' && f.linkUrl).sort((x, y) => (x.venceEm < y.venceEm ? -1 : 1))[0];
-      const linkPagar = aberta?.linkUrl ?? (a ? await linkPendente(supabase, a.id) : null);
+      // Link antigo (sem fatura) só quando ainda não existe fatura nenhuma — senão podia
+      // mostrar "Pagar" de um mês já pago (Pix direto).
+      const linkPagar = aberta?.linkUrl ?? (a && !(faturas ?? []).length ? await linkPendente(supabase, a.id) : null);
       const q = req.query as Record<string, string | undefined>;
       const aviso = q.ok ? { tipo: 'ok' as const, texto: q.ok } : q.erro ? { tipo: 'erro' as const, texto: q.erro } : undefined;
       res.type('html').send(renderMinhaAssinaturaPage(a, hojeISO(), uso, linkPagar, req.dashUser, aviso, faturas));
@@ -1825,7 +1917,8 @@ b.onclick=async function(){
     }
   });
 
-  router.post('/minha-assinatura/zap/solicitar', async (req: AuthedRequest, res) => {
+  // Revisão de segurança (28/09): o telefone da assinatura recebe a COBRANÇA da casa → só admin do tenant troca.
+  router.post('/minha-assinatura/zap/solicitar', exigir('usuarios', 'administrar'), async (req: AuthedRequest, res) => {
     try {
       const telefone = String(req.body?.telefone ?? '').replace(/\D/g, '');
       if (telefone.length < 10) { res.redirect('/dashboard/minha-assinatura?erro=' + encodeURIComponent('Telefone inválido — use DDI+DDD+número, ex: 5561999998888.')); return; }
@@ -1844,7 +1937,7 @@ b.onclick=async function(){
     }
   });
 
-  router.post('/minha-assinatura/zap/confirmar', async (req: AuthedRequest, res) => {
+  router.post('/minha-assinatura/zap/confirmar', exigir('usuarios', 'administrar'), async (req: AuthedRequest, res) => {
     try {
       const codigo = String(req.body?.codigo ?? '').trim();
       const { assinaturaDaEmpresa, editarAssinatura } = await import('./assinaturas-store.js');

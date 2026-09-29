@@ -5,11 +5,14 @@
 // (1–28) e mês de início. Cada mês vira uma FATURA (`faturas_assinatura`,
 // 146) — UMA por competência (unique no banco = idempotência).
 //
-// Régua do Junior:
-//   D−3  → o robô cria a fatura, gera o link e manda pro cliente
-//   D0   → lembrete no dia do vencimento (se não pagou)
-//   D+3  → lembrete (se não pagou)
-//   D+7  → avisa o JUNIOR que está atrasada (o cliente não recebe mais nada)
+// Régua do Junior — "dois toques antes e dois depois" (padrão; os dias da
+// pausa são configuráveis por assinatura):
+//   D−3  → 1º toque: o robô cria a fatura, gera o link e manda
+//   D−1  → 2º toque: "vence amanhã"
+//   D0   → vencimento (sem mensagem extra)
+//   D+1  → 3º toque: "venceu ontem"
+//   D+2  → 4º toque: ÚLTIMO AVISO ("sua assistente será pausada amanhã") + Junior
+//   D+3  → PAUSA a assistente do tenant (pausa.ts) — painel continua acessível
 // Tudo por JANELA, não por data exata: se o robô ficar parado um dia, o aviso
 // sai no dia seguinte. Cada aviso tem a sua coluna na fatura (reservada antes
 // de enviar) → nunca sai duas vezes.
@@ -35,18 +38,23 @@ export interface FaturaCiclo {
   valorCentavos: number;
   status: StatusFatura;
   avisoFaturaEm: string | null;
-  avisoD0Em: string | null;
-  avisoD3Em: string | null;
-  avisoAtrasoEm: string | null;
+  avisoVesperaEm: string | null;
+  avisoVenceuEm: string | null;
+  avisoUltimoEm: string | null;
   pagoEm: string | null;
 }
 
-export type AcaoFatura = 'fatura' | 'lembrete_d0' | 'lembrete_d3' | 'atraso_junior';
+/** fatura (D−3) · vespera (D−1) · venceu (D+1) · ultimo_aviso (D+pausa−1, também avisa o Junior). */
+export type AcaoFatura = 'fatura' | 'vespera' | 'venceu' | 'ultimo_aviso';
 
 const DIA_MS = 86_400_000;
 /** A fatura nasce 3 dias antes do vencimento. */
 export const DIAS_ANTES = 3;
-/** Depois de 7 dias de atraso o robô não cria mais sozinho (e avisa o Junior). */
+/** Padrão: a assistente do tenant pausa 3 dias depois do vencimento (último aviso na véspera). */
+export const DIAS_PAUSA_PADRAO = 3;
+export const DIAS_PAUSA_MIN = 2;
+export const DIAS_PAUSA_MAX = 30;
+/** Janela de "atraso" em que o robô ainda cria a fatura sozinho. */
 export const DIAS_ATRASO_JUNIOR = 7;
 
 const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
@@ -180,27 +188,26 @@ export function proximaCompetenciaManual(
 // ---------------------------------------------------------------------------
 
 /**
- * Um aviso por fatura por rodada; cada um uma vez só. Janela:
- *  - fatura: enquanto não foi enviada (qualquer dia com a fatura aberta);
- *  - D0: do vencimento até D+2, se a fatura saiu ANTES do vencimento;
- *  - D+3: de D+3 a D+6, se nada saiu hoje;
- *  - D+7 em diante: avisa o Junior (atrasada).
+ * Um toque por fatura por rodada (nunca 2 no mesmo dia); cada um uma vez só.
+ * `diasPausa` (padrão 3) = em que dia depois do vencimento a assistente pausa;
+ * o último aviso sai na véspera da pausa. Janelas:
+ *  - fatura:  enquanto não foi enviada (fatura aberta);
+ *  - vespera: D−1 (ou D0, se o robô perdeu o D−1) — se a fatura saiu antes;
+ *  - venceu:  de D+1 até a antevéspera da pausa;
+ *  - ultimo_aviso: de D+(pausa−1) em diante (uma vez; também avisa o Junior).
  */
-export function acaoDaFatura(f: FaturaCiclo, hoje: string): AcaoFatura | null {
+export function acaoDaFatura(f: FaturaCiclo, hoje: string, diasPausa: number = DIAS_PAUSA_PADRAO): AcaoFatura | null {
   if (f.status !== 'aberta') return null;
   if (!f.avisoFaturaEm) return 'fatura';
+  const pausa = Math.min(DIAS_PAUSA_MAX, Math.max(DIAS_PAUSA_MIN, Math.round(diasPausa)));
   const dias = diasEntre(f.venceEm, hoje); // positivo = atrasada
-  if (dias >= DIAS_ATRASO_JUNIOR) return f.avisoAtrasoEm ? null : 'atraso_junior';
-  const saiuFatura = diaDe(f.avisoFaturaEm);
-  if (dias >= 3) {
-    if (f.avisoD3Em) return null;
-    const ultimo = [saiuFatura, f.avisoD0Em ? diaDe(f.avisoD0Em) : ''].sort().pop()!;
-    return ultimo < hoje ? 'lembrete_d3' : null;
-  }
-  if (dias >= 0) {
-    if (f.avisoD0Em) return null;
-    return saiuFatura < f.venceEm ? 'lembrete_d0' : null;
-  }
+  const enviados = [f.avisoFaturaEm, f.avisoVesperaEm, f.avisoVenceuEm, f.avisoUltimoEm]
+    .filter((x): x is string => !!x).map(diaDe).sort();
+  const ultimoToque = enviados[enviados.length - 1] ?? '';
+  if (ultimoToque >= hoje) return null; // já tocou hoje
+  if (dias >= pausa - 1) return f.avisoUltimoEm ? null : 'ultimo_aviso';
+  if (dias >= 1) return f.avisoVenceuEm ? null : 'venceu';
+  if (dias >= -1) return f.avisoVesperaEm ? null : 'vespera';
   return null;
 }
 

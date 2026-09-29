@@ -18,6 +18,8 @@
 --     (a mensalidade paga entra no caixa como RECEITA) + categoria
 --     'mensalidades'.
 --  4) RLS: a empresa dona gerencia; o tenant assinante só LÊ o que é dele.
+--  5) Pausa por inadimplência: assistente_pausada_em/pausa_automatica/dias_pausa/
+--     pausa_adiada_ate na assinatura. Pausar NÃO bloqueia login nem dados.
 --     (O app roda pelo service-role; a RLS é a segunda trava.)
 --
 -- Idempotente (pode rodar de novo). Aplicar no SQL Editor ANTES do deploy.
@@ -35,7 +37,12 @@ ALTER TABLE assinaturas
   ADD COLUMN IF NOT EXISTS forma text NOT NULL DEFAULT 'link_infinitepay',
   ADD COLUMN IF NOT EXISTS dona_company_id uuid NOT NULL
     DEFAULT '00000000-0000-0000-0000-000000000001' REFERENCES companies(id),
-  ADD COLUMN IF NOT EXISTS atualizado_em timestamptz NOT NULL DEFAULT now();
+  ADD COLUMN IF NOT EXISTS atualizado_em timestamptz NOT NULL DEFAULT now(),
+  -- "Se não pagar, a assistente para" (só tenant; a casa nunca):
+  ADD COLUMN IF NOT EXISTS pausa_automatica boolean NOT NULL DEFAULT true,   -- false = nunca pausar automaticamente
+  ADD COLUMN IF NOT EXISTS dias_pausa smallint NOT NULL DEFAULT 3,            -- pausa em D+3 (último aviso em D+2)
+  ADD COLUMN IF NOT EXISTS pausa_adiada_ate date,                             -- "dar mais prazo"
+  ADD COLUMN IF NOT EXISTS assistente_pausada_em timestamptz;                 -- pausada desde (nulo = atendendo)
 
 -- Linhas antigas (090): o ciclo sai do vencimento que já estava lá.
 UPDATE assinaturas
@@ -68,6 +75,9 @@ BEGIN
     ALTER TABLE assinaturas ADD CONSTRAINT assinaturas_inicio_em_check
       CHECK (inicio_em IS NULL OR EXTRACT(DAY FROM inicio_em) = 1);
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'assinaturas_dias_pausa_check') THEN
+    ALTER TABLE assinaturas ADD CONSTRAINT assinaturas_dias_pausa_check CHECK (dias_pausa BETWEEN 2 AND 30);
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'assinaturas_forma_check') THEN
     ALTER TABLE assinaturas ADD CONSTRAINT assinaturas_forma_check
       CHECK (forma IN ('link_infinitepay'));
@@ -80,6 +90,8 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS idx_assinaturas_company ON assinaturas(company_id);
 CREATE INDEX IF NOT EXISTS idx_assinaturas_dona_status ON assinaturas(dona_company_id, status);
+-- a cada mensagem que chega o robô pergunta "a assistente desta empresa está pausada?"
+CREATE INDEX IF NOT EXISTS idx_assinaturas_pausada ON assinaturas(company_id) WHERE assistente_pausada_em IS NOT NULL;
 
 -- Produto genérico pra cliente avulso (ex.: contrato mensal de O&M).
 INSERT INTO assinatura_produtos (id, nome, valor_centavos_padrao) VALUES
@@ -113,12 +125,13 @@ CREATE TABLE IF NOT EXISTS faturas_assinatura (
   forma_baixa text CHECK (forma_baixa IS NULL OR forma_baixa IN ('link', 'manual')),
   baixado_por text,                      -- quem marcou na mão (Pix direto)
   lancamento_id uuid REFERENCES financeiro_lancamentos(id) ON DELETE SET NULL,
-  -- avisos (timestamp de quando saiu; reservado antes de enviar)
-  aviso_fatura_em timestamptz,
-  aviso_d0_em timestamptz,
-  aviso_d3_em timestamptz,
-  aviso_atraso_em timestamptz,
+  -- toques da régua (timestamp de quando saiu; reservado ANTES de enviar)
+  aviso_fatura_em timestamptz,           -- D−3: fatura com o link
+  aviso_vespera_em timestamptz,          -- D−1: vence amanhã
+  aviso_venceu_em timestamptz,           -- D+1: venceu ontem
+  aviso_ultimo_em timestamptz,           -- D+2: último aviso (+ Junior)
   recibo_em timestamptz,
+  valor_alerta_em timestamptz,           -- alerta 'valor não bate' (uma vez só)
   canal_ultimo_aviso text,               -- 'whatsapp' | 'email' | 'junior' | combinações
   criado_em timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT faturas_assinatura_competencia_unica UNIQUE (assinatura_id, competencia)

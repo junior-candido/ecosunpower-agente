@@ -15,7 +15,8 @@ const assinatura = (o: Partial<AssinaturaRow>): AssinaturaRow => ({
   nome: 'Solar Aurora Teste', email: 'financeiro@aurora.exemplo.invalid', telefone: '5561988887777', zapConfirmado: false,
   valorCentavos: 29700, limite: 110, venceEm: '2026-10-10', status: 'ativa', companyId: TENANT,
   descricao: 'Plataforma de monitoramento', documento: '11222333000181', diaVencimento: 10, inicioEm: '2026-10-01',
-  observacao: 'Paga às vezes pelo CPF, às vezes pelo CNPJ.', leadId: null, donaCompanyId: USER_CASA.companyId, ...o,
+  observacao: 'Paga às vezes pelo CPF, às vezes pelo CNPJ.', leadId: null, donaCompanyId: USER_CASA.companyId,
+  pausaAutomatica: true, diasPausa: 3, pausaAdiadaAte: null, assistentePausadaEm: '2026-10-13T12:05:00Z', ...o,
 });
 
 let n = 0;
@@ -24,28 +25,28 @@ export const fatura = (o: Partial<FaturaRow>): FaturaRow => ({
   companyId: TENANT, donaCompanyId: USER_CASA.companyId, competencia: '2026-10-01', venceEm: '2026-10-10', valorCentavos: 29700,
   descricao: 'Plataforma de monitoramento', status: 'aberta', cobrancaId: 'cob-1', linkUrl: 'https://checkout.exemplo.invalid/pagar/aurora-out',
   pagoEm: null, pagoCentavos: null, taxaCentavos: null, metodo: null, formaBaixa: null, baixadoPor: null, lancamentoId: null,
-  avisoFaturaEm: '2026-10-07T12:05:00Z', avisoD0Em: '2026-10-10T12:05:00Z', avisoD3Em: '2026-10-13T12:05:00Z', avisoAtrasoEm: null,
+  avisoFaturaEm: '2026-10-07T12:05:00Z', avisoVesperaEm: '2026-10-09T12:05:00Z', avisoVenceuEm: '2026-10-11T12:05:00Z', avisoUltimoEm: '2026-10-12T12:05:00Z',
   reciboEm: null, canalUltimoAviso: 'email+junior', criadoEm: '2026-10-07T12:05:00Z', ...o,
 });
 
 export const ASSINATURAS_FICTICIAS: AssinaturaRow[] = [
   assinatura({}),
-  assinatura({ id: '11111111-1111-4111-8111-000000000002', nome: 'Condomínio Exemplo Norte', companyId: null, produtoId: 'outro', produtoNome: 'Outro serviço mensal', descricao: 'Manutenção mensal da usina', valorCentavos: 45000, diaVencimento: 20, documento: '99888777000166', telefone: '5561977776666', email: null, limite: null, observacao: null }),
-  assinatura({ id: '11111111-1111-4111-8111-000000000003', nome: 'Integradora Sol Teste', companyId: null, descricao: 'Plataforma de monitoramento', valorCentavos: 19700, diaVencimento: 25, documento: null, limite: null }),
-  assinatura({ id: '11111111-1111-4111-8111-000000000004', nome: 'Pousada Fictícia do Lago', companyId: null, status: 'pausada', produtoId: 'outro', produtoNome: 'Outro serviço mensal', descricao: 'Limpeza mensal dos módulos', valorCentavos: 35000, diaVencimento: 5, limite: null }),
+  assinatura({ assistentePausadaEm: null, id: '11111111-1111-4111-8111-000000000002', nome: 'Condomínio Exemplo Norte', companyId: null, produtoId: 'outro', produtoNome: 'Outro serviço mensal', descricao: 'Manutenção mensal da usina', valorCentavos: 45000, diaVencimento: 20, documento: '99888777000166', telefone: '5561977776666', email: null, limite: null, observacao: null }),
+  assinatura({ assistentePausadaEm: null, id: '11111111-1111-4111-8111-000000000003', nome: 'Integradora Sol Teste', companyId: null, descricao: 'Plataforma de monitoramento', valorCentavos: 19700, diaVencimento: 25, documento: null, limite: null }),
+  assinatura({ assistentePausadaEm: null, id: '11111111-1111-4111-8111-000000000004', nome: 'Pousada Fictícia do Lago', companyId: null, status: 'pausada', produtoId: 'outro', produtoNome: 'Outro serviço mensal', descricao: 'Limpeza mensal dos módulos', valorCentavos: 35000, diaVencimento: 5, limite: null }),
 ];
 
 export const FATURAS_FICTICIAS: FaturaRow[] = [
   fatura({}),
-  fatura({ assinaturaId: '11111111-1111-4111-8111-000000000002', companyId: null, competencia: '2026-10-01', venceEm: '2026-10-20', valorCentavos: 45000, descricao: 'Manutenção mensal da usina', linkUrl: 'https://checkout.exemplo.invalid/pagar/condominio', avisoD0Em: null, avisoD3Em: null, avisoFaturaEm: null, canalUltimoAviso: null }),
-  fatura({ assinaturaId: '11111111-1111-4111-8111-000000000002', companyId: null, competencia: '2026-09-01', venceEm: '2026-09-20', valorCentavos: 45000, descricao: 'Manutenção mensal da usina', status: 'paga', pagoEm: '2026-09-19T15:00:00Z', pagoCentavos: 45000, metodo: 'pix', formaBaixa: 'link', reciboEm: '2026-09-19T15:01:00Z', avisoD0Em: null, avisoD3Em: null }),
-  fatura({ assinaturaId: '11111111-1111-4111-8111-000000000003', companyId: null, competencia: '2026-10-01', venceEm: '2026-10-25', valorCentavos: 19700, status: 'paga', pagoEm: '2026-10-12T15:00:00Z', pagoCentavos: 19700, metodo: 'credit_card', formaBaixa: 'link', avisoD0Em: null, avisoD3Em: null }),
+  fatura({ assinaturaId: '11111111-1111-4111-8111-000000000002', companyId: null, competencia: '2026-10-01', venceEm: '2026-10-20', valorCentavos: 45000, descricao: 'Manutenção mensal da usina', linkUrl: 'https://checkout.exemplo.invalid/pagar/condominio', avisoVesperaEm: null, avisoVenceuEm: null, avisoFaturaEm: null, canalUltimoAviso: null }),
+  fatura({ assinaturaId: '11111111-1111-4111-8111-000000000002', companyId: null, competencia: '2026-09-01', venceEm: '2026-09-20', valorCentavos: 45000, descricao: 'Manutenção mensal da usina', status: 'paga', pagoEm: '2026-09-19T15:00:00Z', pagoCentavos: 45000, metodo: 'pix', formaBaixa: 'link', reciboEm: '2026-09-19T15:01:00Z', avisoVesperaEm: null, avisoVenceuEm: null }),
+  fatura({ assinaturaId: '11111111-1111-4111-8111-000000000003', companyId: null, competencia: '2026-10-01', venceEm: '2026-10-25', valorCentavos: 19700, status: 'paga', pagoEm: '2026-10-12T15:00:00Z', pagoCentavos: 19700, metodo: 'credit_card', formaBaixa: 'link', avisoVesperaEm: null, avisoVenceuEm: null }),
 ];
 
 /** Histórico da assinatura 1 (detalhe e "Minha assinatura"): outubro aberta atrasada + setembro paga por Pix direto. */
 export const HISTORICO_AURORA: FaturaRow[] = [
   fatura({}),
-  fatura({ competencia: '2026-09-01', venceEm: '2026-09-10', status: 'paga', pagoEm: '2026-09-09T13:00:00Z', pagoCentavos: 29700, metodo: 'pix_direto', formaBaixa: 'manual', baixadoPor: 'Dono Teste', linkUrl: null, avisoD0Em: null, avisoD3Em: null, reciboEm: '2026-09-09T13:00:10Z', canalUltimoAviso: 'email' }),
+  fatura({ competencia: '2026-09-01', venceEm: '2026-09-10', status: 'paga', pagoEm: '2026-09-09T13:00:00Z', pagoCentavos: 29700, metodo: 'pix_direto', formaBaixa: 'manual', baixadoPor: 'Dono Teste', linkUrl: null, avisoVesperaEm: null, avisoVenceuEm: null, reciboEm: '2026-09-09T13:00:10Z', canalUltimoAviso: 'email' }),
 ];
 
 const EMPRESAS = [{ id: TENANT, nome: 'Solar Aurora Teste' }];
@@ -71,10 +72,12 @@ export function telaAssinaturaDetalhe(opts: { aviso?: { tipo: 'ok' | 'erro'; tex
   }, USER_CASA, opts.aviso);
 }
 
-export function telaMinhaAssinaturaComFaturas(user: DashUser = USER_TENANT, faturas: FaturaRow[] = HISTORICO_AURORA): string {
+export function telaMinhaAssinaturaComFaturas(user: DashUser = USER_TENANT, faturas: FaturaRow[] = HISTORICO_AURORA, pausada = true): string {
   const a = assinatura({});
   const aberta = faturas.find((f) => f.status === 'aberta');
-  return renderMinhaAssinaturaPage(a, HOJE_COBRANCA, 87, aberta?.linkUrl ?? null, user, undefined, faturas);
+  // Assistente pausada por fatura: o router põe a faixa no user (só tenant).
+  const u: DashUser = pausada && aberta ? { ...user, assistentePausada: { linkPagar: aberta.linkUrl } } : user;
+  return renderMinhaAssinaturaPage(a, HOJE_COBRANCA, 87, aberta?.linkUrl ?? null, u, undefined, faturas);
 }
 
 /** Pro "telas leves": a casa vê as 2 telas dela; o tenant vê a Minha assinatura com faturas. */

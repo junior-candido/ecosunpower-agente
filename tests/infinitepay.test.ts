@@ -128,3 +128,12 @@ describe('criarLinkPagamento (rede, com fetch injetado)', () => {
     expect(r.ok).toBe(false);
   });
 });
+
+describe('webhookConfirmado — valor confirmado pela InfinitePay (cobrança recorrente, 28/09/2026)', () => {
+  it('devolve também o valor cobrado segundo o payment_check (a fatura só baixa com valor confirmado)', async () => {
+    const { webhookConfirmado } = await import('../src/modules/infinitepay.js');
+    const r = await webhookConfirmado({ order_nsu: 'o', transaction_nsu: 't', invoice_slug: 's' }, 29700,
+      async () => ({ ok: true, pago: true, valorCentavos: 29700, metodo: 'pix' }));
+    expect(r).toMatchObject({ confirmado: true, pagoCentavos: undefined, valorCentavos: 29700 });
+  });
+});

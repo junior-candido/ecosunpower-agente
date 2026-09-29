@@ -35,7 +35,7 @@ const LINHA = {
   id: 'f1', assinatura_id: 'a1', company_id: 'c-tenant', dona_company_id: 'casa', competencia: '2026-10-01', vence_em: '2026-10-10',
   valor_centavos: 29700, descricao: 'Monitoramento de Usinas', status: 'aberta', cobranca_id: null, link_url: null,
   pago_em: null, pago_centavos: null, taxa_centavos: null, metodo: null, forma_baixa: null, baixado_por: null, lancamento_id: null,
-  aviso_fatura_em: null, aviso_d0_em: null, aviso_d3_em: null, aviso_atraso_em: null, recibo_em: null, canal_ultimo_aviso: null,
+  aviso_fatura_em: null, aviso_vespera_em: null, aviso_venceu_em: null, aviso_ultimo_em: null, recibo_em: null, canal_ultimo_aviso: null,
   criado_em: '2026-10-07T12:00:00Z',
 };
 
@@ -67,10 +67,10 @@ describe('criarFatura', () => {
 describe('reservarAviso (reserva ANTES de enviar = nunca sai 2x)', () => {
   it('só reserva se a coluna está vazia e a fatura aberta; devolve true se ganhou', async () => {
     const { client, chamadas, filtros } = mockClient({ faturas_assinatura: [{ data: [{ id: 'f1' }], error: null }] });
-    expect(await reservarAviso(client, 'f1', 'lembrete_d0')).toBe(true);
+    expect(await reservarAviso(client, 'f1', 'vespera')).toBe(true);
     const upd = chamadas.find((c) => c.op === 'update')!.args[0] as Record<string, unknown>;
-    expect(Object.keys(upd)).toEqual(['aviso_d0_em']);
-    expect(filtros('is')).toContainEqual(['aviso_d0_em', null]);
+    expect(Object.keys(upd)).toEqual(['aviso_vespera_em']);
+    expect(filtros('is')).toContainEqual(['aviso_vespera_em', null]);
     expect(filtros('eq')).toContainEqual(['status', 'aberta']);
     expect(filtros('eq')).toContainEqual(['id', 'f1']);
   });
@@ -86,8 +86,8 @@ describe('reservarAviso (reserva ANTES de enviar = nunca sai 2x)', () => {
   });
   it('liberarAviso devolve a coluna pra nulo (envio falhou em todos os canais → tenta amanhã)', async () => {
     const { client, chamadas } = mockClient({ faturas_assinatura: [{ data: null, error: null }] });
-    await liberarAviso(client, 'f1', 'lembrete_d3');
-    expect(chamadas.find((c) => c.op === 'update')!.args[0]).toEqual({ aviso_d3_em: null });
+    await liberarAviso(client, 'f1', 'venceu');
+    expect(chamadas.find((c) => c.op === 'update')!.args[0]).toEqual({ aviso_venceu_em: null });
   });
 });
 

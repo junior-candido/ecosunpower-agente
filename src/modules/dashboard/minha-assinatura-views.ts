@@ -74,7 +74,7 @@ export function renderMinhaAssinaturaPage(
     const ciclo = { status: a.status, inicioEm: a.inicioEm ?? null, diaVencimento: a.diaVencimento ?? null };
     const sitNova = faturas && a.diaVencimento ? situacaoPorFatura(ciclo, faturas, hoje) : null;
     const sit = situacaoDaAssinatura({ status: a.status, venceEm: a.venceEm }, hoje);
-    const s = sitNova ? { tom: sitNova.tom, texto: sitNova.chave === 'suspensa' ? 'suspensa' : sitNova.texto } : (SITUACAO[sit] ?? { tom: 'sem_dado' as Tom, texto: sit });
+    const s = sitNova ? { tom: sitNova.tom, texto: sitNova.chave === 'suspensa' ? 'suspensa' : paraCliente(sitNova.texto) } : (SITUACAO[sit] ?? { tom: 'sem_dado' as Tom, texto: sit });
     const venceMostrado = faturas && a.diaVencimento ? (proximoVencimento(ciclo, faturas, hoje) ?? a.venceEm) : a.venceEm;
 
     const suspensaHtml = sit === 'travada'
@@ -95,7 +95,7 @@ export function renderMinhaAssinaturaPage(
     }
 
     const pagarHtml = linkPagar
-      ? `<div class="cc-as-pagar">${botao({ rotulo: 'Pagar agora (Pix ou cartão)', href: linkPagar, tom: 'ouro', icone: 'wallet', attrs: { target: '_blank', rel: 'noopener noreferrer' } })}</div>`
+      ? `<div class="cc-as-pagar">${botao({ rotulo: 'Pagar agora (Pix ou cartão de crédito)', href: linkPagar, tom: 'ouro', icone: 'wallet', attrs: { target: '_blank', rel: 'noopener noreferrer' } })}</div>`
       : '';
 
     const zapHtml = a.zapConfirmado
@@ -115,13 +115,13 @@ export function renderMinhaAssinaturaPage(
     corpo = `${avisoHtml}
 ${cartaoSecao({ titulo: 'Plano', corpoHtml: `
   <div class="cc-as-plano">
-    <div><strong>${escapeHtml(a.produtoNome)}</strong><small><b>R$ ${reais(a.valorCentavos)}</b>/mês · vence dia <b>${dataBr(venceMostrado)}</b></small></div>
+    <div><strong>${escapeHtml(a.produtoNome)}</strong><small><b>R$ ${reais(a.valorCentavos)}</b>/mês · ${venceMostrado < hoje ? 'venceu em' : 'vence em'} <b>${dataBr(venceMostrado)}</b></small></div>
     ${pilulaStatus(s.tom, s.texto)}
   </div>
   ${suspensaHtml}
   ${usoHtml}
   ${pagarHtml}` })}
-${faturas ? cartaoSecao({ titulo: 'Faturas', dica: 'Pix ou cartão, pelo link seguro', corpoHtml: secaoFaturas(a, faturas, hoje) }) : ''}
+${faturas ? cartaoSecao({ titulo: 'Faturas', dica: 'Pix ou cartão de crédito, pelo link seguro', corpoHtml: secaoFaturas(a, faturas, hoje) }) : ''}
 ${cartaoSecao({ titulo: 'Avisos no WhatsApp', corpoHtml: zapHtml })}`;
   }
 
@@ -153,7 +153,7 @@ function secaoFaturas(a: AssinaturaRow, faturas: FaturaRow[], hoje: string): str
         return [
           { html: celulaDupla(rotuloCompetencia(f.competencia), `vence ${dataBrIso(f.venceEm)}`) },
           `R$ ${reaisBr(f.valorCentavos)}`,
-          { html: pilulaStatus(s.tom, s.texto) },
+          { html: pilulaStatus(s.tom, paraCliente(s.texto)) },
           { html: acao },
         ];
       }),
@@ -168,4 +168,9 @@ function secaoFaturas(a: AssinaturaRow, faturas: FaturaRow[], hoje: string): str
     prox = '<div class="cc-as-prox">Assinatura pausada — nenhuma fatura nova até ela voltar.</div>';
   }
   return lista + prox;
+}
+
+/** Texto da pílula pro CLIENTE: "atrasada 4 dias" → "em atraso há 4 dias" (mais educado). */
+function paraCliente(texto: string): string {
+  return texto.replace(/^atrasada (\d+ dias?)$/, 'em atraso há $1');
 }

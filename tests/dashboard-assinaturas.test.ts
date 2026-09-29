@@ -87,7 +87,8 @@ describe('Assinaturas (casa) — detalhe com histórico de faturas', () => {
     expect(m).toContain('Marcar como paga (Pix direto)');
     expect(m).toContain('data-copiar="https://checkout.exemplo.invalid/pagar/aurora-out"');
     expect(m).toContain('Pix direto');
-    expect(m).toMatch(/enviada 07\/10\/2026 · lembrete 10\/10\/2026 · lembrete 13\/10\/2026/);
+    expect(m).toMatch(/fatura enviada 07\/10\/2026 · lembrete 09\/10\/2026 · aviso de atraso 11\/10\/2026 · último aviso 12\/10\/2026/);
+    expect(m).toContain('texto enviado pra você encaminhar');
   });
 
   it('dados da cobrança: CPF/CNPJ formatado, WhatsApp, e-mail, painel com uso e observação', () => {
@@ -146,7 +147,8 @@ describe('Minha assinatura (tenant) — faturas', () => {
     expect(h).toContain('href="https://checkout.exemplo.invalid/pagar/aurora-out"');
     expect(h).toContain('Pagar');
     expect(h).toContain('paga em 09/09/2026');
-    expect(h).toContain('atrasada 4 dias');
+    expect(h).toContain('em atraso há 4 dias');
+    expect(h).toContain('venceu em');
     expect(h).not.toContain('marcar-paga');
     expect(h).not.toContain('/dashboard/assinaturas/');
     expect(h).not.toContain('Dono Teste'); // quem marcou na casa não aparece pro tenant
@@ -216,7 +218,10 @@ describe('router — rotas da cobrança recorrente (teste estático)', () => {
       expect(rota('post', c), c).toContain('...editarCasa');
     }
     const todas = [...fonte.matchAll(/router\.(get|post)\('\/assinaturas[^']*'/g)].map((m) => m[0]);
-    expect(todas).toHaveLength(8);
+    expect(todas).toHaveLength(12);
+    for (const c of ['pausar', 'reativar', 'prazo', 'regra']) {
+      expect(fonte).toContain(`router.post('/assinaturas/:id/assistente/${c}', ...editarCasa, acaoAssistente('${c}'));`);
+    }
   });
   it('id da URL nunca vale sozinho: busca pela dona da sessão', () => {
     expect(rota('get', '/assinaturas/:id')).toContain('getAssinaturaDaDona(supabase, dona, id)');
@@ -228,5 +233,89 @@ describe('router — rotas da cobrança recorrente (teste estático)', () => {
     const r = rota('get', '/minha-assinatura');
     expect(r).toContain('const cid = req.dashUser!.companyId;');
     expect(r).toContain('faturasDoTenant(supabase, cid)');
+  });
+});
+
+describe('"se não pagar, a assistente para" — telas', () => {
+  it('detalhe: cartão da assistente com estado, Reativar agora (confirm), Dar mais prazo e a regra', () => {
+    const h = telaAssinaturaDetalhe();
+    expect(h).toContain('Assistente do cliente');
+    expect(h).toContain('>pausada<');
+    expect(h).toContain('/assistente/reativar');
+    expect(h).toContain('/assistente/prazo');
+    expect(h).toContain('/assistente/regra');
+    expect(h).toContain('name="pausa_automatica"');
+    expect(h).toContain('name="dias_pausa"');
+    expect(contratoDaTela(h).confirms).toEqual(expect.arrayContaining([expect.stringContaining('Reativar a assistente')]));
+  });
+  it('detalhe atendendo: "Pausar agora" com confirm e a data em que pausa', () => {
+    const h = telaAssinaturaDetalhe({ a: { assistentePausadaEm: null } });
+    expect(h).toContain('/assistente/pausar');
+    expect(h).toContain('pausa em <b>13/10/2026</b>');
+    expect(contratoDaTela(h).confirms).toEqual(expect.arrayContaining([expect.stringContaining('Pausar a assistente deste cliente')]));
+  });
+  it('cliente avulso: sem cartão de assistente', () => {
+    expect(telaAssinaturaDetalhe({ a: { companyId: null } })).not.toContain('Assistente do cliente');
+  });
+  it('ação dourada: com fatura em aberto é "Reenviar link" (gerar outra fica no ⋯)', () => {
+    const h = miolo(telaAssinaturaDetalhe());
+    expect((h.match(/cc-btn-gold/g) ?? []).length).toBe(1);
+    expect(h).toMatch(/cc-btn-gold[^>]*>[\s\S]{0,400}Reenviar link/);
+    expect(h).toContain('Gerar a próxima cobrança agora');
+  });
+  it('lista: pílula "assistente pausada" na linha do cliente pausado', () => {
+    expect(telaAssinaturasCasa()).toContain('assistente pausada');
+  });
+  it('faixa no painel do TENANT pausado: pagar agora (link) + ver faturas; painel continua', () => {
+    const h = telaMinhaAssinaturaComFaturas();
+    expect(h).toContain('Assistente pausada por fatura em aberto');
+    expect(h).toContain('as mensagens continuam chegando aqui no painel');
+    expect(h).toMatch(/href="https:\/\/checkout\.exemplo\.invalid\/pagar\/aurora-out"[^>]*>Pagar agora \(Pix ou cartão de crédito\)/);
+  });
+  it('a CASA nunca vê a faixa, mesmo com o campo preenchido; link inseguro não entra', async () => {
+    const { faixaAssistentePausada } = await import('../src/modules/dashboard/views.js');
+    const { USER_CASA } = await import('./fixtures/miolo-leads.js');
+    expect(faixaAssistentePausada({ ...USER_CASA, assistentePausada: { linkPagar: 'https://x.invalid' } })).toBe('');
+    expect(faixaAssistentePausada({ ...USER_TENANT, assistentePausada: { linkPagar: 'javascript:alert(1)' } })).not.toContain('javascript:');
+  });
+});
+
+describe('router — revisão de segurança', () => {
+  const fonte = readFileSync(join(process.cwd(), 'src', 'modules', 'dashboard', 'router.ts'), 'utf-8');
+  it('link de pagamento NÃO vem da URL (só o id da fatura, lido do banco pela dona)', () => {
+    expect(fonte).not.toMatch(/p\.set\('link'/);
+    expect(fonte).toContain('getFaturaDaDona(supabase, req.dashUser!.companyId, q.fatura)');
+  });
+  it('trocar o WhatsApp da assinatura (tenant) só com admin', () => {
+    expect(fonte).toContain("router.post('/minha-assinatura/zap/solicitar', exigir('usuarios', 'administrar')");
+    expect(fonte).toContain("router.post('/minha-assinatura/zap/confirmar', exigir('usuarios', 'administrar')");
+  });
+  it('faixa da pausa: nunca pra casa, e não bloqueia a requisição', () => {
+    const i = fonte.indexOf('faixa da pausa falhou');
+    const trecho = fonte.slice(fonte.lastIndexOf('router.use(async', i), i + 80);
+    expect(trecho).toContain('u.companyId === ECOSUN_CASA');
+    expect(trecho).toContain('next();');
+    expect(trecho).not.toContain('res.status(');
+  });
+});
+
+describe('consumer da fila (index.ts) — pausa usa o caminho "guarda sem responder"', () => {
+  const fonte = readFileSync(join(process.cwd(), 'src', 'index.ts'), 'utf-8');
+  it('antes do switch de tipos: empresa pausada → registrarPausado e return; casa nunca (ECOSUN_COMPANY_ID)', () => {
+    const i = fonte.indexOf('empresaPausadaNoCache(cachePausaAssistente, msg.companyId, ECOSUN_COMPANY_ID)');
+    expect(i).toBeGreaterThan(-1);
+    expect(i).toBeLessThan(fonte.indexOf('switch (msg.type)', i));
+    const trecho = fonte.slice(i, fonte.indexOf('switch (msg.type)', i));
+    expect(trecho).toContain('registrarPausado(dbMsg, msg.from, companyId, tipo');
+    expect(trecho).toContain('return;');
+  });
+});
+
+describe('tenant pausado: uma ação dourada só (a do plano)', () => {
+  it('a faixa não duplica o botão dourado', () => {
+    const h = telaMinhaAssinaturaComFaturas();
+    const corpo = h.slice(h.indexOf('<main'));
+    expect((corpo.match(/cc-btn-gold/g) ?? []).length).toBe(1);
+    expect(corpo).toContain('Pagar agora (Pix ou cartão de crédito)');
   });
 });

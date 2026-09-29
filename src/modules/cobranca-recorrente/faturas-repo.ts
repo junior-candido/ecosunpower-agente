@@ -25,11 +25,12 @@ export interface FaturaRow extends FaturaCiclo {
   baixadoPor: string | null;
   lancamentoId: string | null;
   reciboEm: string | null;
+  valorAlertaEm?: string | null;
   canalUltimoAviso: string | null;
   criadoEm: string;
 }
 
-const CAMPOS = 'id, assinatura_id, company_id, dona_company_id, competencia, vence_em, valor_centavos, descricao, status, cobranca_id, link_url, pago_em, pago_centavos, taxa_centavos, metodo, forma_baixa, baixado_por, lancamento_id, aviso_fatura_em, aviso_d0_em, aviso_d3_em, aviso_atraso_em, recibo_em, canal_ultimo_aviso, criado_em';
+const CAMPOS = 'id, assinatura_id, company_id, dona_company_id, competencia, vence_em, valor_centavos, descricao, status, cobranca_id, link_url, pago_em, pago_centavos, taxa_centavos, metodo, forma_baixa, baixado_por, lancamento_id, aviso_fatura_em, aviso_vespera_em, aviso_venceu_em, aviso_ultimo_em, recibo_em, valor_alerta_em, canal_ultimo_aviso, criado_em';
 
 export function paraFatura(r: any): FaturaRow {
   return {
@@ -39,8 +40,8 @@ export function paraFatura(r: any): FaturaRow {
     pagoEm: r.pago_em ?? null, pagoCentavos: r.pago_centavos ?? null, taxaCentavos: r.taxa_centavos ?? null,
     metodo: r.metodo ?? null, formaBaixa: r.forma_baixa ?? null, baixadoPor: r.baixado_por ?? null,
     lancamentoId: r.lancamento_id ?? null,
-    avisoFaturaEm: r.aviso_fatura_em ?? null, avisoD0Em: r.aviso_d0_em ?? null, avisoD3Em: r.aviso_d3_em ?? null,
-    avisoAtrasoEm: r.aviso_atraso_em ?? null, reciboEm: r.recibo_em ?? null,
+    avisoFaturaEm: r.aviso_fatura_em ?? null, avisoVesperaEm: r.aviso_vespera_em ?? null, avisoVenceuEm: r.aviso_venceu_em ?? null,
+    avisoUltimoEm: r.aviso_ultimo_em ?? null, reciboEm: r.recibo_em ?? null, valorAlertaEm: r.valor_alerta_em ?? null,
     canalUltimoAviso: r.canal_ultimo_aviso ?? null, criadoEm: r.criado_em,
   };
 }
@@ -120,14 +121,15 @@ export async function salvarCobrancaDaFatura(client: SupabaseClient, faturaId: s
 // Avisos (idempotência): reserva a coluna ANTES de enviar
 // ---------------------------------------------------------------------------
 
-export type TipoAviso = AcaoFatura | 'recibo';
+export type TipoAviso = AcaoFatura | 'recibo' | 'valor_alerta';
 
 const COLUNA_AVISO: Record<TipoAviso, string> = {
   fatura: 'aviso_fatura_em',
-  lembrete_d0: 'aviso_d0_em',
-  lembrete_d3: 'aviso_d3_em',
-  atraso_junior: 'aviso_atraso_em',
+  vespera: 'aviso_vespera_em',
+  venceu: 'aviso_venceu_em',
+  ultimo_aviso: 'aviso_ultimo_em',
   recibo: 'recibo_em',
+  valor_alerta: 'valor_alerta_em',
 };
 
 /** true = este processo ganhou o direito de enviar (a coluna estava vazia). */
@@ -213,4 +215,12 @@ export async function vincularCobrancaSeLivre(client: SupabaseClient, faturaId: 
     .update({ cobranca_id: cobrancaId }).eq('id', faturaId).is('cobranca_id', null).select('id');
   if (error) throw new Error(`vincularCobrancaSeLivre: ${error.message}`);
   return (data?.length ?? 0) > 0;
+}
+
+/** Assinatura cancelada: as faturas em aberto dela são canceladas (somem de "em aberto"/"Pagar"). */
+export async function cancelarFaturasAbertas(client: SupabaseClient, donaId: string, assinaturaId: string): Promise<number> {
+  const { data, error } = await client.from('faturas_assinatura').update({ status: 'cancelada' })
+    .eq('dona_company_id', donaId).eq('assinatura_id', assinaturaId).eq('status', 'aberta').select('id');
+  if (error) throw new Error(`cancelarFaturasAbertas: ${error.message}`);
+  return data?.length ?? 0;
 }

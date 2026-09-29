@@ -4,6 +4,7 @@ import { EvolutionService } from './modules/evolution.js';
 import { MessageQueue } from './modules/queue.js';
 import { temTelefone, montarJobDaFila, processarMensagemSemTelefone, backfillWaUserId } from './modules/whatsapp-bsuid.js';
 import { criarTenantResolver, ECOSUN_COMPANY_ID } from './modules/tenant-resolver.js';
+import { criarCachePausa, empresaPausadaNoCache } from './modules/cobranca-recorrente/pausa.js';
 import { criarEvolutionTenantResolver } from './modules/evolution-tenant.js';
 import { comCanal, canalExigeEvolution, canalAtual } from './modules/canal-contexto.js';
 import { SupabaseService } from './modules/supabase.js';
@@ -528,6 +529,11 @@ async function main() {
   // webhook da InfinitePay e os botões da tela Financeiro › Assinaturas.
   // Quem cobra é a CASA (EcoSun): WhatsApp oficial da Eva só com MODELO
   // aprovado; sem ele, e-mail + aviso pro Junior encaminhar.
+  // A cada mensagem de tenant: "a assistente desta empresa está pausada por fatura?" (cache 60 s).
+  const cachePausaAssistente = criarCachePausa(async (cid) => {
+    const { pausaDaEmpresa } = await import('./modules/dashboard/assinaturas-store.js');
+    return (await pausaDaEmpresa(supabase.getClient(), cid)).pausada;
+  });
   let servicoCobrancaP: Promise<import('./modules/cobranca-recorrente/servico.js').ServicoCobranca> | null = null;
   const obterServicoCobranca = () => (servicoCobrancaP ??= (async () => {
     const { criarServicoCobranca } = await import('./modules/cobranca-recorrente/servico.js');
@@ -547,6 +553,12 @@ async function main() {
         : null,
       email: remetente ? { enviar: (e) => remetente.enviar(e) } : null,
       avisarJunior: (texto) => sendText(config.engineerPhone, texto),
+      // Linha do tempo (audit_log da casa) + limpa o cache da pausa na hora neste servidor.
+      auditar: async (ev) => {
+        const { audit } = await import('./modules/dashboard/audit.js');
+        await audit(supabase.getClient(), { companyId: ECOSUN_COMPANY_ID, userId: null, entidade: 'assinatura', entidadeId: ev.assinaturaId, acao: ev.acao, campo: ev.detalhe ?? null });
+      },
+      pausaMudou: (cid) => cachePausaAssistente.limpar(cid),
       // Acesso suspenso volta sozinho quando paga (ponte calculadora / companies.ativo).
       liberarAcesso: async (a) => {
         const { getAssinatura } = await import('./modules/dashboard/assinaturas-store.js');
@@ -7025,6 +7037,21 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
     const mediaRef = (mediaContent: string, fallbackId: string) =>
       (metaWaba && !canalExigeEvolution()) ? mediaContent : fallbackId;
 
+    // COBRANÇA RECORRENTE — "se não pagar, a assistente para" (28/09/2026).
+    // Assistente de um TENANT pausada por fatura em aberto: fica calada, mas a
+    // mensagem é GUARDADA no painel dele (o mesmo caminho do "equipe assumiu":
+    // registrarSemResponder) pra ele atender na mão. A casa (EcoSun/Eva) NUNCA
+    // entra aqui (empresaPausadaNoCache devolve false pra ela).
+    if (await empresaPausadaNoCache(cachePausaAssistente, msg.companyId, ECOSUN_COMPANY_ID)) {
+      const TIPO: Record<string, import('./modules/takeover-registro.js').TipoDeEntrada> = {
+        text: 'texto', audio: 'audio', image: 'imagem', video: 'video', document: 'documento',
+      };
+      const tipo = TIPO[msg.type];
+      if (tipo) await registrarPausado(dbMsg, msg.from, companyId, tipo, tipo === 'texto' ? msg.content : (msg.caption ?? ''));
+      console.log(`[cobranca-recorrente] assistente da empresa ${companyId.slice(0, 8)} pausada por fatura — mensagem ${tipo ? 'guardada' : 'ignorada'}, sem resposta`);
+      return;
+    }
+
     switch (msg.type) {
       case 'text':
         await handleTextMessage(msg.from, msg.content, msg.referral, companyId);
@@ -7593,10 +7620,21 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
         // o caminho de "retomar" acima termina o serviço.
         let tratadoPelaFatura = false;
         if (cob.assinaturaId) {
-          const rr = await (await obterServicoCobranca()).baixarPorCobranca(cob.id, {
-            pagoCentavos: r.pagoCentavos ?? cob.valorCentavos, metodo: r.metodo ?? null,
-            formaBaixa: 'link', baixadoPor: null, pagoEm: new Date().toISOString(),
-          }, { novo: marcou });
+          // Valor CONFIRMADO pela InfinitePay (pago ou, na falta, o cobrado) — nunca
+          // o nosso: sem valor confirmado a fatura não baixa (o Junior é avisado).
+          const infoPag = {
+            pagoCentavos: r.pagoCentavos ?? r.valorCentavos ?? null, metodo: r.metodo ?? null,
+            formaBaixa: 'link' as const, baixadoPor: null, pagoEm: new Date().toISOString(),
+          };
+          const svcCob = await obterServicoCobranca();
+          let rr = await svcCob.baixarPorCobranca(cob.id, infoPag, { novo: marcou });
+          // Link ANTIGO (do motor de antes da 146, sem fatura): baixa a fatura
+          // daquele mês (ou cria já paga), pra régua nova não cobrar de novo.
+          if (rr === 'sem_fatura' && marcou) {
+            const { getAssinatura } = await import('./modules/dashboard/assinaturas-store.js');
+            const antiga = await getAssinatura(supabase.getClient(), cob.assinaturaId);
+            if (antiga) rr = await svcCob.baixarLegado(cob.assinaturaId, antiga.venceEm, infoPag);
+          }
           tratadoPelaFatura = rr !== 'sem_fatura';
         }
         if (marcou && tratadoPelaFatura) {

@@ -14,7 +14,7 @@ import type { FaturaCiclo } from '../src/modules/cobranca-recorrente/ciclo.js';
 
 const fatura = (o: Partial<FaturaCiclo> = {}): FaturaCiclo => ({
   competencia: '2026-10-01', venceEm: '2026-10-10', valorCentavos: 29700, status: 'aberta',
-  avisoFaturaEm: null, avisoD0Em: null, avisoD3Em: null, avisoAtrasoEm: null, pagoEm: null, ...o,
+  avisoFaturaEm: null, avisoVesperaEm: null, avisoVenceuEm: null, avisoUltimoEm: null, pagoEm: null, ...o,
 });
 
 describe('datas do ciclo', () => {
@@ -105,40 +105,48 @@ describe('proximaCompetenciaManual (botão "Gerar cobrança agora")', () => {
   });
 });
 
-describe('acaoDaFatura (qual aviso sai hoje — um por vez, nunca repetido)', () => {
+describe('acaoDaFatura — "dois toques antes e dois depois" (D−3, D−1, D+1, D+2)', () => {
+  const t = (dia: string) => `${dia}T12:00:00Z`;
   it('fatura nova ainda não avisada → envia a fatura', () => {
     expect(acaoDaFatura(fatura(), '2026-10-07')).toBe('fatura');
   });
   it('paga ou cancelada → nada', () => {
-    expect(acaoDaFatura(fatura({ status: 'paga', avisoFaturaEm: '2026-10-07T12:00:00Z' }), '2026-10-20')).toBeNull();
+    expect(acaoDaFatura(fatura({ status: 'paga', avisoFaturaEm: t('2026-10-07') }), '2026-10-20')).toBeNull();
     expect(acaoDaFatura(fatura({ status: 'cancelada' }), '2026-10-07')).toBeNull();
   });
-  it('no dia do vencimento → lembrete D0 (uma vez)', () => {
-    const f = fatura({ avisoFaturaEm: '2026-10-07T12:00:00Z' });
-    expect(acaoDaFatura(f, '2026-10-09')).toBeNull();
-    expect(acaoDaFatura(f, '2026-10-10')).toBe('lembrete_d0');
-    expect(acaoDaFatura({ ...f, avisoD0Em: '2026-10-10T12:00:00Z' }, '2026-10-10')).toBeNull();
-    expect(acaoDaFatura({ ...f, avisoD0Em: '2026-10-10T12:00:00Z' }, '2026-10-12')).toBeNull();
+  it('régua completa: D−2 nada, D−1 véspera, D0 nada, D+1 venceu, D+2 último aviso, depois silêncio', () => {
+    let f = fatura({ avisoFaturaEm: t('2026-10-07') });
+    expect(acaoDaFatura(f, '2026-10-08')).toBeNull();
+    expect(acaoDaFatura(f, '2026-10-09')).toBe('vespera');
+    f = { ...f, avisoVesperaEm: t('2026-10-09') };
+    expect(acaoDaFatura(f, '2026-10-10')).toBeNull();
+    expect(acaoDaFatura(f, '2026-10-11')).toBe('venceu');
+    f = { ...f, avisoVenceuEm: t('2026-10-11') };
+    expect(acaoDaFatura(f, '2026-10-12')).toBe('ultimo_aviso');
+    f = { ...f, avisoUltimoEm: t('2026-10-12') };
+    expect(acaoDaFatura(f, '2026-10-13')).toBeNull();
+    expect(acaoDaFatura(f, '2026-10-30')).toBeNull();
   });
-  it('fatura enviada NO dia do vencimento não ganha lembrete D0 logo em seguida', () => {
-    expect(acaoDaFatura(fatura({ avisoFaturaEm: '2026-10-10T12:00:00Z' }), '2026-10-11')).toBeNull();
+  it('nunca dois toques no mesmo dia (fatura criada em cima do vencimento)', () => {
+    expect(acaoDaFatura(fatura({ avisoFaturaEm: t('2026-10-10') }), '2026-10-10')).toBeNull();
+    expect(acaoDaFatura(fatura({ avisoFaturaEm: t('2026-10-10') }), '2026-10-11')).toBe('venceu');
   });
-  it('D+3 sem pagar → lembrete D3 (uma vez)', () => {
-    const f = fatura({ avisoFaturaEm: '2026-10-07T12:00:00Z', avisoD0Em: '2026-10-10T12:00:00Z' });
-    expect(acaoDaFatura(f, '2026-10-13')).toBe('lembrete_d3');
-    expect(acaoDaFatura({ ...f, avisoD3Em: '2026-10-13T12:00:00Z' }, '2026-10-15')).toBeNull();
+  it('robô perdeu o D−1: no D0 ainda sai a véspera ("vence hoje")', () => {
+    expect(acaoDaFatura(fatura({ avisoFaturaEm: t('2026-10-07') }), '2026-10-10')).toBe('vespera');
   });
-  it('robô perdeu o D0: no D+1 ainda lembra', () => {
-    expect(acaoDaFatura(fatura({ avisoFaturaEm: '2026-10-07T12:00:00Z' }), '2026-10-11')).toBe('lembrete_d0');
+  it('robô perdeu dias: pula direto pro último aviso quando chega a hora', () => {
+    expect(acaoDaFatura(fatura({ avisoFaturaEm: t('2026-10-07') }), '2026-10-15')).toBe('ultimo_aviso');
   });
-  it('D+7 → avisa o Junior (atrasada), uma vez; lembretes vencidos não saem mais', () => {
-    const f = fatura({ avisoFaturaEm: '2026-10-07T12:00:00Z' });
-    expect(acaoDaFatura(f, '2026-10-17')).toBe('atraso_junior');
-    expect(acaoDaFatura({ ...f, avisoAtrasoEm: '2026-10-17T12:00:00Z' }, '2026-10-30')).toBeNull();
+  it('pausa configurada em 5 dias: venceu em D+1..D+3, último aviso em D+4', () => {
+    const f = fatura({ avisoFaturaEm: t('2026-10-07'), avisoVesperaEm: t('2026-10-09') });
+    expect(acaoDaFatura(f, '2026-10-13', 5)).toBe('venceu');
+    const g = { ...f, avisoVenceuEm: t('2026-10-11') };
+    expect(acaoDaFatura(g, '2026-10-13', 5)).toBeNull();
+    expect(acaoDaFatura(g, '2026-10-14', 5)).toBe('ultimo_aviso');
   });
-  it('fatura criada atrasada: primeiro sai a fatura, o resto nos dias seguintes', () => {
-    expect(acaoDaFatura(fatura(), '2026-10-14')).toBe('fatura');
-    expect(acaoDaFatura(fatura({ avisoFaturaEm: '2026-10-14T12:00:00Z' }), '2026-10-14')).toBeNull();
+  it('dias de pausa fora da faixa são limitados (2 a 30)', () => {
+    const f = fatura({ avisoFaturaEm: t('2026-10-07'), avisoVesperaEm: t('2026-10-09') });
+    expect(acaoDaFatura(f, '2026-10-11', 0)).toBe('ultimo_aviso'); // vira 2 → último aviso em D+1
   });
 });
 

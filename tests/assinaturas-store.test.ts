@@ -71,7 +71,7 @@ describe('listarAssinaturas', () => {
       assinaturas: [{ data: [{ id: 'a1', produto_id: 'monitoramento', nome: 'Sabion', email: 't@x.com', telefone: null, zap_confirmado: false, valor_centavos: 29700, limite: 110, vence_em: '2026-08-29', status: 'ativa', assinatura_produtos: { nome: 'Monitoramento de Usinas' } }], error: null }],
     });
     const lista = await listarAssinaturas(client);
-    expect(lista).toEqual([{ id: 'a1', produtoId: 'monitoramento', produtoNome: 'Monitoramento de Usinas', nome: 'Sabion', email: 't@x.com', telefone: null, zapConfirmado: false, valorCentavos: 29700, limite: 110, venceEm: '2026-08-29', status: 'ativa', companyId: null, descricao: null, documento: null, diaVencimento: null, inicioEm: null, observacao: null, leadId: null }]);
+    expect(lista).toEqual([{ id: 'a1', produtoId: 'monitoramento', produtoNome: 'Monitoramento de Usinas', nome: 'Sabion', email: 't@x.com', telefone: null, zapConfirmado: false, valorCentavos: 29700, limite: 110, venceEm: '2026-08-29', status: 'ativa', companyId: null, descricao: null, documento: null, diaVencimento: null, inicioEm: null, observacao: null, leadId: null, pausaAutomatica: true, diasPausa: 3, pausaAdiadaAte: null, assistentePausadaEm: null }]);
   });
 });
 

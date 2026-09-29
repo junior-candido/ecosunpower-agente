@@ -102,7 +102,7 @@ describe('lancarReceitaDaFatura (caixa — Fatia 1 do financeiro)', () => {
     expect(id).toBe('lanc-1');
     expect(criados[0]).toMatchObject({
       tipo: 'entrada', valor: 297, dataEvento: '2026-10-09', contraparte: 'Jimena Pereira Fonseca',
-      descricao: 'Mensalidade — Monitoramento de Usinas — outubro/2026', categoriaId: 'cat-mens', pfPj: 'PJ',
+      descricao: 'Mensalidade — Monitoramento de Usinas — outubro/2026 — Jimena Pereira Fonseca (#f1)', categoriaId: 'cat-mens', pfPj: 'PJ',
       origem: 'assinatura', bancoConta: 'infinitepay', confianca: 'alta', leadId: 'lead-9',
     });
     expect(criados[0].extracao).toMatchObject({ fatura_id: 'f1', assinatura_id: 'a1', metodo: 'pix', taxa_centavos: null });
@@ -211,5 +211,73 @@ describe('webhook repetido e retomada', () => {
     expect(await infra2(paga.client, []).faturaAbertaDaCobranca('cob-1')).toBe(false);
     const nada = mockClient({ faturas_assinatura: [{ data: null, error: null }] });
     expect(await infra2(nada.client, []).faturaAbertaDaCobranca('cob-1')).toBe(false);
+  });
+});
+
+describe('pausa da assistente — banco e botões (servico)', () => {
+  const CASA = '00000000-0000-0000-0000-000000000001';
+  const svc = (client: any, junior: string[] = []) => criarServicoCobranca({
+    client, donaId: CASA, handle: '$ecosun', baseUrl: 'https://painel.exemplo.invalid',
+    criarCobranca: async () => ({ id: 'cob', orderNsu: 'n' }), salvarLinkCobranca: async () => undefined,
+    waba: null, email: null, avisarJunior: async (t) => { junior.push(t); }, liberarAcesso: async () => undefined, log: () => undefined,
+  });
+  const linhaAss = (o: Record<string, unknown>) => ({
+    id: 'a1', produto_id: 'monitoramento', nome: 'Jimena', email: null, telefone: null, zap_confirmado: false, valor_centavos: 29700,
+    limite: null, vence_em: '2026-10-10', status: 'ativa', company_id: 'c-conquista', dia_vencimento: 10, inicio_em: '2026-10-01',
+    dona_company_id: CASA, pausa_automatica: true, dias_pausa: 3, pausa_adiada_ate: null, assistente_pausada_em: null, ...o,
+  });
+
+  it('"Pausar agora" na assinatura da CASA ou de cliente avulso → recusa, sem mexer no banco', async () => {
+    for (const cid of [CASA, null]) {
+      const { client, chamadas } = mockClient({ assinaturas: [{ data: linhaAss({ company_id: cid }), error: null }] });
+      const r = await svc(client).pausarAgora('a1', '2026-10-13');
+      expect(r.ok).toBe(false);
+      expect(chamadas.some((c) => c.tabela === 'assinaturas' && c.op === 'update')).toBe(false);
+    }
+  });
+
+  it('pausarAssistenteNoBanco: condicional (não pausada, não é a casa, tem empresa)', async () => {
+    const { pausarAssistenteNoBanco } = await import('../src/modules/dashboard/assinaturas-store.js');
+    const { client, chamadas } = mockClient({ assinaturas: [{ data: [{ id: 'a1' }], error: null }] });
+    expect(await pausarAssistenteNoBanco(client, 'a1', CASA)).toBe(true);
+    const f = chamadas.filter((c) => c.tabela === 'assinaturas').map((c) => [c.op, ...c.args]);
+    expect(f).toEqual(expect.arrayContaining([['is', 'assistente_pausada_em', null], ['neq', 'company_id', CASA], ['not', 'company_id', 'is', null]]));
+  });
+
+  it('"Dar mais prazo": grava a data (hoje + N) pela dona e, se estava pausada, reativa', async () => {
+    const junior: string[] = [];
+    const { client, chamadas } = mockClient({
+      assinaturas: [
+        { data: linhaAss({ assistente_pausada_em: '2026-10-13T12:00:00Z' }), error: null }, // getAssinaturaDaDona
+        { data: null, error: null },                                                         // editar
+        { data: [{ id: 'a1' }], error: null },                                               // reativar
+      ],
+    });
+    const r = await svc(client, junior).darMaisPrazo('a1', 5, '2026-10-13');
+    expect(r).toMatchObject({ ok: true, ate: '2026-10-18', reativou: true });
+    expect(chamadas).toContainEqual({ tabela: 'assinaturas', op: 'update', args: [{ pausa_adiada_ate: '2026-10-18' }] });
+    expect(junior.some((t) => /você deu mais prazo/.test(t))).toBe(true);
+    expect((await svc(mockClient({}).client).darMaisPrazo('a1', 0, '2026-10-13')).ok).toBe(false);
+  });
+});
+
+describe('garantirLinkDaFatura — link ANTIGO do motor de antes (sem fatura)', () => {
+  it('reusa a cobrança pendente do mesmo valor (não manda 2º link)', async () => {
+    const t = ctxLink();
+    const { client } = mockClient({
+      cobrancas: [{ data: [{ id: 'cob-velha', link_url: 'https://checkout.exemplo.invalid/velho' }], error: null }],
+      faturas_assinatura: [{ data: null, error: null }, { data: [{ id: 'f1' }], error: null }, { data: null, error: null }],
+    });
+    expect(await garantirLinkDaFatura({ ...t.ctx, client }, F, A)).toBe('https://checkout.exemplo.invalid/velho');
+    expect(t.cobrancasCriadas).toHaveLength(0);
+    expect(t.pedidos).toHaveLength(0);
+  });
+});
+
+describe('logs sem dado pessoal', () => {
+  it('erro da Meta/Resend: telefone e e-mail somem', async () => {
+    const { semDadoPessoal } = await import('../src/modules/cobranca-recorrente/servico.js');
+    expect(semDadoPessoal('recipient 5577999610038 invalid; to jimena@exemplo.invalid')).toBe('recipient [numero] invalid; to [email]');
+    expect(semDadoPessoal(42)).toBe(42);
   });
 });

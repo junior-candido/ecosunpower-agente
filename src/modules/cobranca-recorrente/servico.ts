@@ -13,6 +13,7 @@ import { criarConfirmado, getCategorias } from '../financeiro/lancamentos-repo.j
 import { montarMolduraEmail } from '../email/email-moldura.js';
 import {
   getAssinaturaDaDona, getAssinatura, listarCobraveis, listarAssinaturas, registrarPagamentoNaAssinatura, descricaoDaAssinatura,
+  listarEmpresasSimples, pausarAssistenteNoBanco, reativarAssistenteNoBanco, editarAssinatura,
   type AssinaturaRow,
 } from '../dashboard/assinaturas-store.js';
 import {
@@ -20,19 +21,32 @@ import {
   vincularCobrancaSeLivre, marcarFaturaPaga, vincularLancamento, getFaturaDaDona, getFaturaPorCobranca,
   reservarExecucaoDoDia, faturasDaDona, type FaturaRow, type InfoBaixa,
 } from './faturas-repo.js';
-import { rodarCobrancaRecorrente, gerarCobrancaAgora, reenviarFatura, type AssinaturaMotor, type MotorDeps, type ResultadoManual, type ResumoRodada } from './motor.js';
-import { baixarFatura, type BaixaDeps } from './baixa.js';
+import {
+  rodarCobrancaRecorrente, gerarCobrancaAgora, reenviarFatura, pausarAssistenteDe, reativarAssistenteDe,
+  type AssinaturaMotor, type MotorDeps, type PausaDeps, type ResultadoManual, type ResumoRodada,
+} from './motor.js';
+import { baixarFatura, type BaixaDeps, type InfoPagamento } from './baixa.js';
+import { diasPausaValidos, podePausar } from './pausa.js';
 import { referenciaDaFatura, textoResumoMensalidades } from './mensagens.js';
 import { hojeBrasilia, reais, somarMeses, competenciaDe, diasEntre, proximoVencimento, resumoCarteira } from './ciclo.js';
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-export function paraMotor(a: AssinaturaRow): AssinaturaMotor {
+export function paraMotor(a: AssinaturaRow, empresaNome: string | null = null): AssinaturaMotor {
   return {
     id: a.id, nome: a.nome, email: a.email, telefone: a.telefone, valorCentavos: a.valorCentavos,
     status: a.status, diaVencimento: a.diaVencimento ?? null, inicioEm: a.inicioEm ?? null,
     companyId: a.companyId, descricao: descricaoDaAssinatura(a), leadId: a.leadId ?? null,
+    pausaAutomatica: a.pausaAutomatica ?? true, diasPausa: diasPausaValidos(a.diasPausa),
+    pausaAdiadaAte: a.pausaAdiadaAte ?? null, assistentePausadaEm: a.assistentePausadaEm ?? null,
+    empresaNome,
   };
+}
+
+/** Link completo da tela (clicável no WhatsApp). */
+export function urlDaAssinatura(baseUrl: string | undefined, id: string): string {
+  const base = (baseUrl ?? '').replace(/\/$/, '');
+  return `${base}/dashboard/assinaturas/${id}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -70,6 +84,19 @@ export async function garantirLinkDaFatura(ctx: CtxLink, f: FaturaRow, a: Assina
       return c.link_url;
     }
     orderNsu = c?.order_nsu ?? null;
+  }
+  if (!cobrancaId) {
+    // Link que o motor ANTIGO (antes da 146) já mandou pra este mês, mesmo valor,
+    // ainda pendente e sem fatura: reusa em vez de mandar um 2º link (senão o
+    // cliente podia pagar o velho e continuar recebendo cobrança do novo).
+    const { data: velhas } = await ctx.client.from('cobrancas').select('id, link_url')
+      .eq('assinatura_id', a.id).eq('status', 'pendente').eq('valor_centavos', f.valorCentavos)
+      .not('link_url', 'is', null).order('criado_em', { ascending: false }).limit(1);
+    const velha = (velhas as Array<{ id: string; link_url: string }> | null)?.[0];
+    if (velha && !(await getFaturaPorCobranca(ctx.client, velha.id)) && await vincularCobrancaSeLivre(ctx.client, f.id, velha.id)) {
+      await salvarCobrancaDaFatura(ctx.client, f.id, velha.id, velha.link_url);
+      return velha.link_url;
+    }
   }
   if (!orderNsu) {
     const cob = await ctx.criarCobranca({ companyId: ctx.donaId, leadId: a.leadId, assinaturaId: a.id, descricao: `${ref} (${a.nome})`, valorCentavos: f.valorCentavos });
@@ -113,7 +140,9 @@ export async function lancarReceitaDaFatura(
   try {
     return await criar(client, {
       tipo: 'entrada', valor: info.pagoCentavos / 100, dataEvento: hojeBrasilia(new Date(info.pagoEm)),
-      contraparte: a.nome, descricao: `Mensalidade — ${referenciaDaFatura(f.descricao, f.competencia)}`,
+      // Nome + id da fatura na descrição: o anti-duplicado do caixa (banco+dia+valor+descrição)
+      // não pode confundir dois clientes com o mesmo plano pagando no mesmo dia.
+      contraparte: a.nome, descricao: `Mensalidade — ${referenciaDaFatura(f.descricao, f.competencia)} — ${a.nome} (#${f.id.slice(0, 8)})`,
       categoriaId, pfPj: 'PJ', leadId: a.leadId, storagePath: null, mimeType: null,
       origem: 'assinatura', messageId: null,
       extracao: {
@@ -177,10 +206,21 @@ export interface InfraCobranca {
   /** Acesso suspenso voltou (ponte calculadora / companies.ativo). */
   liberarAcesso(a: AssinaturaMotor): Promise<void>;
   log?: (ev: Record<string, unknown>) => void;
+  /** Auditoria / linha do tempo (audit_log da casa). */
+  auditar?: (ev: { assinaturaId: string; acao: string; detalhe?: string }) => Promise<void>;
+  /** Pausa/reativação mudou nesta empresa → limpa o cache do consumer da fila. */
+  pausaMudou?: (companyId: string) => void;
+}
+
+/** Erro de Meta/Resend pode trazer telefone/e-mail do cliente: some com eles antes do log. */
+export function semDadoPessoal(v: unknown): unknown {
+  if (typeof v !== 'string') return v;
+  return v.replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g, '[email]').replace(/\+?\d[\d\s().-]{8,}\d/g, '[numero]').slice(0, 300);
 }
 
 export function logPadrao(ev: Record<string, unknown>): void {
-  const linha = `[cobranca-recorrente] ${JSON.stringify({ ts: new Date().toISOString(), ...ev })}`;
+  const limpo = Object.fromEntries(Object.entries(ev).map(([k, v]) => [k, k === 'erro' ? semDadoPessoal(v) : v]));
+  const linha = `[cobranca-recorrente] ${JSON.stringify({ ts: new Date().toISOString(), ...limpo })}`;
   if (String(ev.evento ?? '').startsWith('erro') || ev.evento === 'rodada_falhou' || ev.evento === 'valor_nao_bate') console.error(linha);
   else console.log(linha);
 }
@@ -202,7 +242,7 @@ export function criarServicoCobranca(infra: InfraCobranca) {
       if (!infra.email) throw new Error('e-mail (Resend) não configurado');
       const corpo = montarMolduraEmail({
         conteudoHtml: html, titulo: assunto, linkDescadastro: 'https://ecosunpower.eng.br',
-        ctaLabel: ctaUrl ? 'Pagar agora (Pix ou cartão)' : undefined, ctaUrl: ctaUrl ?? undefined,
+        ctaLabel: ctaUrl ? 'Pagar agora (Pix ou cartão de crédito)' : undefined, ctaUrl: ctaUrl ?? undefined,
       });
       await infra.email.enviar({ to, subject: assunto, html: corpo });
     },
@@ -215,10 +255,37 @@ export function criarServicoCobranca(infra: InfraCobranca) {
     criarCobranca: infra.criarCobranca, salvarLinkCobranca: infra.salvarLinkCobranca, criarLink: infra.criarLink,
   };
 
+  // Nome da empresa do painel (tenant) pros avisos do Junior.
+  const nomesEmpresa = async (): Promise<Map<string, string>> =>
+    new Map((await listarEmpresasSimples(client).catch(() => [])).map((e) => [e.id, e.nome]));
+  const motorDe = async (a: AssinaturaRow): Promise<AssinaturaMotor> =>
+    paraMotor(a, a.companyId ? (await nomesEmpresa()).get(a.companyId) ?? null : null);
+
+  const pausaDeps: PausaDeps = {
+    casaId: donaId,
+    urlAssinatura: (id) => urlDaAssinatura(infra.baseUrl, id),
+    pausarAssistente: async (a) => {
+      const ok = await pausarAssistenteNoBanco(client, a.id, donaId);
+      if (ok && a.companyId) infra.pausaMudou?.(a.companyId);
+      return ok;
+    },
+    reativarAssistente: async (a) => {
+      const ok = await reativarAssistenteNoBanco(client, a.id);
+      if (ok && a.companyId) infra.pausaMudou?.(a.companyId);
+      return ok;
+    },
+    auditar: async (ev) => { await infra.auditar?.(ev); },
+  };
+
   const motorDeps: MotorDeps = {
     ...canais,
+    ...pausaDeps,
     donaId,
-    listarCobraveis: async () => (await listarCobraveis(client, donaId)).map(paraMotor),
+    listarCobraveis: async () => {
+      const nomes = await nomesEmpresa();
+      const lista = await listarCobraveis(client, donaId);
+      return lista.map((a) => paraMotor(a, a.companyId ? nomes.get(a.companyId) ?? null : null));
+    },
     faturasDaAssinatura: (id) => faturasDaAssinatura(client, donaId, id),
     criarFatura: (n) => criarFatura(client, n),
     garantirLink: (f, a) => garantirLinkDaFatura(ctxLink, f, a),
@@ -229,12 +296,14 @@ export function criarServicoCobranca(infra: InfraCobranca) {
 
   const baixaDeps: BaixaDeps = {
     ...canais,
+    ...pausaDeps,
     marcarFaturaPaga: (id, info) => marcarFaturaPaga(client, id, info),
     lancarReceita: (a, f, info) => lancarReceitaDaFatura(client, a, f, info),
     vincularLancamento: (id, l) => vincularLancamento(client, id, l),
-    registrarPagamentoNaAssinatura: (id, prox) => registrarPagamentoNaAssinatura(client, id, prox),
+    registrarPagamentoNaAssinatura: (id, prox, pode) => registrarPagamentoNaAssinatura(client, id, prox, pode),
     liberarAcesso: infra.liberarAcesso,
     reservarAviso: (id, tipo) => reservarAviso(client, id, tipo),
+    faturasDaAssinatura: (id) => faturasDaAssinatura(client, donaId, id),
   };
 
   const LOCK = 'cobranca_recorrente_dia';
@@ -262,7 +331,7 @@ export function criarServicoCobranca(infra: InfraCobranca) {
     async gerarAgora(assinaturaId: string, hoje: string): Promise<ResultadoManual> {
       const a = await getAssinaturaDaDona(client, donaId, assinaturaId);
       if (!a) return { ok: false, erro: 'Assinatura não encontrada.' };
-      return gerarCobrancaAgora(motorDeps, paraMotor(a), hoje);
+      return gerarCobrancaAgora(motorDeps, await motorDe(a), hoje);
     },
 
     async reenviar(faturaId: string, hoje: string): Promise<ResultadoManual> {
@@ -270,16 +339,16 @@ export function criarServicoCobranca(infra: InfraCobranca) {
       if (!f) return { ok: false, erro: 'Fatura não encontrada.' };
       const a = await getAssinaturaDaDona(client, donaId, f.assinaturaId);
       if (!a) return { ok: false, erro: 'Assinatura não encontrada.' };
-      return reenviarFatura(motorDeps, paraMotor(a), f, hoje);
+      return reenviarFatura(motorDeps, await motorDe(a), f, hoje);
     },
 
     /** "Marcar como paga (Pix direto)": valor da fatura, quem marcou fica registrado. */
-    async marcarPagaManual(faturaId: string, usuario: string): Promise<{ ok: true; lancamentoId: string | null } | { ok: false; motivo: 'nao_achada' | 'ja_paga' | 'valor_nao_bate' }> {
+    async marcarPagaManual(faturaId: string, usuario: string): Promise<{ ok: true; lancamentoId: string | null; reativou: boolean } | { ok: false; motivo: 'nao_achada' | 'ja_paga' | 'valor_nao_bate' }> {
       const f = await getFaturaDaDona(client, donaId, faturaId);
       if (!f) return { ok: false, motivo: 'nao_achada' };
       const a = await getAssinaturaDaDona(client, donaId, f.assinaturaId);
       if (!a) return { ok: false, motivo: 'nao_achada' };
-      return baixarFatura(baixaDeps, paraMotor(a), f, {
+      return baixarFatura(baixaDeps, await motorDe(a), f, {
         pagoCentavos: f.valorCentavos, metodo: 'pix_direto', formaBaixa: 'manual', baixadoPor: usuario, pagoEm: new Date().toISOString(),
       });
     },
@@ -320,7 +389,7 @@ export function criarServicoCobranca(infra: InfraCobranca) {
      * `novo` = a cobrança acabou de virar paga agora (não é webhook repetido):
      * só aí uma fatura já fechada (Pix direto / cancelada) é pagamento em dobro.
      */
-    async baixarPorCobranca(cobrancaId: string, info: InfoBaixa, opts: { novo?: boolean } = {}): Promise<ResultadoPorCobranca> {
+    async baixarPorCobranca(cobrancaId: string, info: InfoPagamento, opts: { novo?: boolean } = {}): Promise<ResultadoPorCobranca> {
       const f = await getFaturaPorCobranca(client, cobrancaId);
       if (!f) return 'sem_fatura';
       if (f.status !== 'aberta') {
@@ -328,14 +397,73 @@ export function criarServicoCobranca(infra: InfraCobranca) {
         if (!emDobro) return 'ja_paga';
         const a = await getAssinatura(client, f.assinaturaId).catch(() => null);
         log({ evento: 'pagamento_em_fatura_fechada', fatura_id: f.id, assinatura_id: f.assinaturaId, status: f.status, metodo_anterior: f.metodo });
-        await infra.avisarJunior(`⚠️ Chegou pagamento pelo link da mensalidade de ${a?.nome ?? 'um assinante'} (${referenciaDaFatura(f.descricao, f.competencia)}, R$ ${reais(info.pagoCentavos)}), mas essa fatura já estava ${f.status === 'paga' ? `paga (${f.metodo === 'pix_direto' ? 'marcada como Pix direto' : 'pelo link'})` : 'cancelada'}. Possível pagamento em dobro — confira e devolva/abata se for o caso.`).catch(() => undefined);
+        await infra.avisarJunior(`⚠️ Chegou pagamento pelo link da mensalidade de ${a?.nome ?? 'um assinante'} (${referenciaDaFatura(f.descricao, f.competencia)}${info.pagoCentavos !== null ? `, R$ ${reais(info.pagoCentavos)}` : ''}), mas essa fatura já estava ${f.status === 'paga' ? `paga (${f.metodo === 'pix_direto' ? 'marcada como Pix direto' : 'pelo link'})` : 'cancelada'}. Possível pagamento em dobro — confira e devolva/abata se for o caso.`).catch(() => undefined);
         return 'ja_paga';
       }
       const a = await getAssinatura(client, f.assinaturaId);
       if (!a) return 'sem_fatura';
-      const r = await baixarFatura(baixaDeps, paraMotor(a), f, info);
+      const r = await baixarFatura(baixaDeps, await motorDe(a), f, info);
       return r.ok ? 'paga' : r.motivo;
     },
+
+    /**
+     * Link ANTIGO (antes da 146, sem fatura) pago: a fatura do mês daquele
+     * vencimento é baixada (ou criada já paga), pra régua não cobrar de novo.
+     */
+    async baixarLegado(assinaturaId: string, venceEmAntigo: string, info: InfoPagamento): Promise<ResultadoPorCobranca> {
+      const a = await getAssinatura(client, assinaturaId);
+      if (!a || (a.donaCompanyId && a.donaCompanyId !== donaId)) return 'sem_fatura';
+      const comp = competenciaDe(venceEmAntigo);
+      let f = (await faturasDaAssinatura(client, donaId, assinaturaId)).find((x) => x.competencia === comp) ?? null;
+      if (!f) {
+        f = await criarFatura(client, {
+          assinaturaId, companyId: a.companyId, donaId, competencia: comp, venceEm: venceEmAntigo,
+          valorCentavos: info.pagoCentavos ?? a.valorCentavos, descricao: descricaoDaAssinatura(a),
+        });
+      }
+      if (!f || f.status !== 'aberta') return 'ja_paga';
+      const r = await baixarFatura(baixaDeps, await motorDe(a), f, info);
+      return r.ok ? 'paga' : r.motivo;
+    },
+
+    // ---- Assistente do tenant (botões da tela) ----
+
+    /** "Pausar agora" (Junior). Nunca a casa nem cliente avulso. */
+    async pausarAgora(assinaturaId: string, hoje: string): Promise<{ ok: boolean; erro?: string }> {
+      const a = await getAssinaturaDaDona(client, donaId, assinaturaId);
+      if (!a) return { ok: false, erro: 'Assinatura não encontrada.' };
+      if (!podePausar(a, donaId)) return { ok: false, erro: 'Só dá pra pausar a assistente de uma empresa do painel (cliente avulso não tem assistente).' };
+      const m = await motorDe(a);
+      const ok = await pausarAssistenteDe({ ...canais, ...pausaDeps, garantirLink: motorDeps.garantirLink }, m, await faturasDaAssinatura(client, donaId, a.id), hoje, 'manual');
+      return ok ? { ok } : { ok: false, erro: 'A assistente já estava pausada.' };
+    },
+
+    /** "Reativar agora" (Junior). */
+    async reativarAgora(assinaturaId: string): Promise<{ ok: boolean; erro?: string }> {
+      const a = await getAssinaturaDaDona(client, donaId, assinaturaId);
+      if (!a) return { ok: false, erro: 'Assinatura não encontrada.' };
+      const ok = await reativarAssistenteDe({ ...canais, ...pausaDeps }, await motorDe(a), 'manual');
+      return ok ? { ok } : { ok: false, erro: 'A assistente já estava atendendo.' };
+    },
+
+    /**
+     * "Dar mais prazo": a pausa só acontece DEPOIS de hoje + N dias. Se já
+     * estava pausada, volta a atender agora (o prazo novo vale).
+     */
+    async darMaisPrazo(assinaturaId: string, dias: number, hoje: string): Promise<{ ok: boolean; ate?: string; reativou?: boolean; erro?: string }> {
+      const n = Math.round(Number(dias));
+      if (!Number.isFinite(n) || n < 1 || n > 60) return { ok: false, erro: 'Prazo de 1 a 60 dias.' };
+      const a = await getAssinaturaDaDona(client, donaId, assinaturaId);
+      if (!a) return { ok: false, erro: 'Assinatura não encontrada.' };
+      const [y, mm, d] = hoje.split('-').map(Number);
+      const ate = new Date(Date.UTC(y!, mm! - 1, d! + n)).toISOString().slice(0, 10);
+      await editarAssinatura(client, a.id, { pausaAdiadaAte: ate }, donaId);
+      log({ evento: 'pausa_adiada', assinatura_id: a.id, ate });
+      await pausaDeps.auditar({ assinaturaId: a.id, acao: 'pausa_adiada', detalhe: ate });
+      const reativou = a.assistentePausadaEm ? await reativarAssistenteDe({ ...canais, ...pausaDeps }, await motorDe(a), 'prazo') : false;
+      return { ok: true, ate, reativou };
+    },
+
   };
 }
 

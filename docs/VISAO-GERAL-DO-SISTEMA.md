@@ -196,8 +196,12 @@ puxa o que a Evolution já guardou (`/chat/findMessages`). Eva/dono/equipe (`def
 vencimento (1–28), mês de início, CPF/CNPJ, descrição, observação, `dona_company_id` (quem cobra = casa) e
 status `pausada`; tabela nova `faturas_assinatura` (1 por mês — unique `assinatura_id+competencia`; valor copiado
 na criação; cada aviso tem coluna reservada ANTES de enviar). Robô em `index.ts` (1x/dia após 9h BRT, trava
-`app_flags` com UPDATE condicional): D−3 cria + link InfinitePay + envia; D0 e D+3 lembram; D+7 avisa o Junior.
-WhatsApp só com MODELO (`cobranca_mensalidade_v1` / `recibo_mensalidade_v1`, conferido na Meta); sem modelo →
+`app_flags` com UPDATE condicional): D−3 cria + link InfinitePay + envia; D−1 e D+1 lembram; D+2 último aviso
+(+ Junior); D+3 **pausa a assistente do TENANT** (`pausa.ts`; nunca a casa): o consumer da fila em `index.ts` pergunta
+`empresaPausadaNoCache` antes de despachar e, se pausada, só grava (`registrarPausado` → `registrarSemResponder`) — o
+painel dele segue acessível, com faixa "pagar agora" (`faixaAssistentePausada` em `views.ts`). Pagou → reativa sozinha.
+Estado na assinatura: `assistente_pausada_em`, `pausa_automatica`, `dias_pausa`, `pausa_adiada_ate`.
+WhatsApp só com MODELO (`cobranca_mensalidade_v1`, `aviso_pausa_assistente_v1`, `assistente_pausada_v1`, `recibo_mensalidade_v1`; conferido na Meta); sem modelo →
 e-mail (Resend) + texto pronto no zap do Junior. Webhook `/webhook/infinitepay` (não assinado → payment_check +
 valor) baixa a fatura, lança ENTRADA no caixa (`financeiro_lancamentos` origem `assinatura`, banco `infinitepay`,
 categoria `mensalidades`) e manda recibo. Telas: `dashboard/assinaturas-views.ts` (Financeiro › Assinaturas, SÓ a
