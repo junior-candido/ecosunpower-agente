@@ -10,6 +10,7 @@ import { USER_CASA } from './miolo-leads.js';
 
 import { URL_CSS_COMMAND_CENTER } from '../../src/modules/dashboard/ui/estatico.js';
 import { TELAS_LEVES } from './mudancas-telas-leves.js';
+import { TEMA_GRAFICOS } from './mudancas-onda2.js';
 
 export type { MudancaContrato };
 
@@ -123,5 +124,10 @@ export const MUDANCAS_R23: Record<string, MudancaContrato[]> = {
 // R24 — Visão geral (/home)
 // ════════════════════════════════════════════════════════════════════════
 
-/** R24: trocas por caso de tests/fixtures/casos-home.ts. */
-export const MUDANCAS_R24: Record<string, MudancaContrato[]> = {};
+/** R24: trocas por caso de tests/fixtures/casos-home.ts — a troca comum das
+ *  telas renovadas (sai o Tailwind do CDN) e os gráficos lendo as cores do
+ *  tema (JS_TEMA_GRAFICOS, mesma troca das telas com gráfico da Onda 2).
+ *  Mesmo GET ?mes=, mesmos canvas, mesmo CDN do Chart.js. */
+export const MUDANCAS_R24: Record<string, MudancaContrato[]> = Object.fromEntries(
+  ['home', 'home-mes-passado', 'home-vazio'].map((c) => [c, [TELAS_LEVES, TEMA_GRAFICOS]]),
+);

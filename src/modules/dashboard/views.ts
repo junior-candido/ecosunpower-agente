@@ -415,22 +415,27 @@ export function renderLoginPage(input: LoginPageInput = {}): string {
 
 // =========================================================================
 // HOME — KPIs + grafico
+// Renovação do miolo — R24 (28/09/2026, D5 = a: renovar e manter): mesmo GET
+// ?mes= (envia sozinho), mesmos canvas do Chart.js (graficoVendas,
+// graficoMensal) e mesmo CDN pinado; KPIs em faixas cc-, gráficos em painéis
+// com as cores do tema (JS_TEMA_GRAFICOS), tema escuro, sem Tailwind. Só da
+// casa: a consulta é da casa (a rota manda o tenant pro Command Center).
 // =========================================================================
 
-export function renderHomePage(kpis: DashboardKpi, grafico: GraficoMensal[], graficoVendas: GraficoMensal[] = [], mesLabel = 'Este mês', mesValue = '', user: DashUser | undefined): string {
-  const card = (
-    titulo: string,
-    valor: string,
-    sub?: string,
-    accent: 'amber' | 'sky' | 'emerald' | 'violet' | 'rose' | 'indigo' = 'sky',
-    valorCor: string = 'text-slate-900',
-  ) => `
-    <div class="bg-white rounded-xl shadow-md hover:shadow-lg transition border border-slate-200 accent-${accent} p-5">
-      <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold">${escapeHtml(titulo)}</div>
-      <div class="text-3xl font-bold ${valorCor} mt-2">${escapeHtml(valor)}</div>
-      ${sub ? `<div class="text-xs text-slate-500 mt-1">${escapeHtml(sub)}</div>` : ''}
-    </div>`;
+const CSS_HOME = `
+.cc-hm .cc-kstrip{margin-bottom:16px}
+.cc-hm-mes{display:flex;align-items:center;gap:8px}
+.cc-hm-mes input[type=month]{min-height:36px;padding:4px 10px;border-radius:10px;border:1px solid var(--cc-line-2);background:var(--cc-surface);color:var(--cc-text);font:inherit;font-size:13px;color-scheme:dark}
+.cc-hm-rot{font-size:11.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--cc-muted);margin:4px 0 8px}
+.cc-hm-graf{height:280px;position:relative}
+.cc-hm-grade{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:16px}
+.cc-hm-grade .cc-panel{margin:0}
+.cc-hm-atalhos{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.cc-hm-atalhos .cc-li{border:1px solid var(--cc-line);border-radius:12px;padding:12px 14px}
+@media (max-width:900px){.cc-hm-grade,.cc-hm-atalhos{grid-template-columns:minmax(0,1fr)}.cc-hm-graf{height:220px}}
+`;
 
+export function renderHomePage(kpis: DashboardKpi, grafico: GraficoMensal[], graficoVendas: GraficoMensal[] = [], mesLabel = 'Este mês', mesValue = '', user: DashUser | undefined): string {
   const labels = grafico.map(g => {
     const [y, m] = g.mes.split('-');
     const meses = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
@@ -439,78 +444,60 @@ export function renderHomePage(kpis: DashboardKpi, grafico: GraficoMensal[], gra
   const valores = grafico.map(g => g.total);
   const valoresVendas = graficoVendas.map(g => g.total);
 
-  const body = `
-    <div class="mb-6">
-      <h1 class="text-2xl font-bold text-slate-900">Visão geral</h1>
-      <p class="text-slate-600 text-sm">Resumo das atividades da Eva e do funil de propostas.</p>
+  const filtroMes = `<form method="get" action="/dashboard/home" class="cc-hm-mes">
+      <label class="cc-lbl-s" for="cc-hm-mes">Ver mês</label>
+      <input id="cc-hm-mes" type="month" name="mes" value="${escapeHtml(mesValue)}" onchange="this.form.submit()" />
+    </form>`;
+
+  const doMes = faixaKpis([
+    { rotulo: 'Vendas fechadas', valor: kpis.vendasMesAtual, detalhe: `${kpis.vendasAnoAtual} no ano · ${kpis.vendasTotal} total`, destaque: true },
+    { rotulo: 'Propostas', valor: kpis.propostasMesAtual, detalhe: `${kpis.propostasAnoAtual} no ano · ${kpis.totalPropostas} total` },
+    { rotulo: 'Leads novos', valor: kpis.leadsMesAtual, detalhe: `${kpis.totalLeads} total` },
+    { rotulo: 'Usinas que entraram', valor: kpis.usinasMesAtual, detalhe: 'novos sistemas no mês' },
+  ]);
+  const geral = faixaKpis([
+    { rotulo: 'Clientes instalados', valor: kpis.clientesInstalados, detalhe: 'sistemas operando' },
+    { rotulo: 'Em qualificação', valor: kpis.leadsQualificando, detalhe: `${empresa().nomeAtendente} ativa neles` },
+    { rotulo: 'Ticket médio', valor: kpis.ticketMedio > 0 ? kpis.ticketMedio : null, prefixo: 'R$', compacto: true, detalhe: 'últimas 50 propostas' },
+    { rotulo: 'Manutenção próx. 30d', valor: kpis.manutencaoPendente, detalhe: 'lembretes pendentes', href: '/dashboard/manutencao' },
+  ]);
+
+  const body = `<div class="cc-root cc-hm">
+    ${cabecalhoPagina({
+      trilha: [{ rotulo: 'Command Center', href: '/dashboard/command-center' }, { rotulo: 'Visão geral' }],
+      titulo: 'Visão geral',
+      subtitulo: `Resumo das atividades da ${empresa().nomeAtendente} e do funil de propostas.`,
+      filtrosHtml: filtroMes,
+    })}
+    <div class="cc-hm-rot">${escapeHtml(mesLabel)}</div>
+    ${doMes}
+    <div class="cc-hm-rot">Carteira</div>
+    ${geral}
+    <div class="cc-hm-grade">
+      ${cartaoSecao({ titulo: 'Vendas fechadas', dica: 'últimos 12 meses', corpoHtml: `<div class="cc-hm-graf"><canvas id="graficoVendas" aria-label="Vendas fechadas por mês"></canvas></div>` })}
+      ${cartaoSecao({ titulo: 'Propostas geradas', dica: 'últimos 12 meses', corpoHtml: `<div class="cc-hm-graf"><canvas id="graficoMensal" aria-label="Propostas geradas por mês"></canvas></div>` })}
     </div>
-
-    <section class="mb-8">
-      <div class="flex items-center justify-between gap-2 flex-wrap mb-3">
-        <h2 class="text-xs font-semibold text-slate-500 uppercase tracking-wide">📅 ${escapeHtml(mesLabel)}</h2>
-        <form method="get" action="/dashboard/home" class="flex items-center gap-2">
-          <label class="text-xs text-slate-500">Ver mês:</label>
-          <input type="month" name="mes" value="${escapeHtml(mesValue)}" onchange="this.form.submit()"
-            class="text-xs border border-slate-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-amber-400 outline-none" />
-        </form>
-      </div>
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-        ${card('💰 Vendas fechadas', String(kpis.vendasMesAtual), `${kpis.vendasAnoAtual} no ano · ${kpis.vendasTotal} total`, 'emerald', 'text-emerald-700')}
-        ${card('📤 Propostas', String(kpis.propostasMesAtual), `${kpis.propostasAnoAtual} no ano · ${kpis.totalPropostas} total`, 'amber', 'text-amber-600')}
-        ${card('🎯 Leads novos', String(kpis.leadsMesAtual), `${kpis.totalLeads} total`, 'sky', 'text-sky-700')}
-        ${card('⚡ Usinas que entraram', String(kpis.usinasMesAtual), 'novos sistemas no mês', 'violet', 'text-violet-700')}
-      </div>
-    </section>
-
-    <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-      ${card('Clientes instalados', String(kpis.clientesInstalados), 'sistemas operando', 'emerald')}
-      ${card('Em qualificação', String(kpis.leadsQualificando), `${escapeHtml(empresa().nomeAtendente)} ativa neles`, 'violet', 'text-violet-700')}
-      ${card('Ticket médio', brl(kpis.ticketMedio), 'últimas 50 propostas', 'emerald', 'text-emerald-700')}
-      ${card('Manutenção próx 30d', String(kpis.manutencaoPendente), 'lembretes pendentes', kpis.manutencaoPendente > 0 ? 'rose' : 'sky', kpis.manutencaoPendente > 0 ? 'text-rose-600' : 'text-slate-900')}
-    </section>
-
-    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8">
-      <h2 class="text-lg font-semibold text-slate-900 mb-4">💰 Vendas fechadas — últimos 12 meses</h2>
-      <div style="height:280px;position:relative">
-        <canvas id="graficoVendas"></canvas>
-      </div>
-    </section>
-
-    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8">
-      <h2 class="text-lg font-semibold text-slate-900 mb-4">Propostas geradas — últimos 12 meses</h2>
-      <div style="height:280px;position:relative">
-        <canvas id="graficoMensal"></canvas>
-      </div>
-    </section>
-
-    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-      <h2 class="text-lg font-semibold text-slate-900 mb-2">Atalhos</h2>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-        <a href="/dashboard/propostas" class="block p-4 rounded-lg border border-slate-200 hover:border-sky-500 hover:bg-sky-50 transition">
-          <div class="font-semibold text-slate-900">📊 Ver todas as propostas</div>
-          <div class="text-slate-500 text-xs mt-1">Filtrar, buscar, abrir links</div>
-        </a>
-        <a href="/dashboard/manutencao" class="block p-4 rounded-lg border border-slate-200 hover:border-amber-500 hover:bg-amber-50 transition">
-          <div class="font-semibold text-slate-900">🔧 Manutenção pendente</div>
-          <div class="text-slate-500 text-xs mt-1">Quem precisa ser contatado</div>
-        </a>
-        <div class="block p-4 rounded-lg border border-dashed border-slate-300 bg-slate-50">
-          <div class="font-semibold text-slate-400">+ Mais módulos em breve</div>
-          <div class="text-slate-400 text-xs mt-1">Portal cliente, monitoramento, rateio</div>
-        </div>
-      </div>
-    </section>
-  `;
+    ${cartaoSecao({
+      titulo: 'Atalhos',
+      corpoHtml: `<div class="cc-hm-atalhos">
+        ${linhaLista({ tom: 'info', titulo: 'Ver todas as propostas', meta: 'Filtrar, buscar, abrir links', href: '/dashboard/propostas' })}
+        ${linhaLista({ tom: kpis.manutencaoPendente > 0 ? 'atencao' : 'normal', titulo: 'Manutenção pendente', meta: 'Quem precisa ser contatado', href: '/dashboard/manutencao' })}
+        ${linhaLista({ tom: 'sem_dado', titulo: 'Mais módulos em breve', meta: 'Portal cliente, monitoramento, rateio' })}
+      </div>`,
+    })}
+  </div>`;
 
   const scripts = `
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+${JS_TEMA_GRAFICOS}
 <script>
+  const T = window.ccTema || {};
   const opcoesGrafico = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: { legend: { display: false } },
     scales: {
-      y: { beginAtZero: true, ticks: { stepSize: 1 } },
+      y: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: T.line } },
       x: { grid: { display: false } }
     }
   };
@@ -520,7 +507,7 @@ export function renderHomePage(kpis: DashboardKpi, grafico: GraficoMensal[], gra
       type: 'bar',
       data: {
         labels: ${JSON.stringify(labels)},
-        datasets: [{ label: 'Vendas', data: ${JSON.stringify(valoresVendas)}, backgroundColor: '#10b981', borderRadius: 6 }]
+        datasets: [{ label: 'Vendas', data: ${JSON.stringify(valoresVendas)}, backgroundColor: T.ok || '#10b981', borderRadius: 6 }]
       },
       options: opcoesGrafico
     });
@@ -531,14 +518,17 @@ export function renderHomePage(kpis: DashboardKpi, grafico: GraficoMensal[], gra
       type: 'bar',
       data: {
         labels: ${JSON.stringify(labels)},
-        datasets: [{ label: 'Propostas', data: ${JSON.stringify(valores)}, backgroundColor: '#f59e0b', borderRadius: 6 }]
+        datasets: [{ label: 'Propostas', data: ${JSON.stringify(valores)}, backgroundColor: T.gold || '#f59e0b', borderRadius: 6 }]
       },
       options: opcoesGrafico
     });
   }
 </script>`;
 
-  return renderLayout({ active: 'home', title: 'Home', body, scripts, user });
+  return renderLayout({
+    active: 'home', title: 'Visão geral', body, scripts, user,
+    tailwind: false, dark: temaDaTela(user, 'escuro') === 'escuro', largo: true, cabeca: `<style>${CSS_HOME}</style>`,
+  });
 }
 
 // =========================================================================

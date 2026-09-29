@@ -138,7 +138,7 @@ import type { ManutencaoTipo } from './manutencao-motor.js';
 import { criarOS, abrirOSDeManutencao, getOS, salvarOS, addFotoOS, listFotosOS, fotoCountsPorItem, concluirOS } from './os-queries.js';
 import { renderOSPage, renderOSLaudoHtml } from './os-views.js';
 import { hidratarChecklist, resumoOS, type OSTipo } from './os-checklist.js';
-import { rotaCommandCenter, rotaCentralAtencao, rotaModoTv, travaCockpitDaCasa, nomeDaAssistente } from './command-center-rotas.js';
+import { rotaCommandCenter, rotaCentralAtencao, rotaModoTv, travaCockpitDaCasa, travaVisaoGeralDaCasa, nomeDaAssistente } from './command-center-rotas.js';
 import { paginaInicialDe, destinoDepoisDoLogin } from './entrada.js';
 import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
 import { rotaMapaJson, rotaLocalizarPagina, rotaLocalizarUma, rotaSalvarPosicao } from './mapa-usinas-rotas.js';
@@ -2273,7 +2273,8 @@ b.onclick=async function(){
   });
 
   // Home: KPIs + grafico mensal. ?mes=YYYY-MM filtra os cards por um mês passado.
-  router.get('/home', async (req: Request, res: Response) => {
+  // R24 (segurança): só da casa — a consulta não filtra empresa; tenant → Command Center.
+  router.get('/home', travaVisaoGeralDaCasa, async (req: Request, res: Response) => {
     try {
       const agora = new Date();
       const mesParam = String(req.query.mes ?? '').match(/^(\d{4})-(\d{2})$/);

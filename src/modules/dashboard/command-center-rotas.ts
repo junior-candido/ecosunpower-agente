@@ -144,7 +144,7 @@ export function rotaModoTv(): Handler {
  * empresas. Tenant: GET de página → Command Center dele; POST ou JSON → 403.
  * Registrada no router com router.use('/cockpit', …) antes das rotas.
  */
-export function travaCockpitDaCasa(req: Request, res: Response, next: () => void): void {
+export function travaTelaDaCasa(req: Request, res: Response, next: () => void): void {
   const user = (req as AuthedRequest).dashUser;
   if (ehDaCasa(user)) { next(); return; }
   const querJson = String(req.headers?.accept ?? '').includes('application/json');
@@ -154,3 +154,10 @@ export function travaCockpitDaCasa(req: Request, res: Response, next: () => void
   }
   res.status(403).json({ ok: false, error: 'Área indisponível para a sua empresa.' });
 }
+
+/** Cockpit antigo: só da casa (ver travaTelaDaCasa). */
+export const travaCockpitDaCasa = travaTelaDaCasa;
+/** Visão geral (/home, R24): a consulta (fetchDashboardKpis e os gráficos
+ *  mensais) é da casa e não filtra empresa — o tenant, que nem tem o item no
+ *  menu, caía nela digitando o endereço e via os números da casa. */
+export const travaVisaoGeralDaCasa = travaTelaDaCasa;

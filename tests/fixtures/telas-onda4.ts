@@ -12,6 +12,7 @@ import { CASOS_COMERCIAL2 } from './casos-comercial2.js';
 import { renderPosVendaPage } from '../../src/modules/dashboard/pos-venda-views.js';
 import { CASOS_OPERACAO2, linhaPv } from './casos-operacao2.js';
 import { CASOS_IMERSIVO } from './casos-imersivo.js';
+import { CASOS_HOME } from './casos-home.js';
 
 const uuid = (i: number) => `${String(i).padStart(8, '0')}-2222-4333-8444-555555555555`;
 
@@ -56,7 +57,7 @@ function telasR22(n: number, user: DashUser): Record<string, string> {
 /** R23 — só da casa (as rotas barram o tenant): entra só no caso da casa. */
 function telasR23(user: DashUser): Record<string, string> {
   if (user.companyId !== '00000000-0000-0000-0000-000000000001') return {};
-  return { 'r23-predio': CASOS_IMERSIVO.predio(), 'r23-cerebro': CASOS_IMERSIVO.cerebro() };
+  return { 'r23-predio': CASOS_IMERSIVO.predio(), 'r23-cerebro': CASOS_IMERSIVO.cerebro(), 'r24-home': CASOS_HOME.home() };
 }
 
 export function telasOnda4(n: number, user: DashUser): Record<string, string> {
