@@ -925,6 +925,50 @@ export interface AtendimentoInput {
   donoPessoal?: string | null;
   /** Parte 2b: conversa do número pessoal com quem AINDA NÃO é lead (sem lead aberto). */
   contato?: ContatoPessoalTela | null;
+  /** Pedidos de agendamento deste lead esperando a confirmação do admin (28/09/2026). */
+  agendamentos?: PedidoAgendaPainel[];
+  /** Resultado da última ação num pedido (vem na URL depois do POST). */
+  agendaMsg?: string;
+}
+
+export interface PedidoAgendaPainel {
+  id: string;
+  tipo: 'visita' | 'meet';
+  /** Já formatado ("quinta (01/10), às 14h"). */
+  quando: string;
+  endereco?: string;
+  resumo?: string;
+}
+
+/**
+ * "Agendamento aguardando sua confirmação" (28/09/2026). A Eva não marca mais
+ * sozinha: o pedido espera o admin. Os mesmos botões do WhatsApp; só o admin
+ * da empresa responde (os outros veem o aviso).
+ */
+export function blocoAgendaPendente(leadId: string, pedidos: PedidoAgendaPainel[], podeResponder: boolean, msg?: string): string {
+  const flash = msg ? `<div class="cc-aviso cc-aviso-info" role="status">${escapeHtml(msg)}</div>` : '';
+  if (pedidos.length === 0) return flash;
+  const itens = pedidos.map((p) => {
+    const acao = `/dashboard/leads/${escapeHtml(leadId)}/agendamento/${escapeHtml(p.id)}`;
+    const botao = (valor: string, rotulo: string, classe: string) =>
+      `<form method="POST" action="${acao}" style="display:inline"><input type="hidden" name="acao" value="${valor}"><button type="submit" class="cc-btn ${classe} cc-btn-sm">${rotulo}</button></form>`;
+    const botoes = podeResponder
+      ? `<div class="cc-row" style="flex-wrap:wrap;gap:6px;margin-top:6px">
+          ${botao('ok', '✅ Confirmar e avisar', 'cc-btn-gold')}
+          ${botao('eu', '📞 Eu mesmo aviso', 'cc-btn-ghost')}
+          ${botao('nao', '❌ Não posso', 'cc-btn-crit')}
+          <form method="POST" action="${acao}" class="cc-row" style="gap:6px"><input type="hidden" name="acao" value="outro"><input name="sugestao" required maxlength="200" placeholder="Outro horário (ex.: sexta 10h)" aria-label="Sugerir outro horário"><button type="submit" class="cc-btn cc-btn-ghost cc-btn-sm">🕐 Sugerir</button></form>
+        </div>`
+      : '<div class="cc-faint">Só o administrador da empresa confirma.</div>';
+    return `<div>
+      <strong>${p.tipo === 'meet' ? '🎥 Google Meet' : '🚗 Visita técnica'} — ${escapeHtml(p.quando)}</strong>
+      ${p.endereco ? `<div class="cc-muted">📍 ${escapeHtml(p.endereco)}</div>` : ''}
+      ${p.resumo ? `<div class="cc-muted">📝 ${escapeHtml(p.resumo)}</div>` : ''}
+      ${botoes}
+    </div>`;
+  }).join('');
+  return `${flash}<div class="cc-aviso cc-aviso-atencao" role="status" id="cc-agenda-pendente">${icone('alert', 'sm')}<div><strong>Agendamento aguardando sua confirmação</strong>
+    <div class="cc-muted">O cliente escolheu o horário e ouviu que vocês vão confirmar. Nada foi marcado na agenda ainda.</div>${itens}</div></div>`;
 }
 
 export interface ContatoPessoalTela {
@@ -1041,6 +1085,7 @@ export function renderAtendimentoPage(p: AtendimentoInput): string {
   const ct = !lead ? p.contato ?? null : null;
   const body = `<div class="cc-root cc-at${lead || ct ? ' cc-at-com-lead' : ''}">
     ${cabecalho}
+    ${lead ? blocoAgendaPendente(lead.id, p.agendamentos ?? [], Boolean(p.user?.isAdmin) && can(p.user, 'leads', 'editar'), p.agendaMsg) : ''}
     <div class="cc-at-grade">
       ${colunaLista(p.lista, p.filtros, lead?.id ?? null, assistente, ct?.telefone ?? null, p.donoPessoal ?? null)}
       ${lead ? colunaChat(lead, mensagens, assistente, assistenteMin, p.envio, p.donoPessoal ?? null, can(p.user, 'leads', 'editar')) : ct ? colunaChatContato(ct, p.donoPessoal ?? null, assistente) : chatSemLead()}

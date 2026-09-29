@@ -66,7 +66,7 @@ import { makeCapiReporter, type CapiReporter } from './modules/capi-reporter.js'
 import { ProposalFollowupService } from './modules/proposal-followup.js';
 import { FollowupVivoService } from './modules/vendas/followup-vivo.js';
 import { VisitasService } from './modules/vendas/visitas.js';
-import { AgendamentoPendenteService, repoSupabase as repoPedidosAgenda, quemConfirma, prometeAgendamento, type EmpresaAgenda } from './modules/vendas/agendamento-pendente.js';
+import { AgendamentoPendenteService, repoSupabase as repoPedidosAgenda, quemConfirma, prometeAgendamento, formatarDataHora as formatarDataHoraAgenda, type EmpresaAgenda } from './modules/vendas/agendamento-pendente.js';
 // Fatia 2 — Eva Vendedora: estado de venda, tabela de preços do Junior e precificador sombra.
 import { EstadoVendaService } from './modules/vendas/estado-venda.js';
 import { TabelaPrecosService, makeTabelaHandler } from './modules/vendas/tabela-precos.js';
@@ -9491,6 +9491,29 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
   // env DASHBOARD_PASSWORD. Rotas: /dashboard/home, /dashboard/propostas,
   // /dashboard/manutencao. Mais paginas serao adicionadas em fases.
   app.use('/dashboard', createDashboardRouter(supabase, monitoringService, {
+    // Pedido de agendamento aguardando o admin (28/09/2026) — o mesmo serviço
+    // do WhatsApp, rodando no contexto DA EMPRESA DA SESSÃO (marca, agenda e a
+    // instância certa pra falar com o cliente).
+    agendamentos: {
+      pendentesDoLead: async (cid, leadId) => {
+        const ps = await comEmpresaDe(cid, () => agendamentoPendente.listarPendentesDaEmpresa(leadId));
+        return ps.map(p => ({ id: p.id, tipo: p.tipo, quando: formatarDataHoraAgenda(p.inicioISO), endereco: p.tipo === 'visita' ? p.clientAddress : undefined, resumo: p.resumoLead }));
+      },
+      responder: async (cid, leadId, pedidoId, acao, sugestao) => {
+        const inst = cid === ECOSUN_COMPANY_ID ? undefined : await evolutionTenant.instanciaDaEmpresa(cid).catch(() => undefined);
+        // Tenant sem instância própria: falar com o cliente sairia pelo número
+        // da EcoSunPower. Só o "Eu mesmo aviso" (não fala com o cliente) passa.
+        if (cid !== ECOSUN_COMPANY_ID && !inst && acao !== 'eu') {
+          return 'Esta empresa ainda não tem WhatsApp próprio conectado — use "📞 Eu mesmo aviso" e fale com o cliente.';
+        }
+        return comEmpresaDe(cid, () => comCanal({ companyId: cid, evolutionInstance: inst }, async () => {
+          const p = await agendamentoPendente.buscar(pedidoId);
+          if (!p || p.leadId !== leadId) return 'Pedido de agendamento não encontrado.';
+          if (acao === 'outro') return agendamentoPendente.sugerirHorario(pedidoId, sugestao ?? '');
+          return agendamentoPendente.responder(acao, pedidoId, null);
+        }));
+      },
+    },
     metaWabaAccessToken: config.metaWabaAccessToken,
     anthropicApiKey: config.anthropicApiKey,
     sendText,

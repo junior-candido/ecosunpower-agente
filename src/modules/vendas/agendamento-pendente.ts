@@ -492,6 +492,23 @@ export class AgendamentoPendenteService {
     return `👍 Ok. A ${e.nomeAtendente} pediu outro dia/horário ao cliente. Quando ele escolher, chega um novo pedido pra você.`;
   }
 
+  /** O admin propõe outro horário (texto livre): vai pro cliente e o pedido fecha. */
+  async sugerirHorario(id: string, texto: string): Promise<string> {
+    const e = this.d.empresaAtual();
+    const sugestao = texto.replace(/\s+/g, ' ').trim().slice(0, 200);
+    if (!sugestao) return '⚠️ Não entendi o horário. Escreva o horário que você sugere.';
+    const p = await this.buscar(id);
+    if (!p) return '⚠️ Não achei esse pedido de agendamento.';
+    if (!(await this.d.repo.transicionar(p.id, p.companyId, ST_PENDENTE, ST_NAO_CONFIRMADA))) {
+      return 'ℹ️ Esse pedido já foi resolvido antes. Não mandei a sugestão.';
+    }
+    const txt = textoClienteSugestao(e, p, sugestao);
+    await this.d.enviarCliente(p.phone, txt);
+    if (p.leadId) await this.d.registrarNaConversa(p.leadId, p.companyId, txt).catch(() => {});
+    this.d.log('info', `[agenda-pendente] admin sugeriu "${sugestao}" pro pedido ${p.id}`, { pedido_id: p.id });
+    return '📨 Mandei sua sugestão ao cliente. Quando ele responder, chega um novo pedido pra você confirmar.';
+  }
+
   /**
    * Texto livre do admin. Se ele estava sugerindo horário, manda pro cliente.
    * Se era só um número (1–4) respondendo o último pedido em texto, executa.
@@ -514,18 +531,7 @@ export class AgendamentoPendenteService {
         this.d.log('info', `[agenda-pendente] sugestão do pedido ${idSugestao} abandonada (admin mandou comando)`);
         return null;
       }
-      const sugestao = t.replace(/\s+/g, ' ').slice(0, 200);
-      if (!sugestao) return '⚠️ Não entendi o horário. Toque 🕐 de novo e escreva o horário.';
-      const p = await this.buscar(idSugestao);
-      if (!p) return '⚠️ Não achei esse pedido de agendamento.';
-      if (!(await this.d.repo.transicionar(p.id, p.companyId, ST_PENDENTE, ST_NAO_CONFIRMADA))) {
-        return 'ℹ️ Esse pedido já foi resolvido antes. Não mandei a sugestão.';
-      }
-      const txt = textoClienteSugestao(e, p, sugestao);
-      await this.d.enviarCliente(p.phone, txt);
-      if (p.leadId) await this.d.registrarNaConversa(p.leadId, p.companyId, txt).catch(() => {});
-      this.d.log('info', `[agenda-pendente] admin sugeriu "${sugestao}" pro pedido ${p.id}`, { pedido_id: p.id });
-      return `📨 Mandei sua sugestão ao cliente. Quando ele responder, chega um novo pedido pra você confirmar.`;
+      return this.sugerirHorario(idSugestao, t);
     }
 
     const acaoNum = ACAO_POR_NUMERO[t];
