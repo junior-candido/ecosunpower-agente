@@ -201,7 +201,10 @@ na criação; cada aviso tem coluna reservada ANTES de enviar). Robô em `index.
 `empresaPausadaNoCache` antes de despachar e, se pausada, só grava (`registrarPausado` → `registrarSemResponder`) — o
 painel dele segue acessível, com faixa "pagar agora" (`faixaAssistentePausada` em `views.ts`). Pagou → reativa sozinha.
 Estado na assinatura: `assistente_pausada_em`, `pausa_automatica`, `dias_pausa`, `pausa_adiada_ate`.
-WhatsApp só com MODELO (`cobranca_mensalidade_v1`, `aviso_pausa_assistente_v1`, `assistente_pausada_v1`, `recibo_mensalidade_v1`; conferido na Meta); sem modelo →
+D+7 = **2ª trava**: `disparos_pausados_em` (`dias_trava_disparos`) — TODA fila de disparo automático pro cliente do
+tenant passa pelo ponto único `pausa.ts#filtrarDisparosLiberados` (configurado no boot); o que fica retido volta ao
+pagar, reagendado com espaçamento (`disparos-repo.ts`). **Fila nova de disparo automático tem que usar o ponto único.**
+WhatsApp só com MODELO (`cobranca_mensalidade_v1`, `aviso_pausa_assistente_v1`, `assistente_pausada_v1`, `aviso_pausa_disparos_v1`, `disparos_pausados_v1`, `recibo_mensalidade_v1`; conferido na Meta); sem modelo →
 e-mail (Resend) + texto pronto no zap do Junior. Webhook `/webhook/infinitepay` (não assinado → payment_check +
 valor) baixa a fatura, lança ENTRADA no caixa (`financeiro_lancamentos` origem `assinatura`, banco `infinitepay`,
 categoria `mensalidades`) e manda recibo. Telas: `dashboard/assinaturas-views.ts` (Financeiro › Assinaturas, SÓ a

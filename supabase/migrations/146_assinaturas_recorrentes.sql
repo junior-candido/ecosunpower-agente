@@ -18,8 +18,11 @@
 --     (a mensalidade paga entra no caixa como RECEITA) + categoria
 --     'mensalidades'.
 --  4) RLS: a empresa dona gerencia; o tenant assinante só LÊ o que é dele.
---  5) Pausa por inadimplência: assistente_pausada_em/pausa_automatica/dias_pausa/
---     pausa_adiada_ate na assinatura. Pausar NÃO bloqueia login nem dados.
+--  5) Pausa por inadimplência, em 2 travas (só tenant; a casa nunca):
+--     1ª (dias_pausa, padrão 3) assistente para de responder — assistente_pausada_em;
+--     2ª (dias_trava_disparos, padrão 7) param os disparos automáticos — disparos_pausados_em.
+--     pausa_automatica=false desliga as duas; pausa_adiada_ate empurra as duas.
+--     Pausar NÃO bloqueia login nem dados.
 --     (O app roda pelo service-role; a RLS é a segunda trava.)
 --
 -- Idempotente (pode rodar de novo). Aplicar no SQL Editor ANTES do deploy.
@@ -42,7 +45,9 @@ ALTER TABLE assinaturas
   ADD COLUMN IF NOT EXISTS pausa_automatica boolean NOT NULL DEFAULT true,   -- false = nunca pausar automaticamente
   ADD COLUMN IF NOT EXISTS dias_pausa smallint NOT NULL DEFAULT 3,            -- pausa em D+3 (último aviso em D+2)
   ADD COLUMN IF NOT EXISTS pausa_adiada_ate date,                             -- "dar mais prazo"
-  ADD COLUMN IF NOT EXISTS assistente_pausada_em timestamptz;                 -- pausada desde (nulo = atendendo)
+  ADD COLUMN IF NOT EXISTS assistente_pausada_em timestamptz,                 -- 1ª trava: pausada desde (nulo = atendendo)
+  ADD COLUMN IF NOT EXISTS dias_trava_disparos smallint NOT NULL DEFAULT 7,   -- 2ª trava em D+7 (param os disparos automáticos)
+  ADD COLUMN IF NOT EXISTS disparos_pausados_em timestamptz;                  -- 2ª trava: pausados desde (nulo = disparando)
 
 -- Linhas antigas (090): o ciclo sai do vencimento que já estava lá.
 UPDATE assinaturas
@@ -78,6 +83,9 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'assinaturas_dias_pausa_check') THEN
     ALTER TABLE assinaturas ADD CONSTRAINT assinaturas_dias_pausa_check CHECK (dias_pausa BETWEEN 2 AND 30);
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'assinaturas_dias_trava_disparos_check') THEN
+    ALTER TABLE assinaturas ADD CONSTRAINT assinaturas_dias_trava_disparos_check CHECK (dias_trava_disparos BETWEEN 3 AND 60);
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'assinaturas_forma_check') THEN
     ALTER TABLE assinaturas ADD CONSTRAINT assinaturas_forma_check
       CHECK (forma IN ('link_infinitepay'));
@@ -92,6 +100,8 @@ CREATE INDEX IF NOT EXISTS idx_assinaturas_company ON assinaturas(company_id);
 CREATE INDEX IF NOT EXISTS idx_assinaturas_dona_status ON assinaturas(dona_company_id, status);
 -- a cada mensagem que chega o robô pergunta "a assistente desta empresa está pausada?"
 CREATE INDEX IF NOT EXISTS idx_assinaturas_pausada ON assinaturas(company_id) WHERE assistente_pausada_em IS NOT NULL;
+-- a cada lote de disparos automáticos: "quais empresas estão com a 2ª trava?"
+CREATE INDEX IF NOT EXISTS idx_assinaturas_disparos_pausados ON assinaturas(company_id) WHERE disparos_pausados_em IS NOT NULL;
 
 -- Produto genérico pra cliente avulso (ex.: contrato mensal de O&M).
 INSERT INTO assinatura_produtos (id, nome, valor_centavos_padrao) VALUES
@@ -130,6 +140,7 @@ CREATE TABLE IF NOT EXISTS faturas_assinatura (
   aviso_vespera_em timestamptz,          -- D−1: vence amanhã
   aviso_venceu_em timestamptz,           -- D+1: venceu ontem
   aviso_ultimo_em timestamptz,           -- D+2: último aviso (+ Junior)
+  aviso_disparos_em timestamptz,         -- D+6: véspera da 2ª trava (+ Junior)
   recibo_em timestamptz,
   valor_alerta_em timestamptz,           -- alerta 'valor não bate' (uma vez só)
   canal_ultimo_aviso text,               -- 'whatsapp' | 'email' | 'junior' | combinações

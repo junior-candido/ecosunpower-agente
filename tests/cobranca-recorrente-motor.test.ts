@@ -11,7 +11,7 @@ import type { FaturaRow, TipoAviso } from '../src/modules/cobranca-recorrente/fa
 
 const CASA = '00000000-0000-0000-0000-000000000001';
 const COL: Record<TipoAviso, keyof FaturaRow> = {
-  fatura: 'avisoFaturaEm', vespera: 'avisoVesperaEm', venceu: 'avisoVenceuEm', ultimo_aviso: 'avisoUltimoEm', recibo: 'reciboEm', valor_alerta: 'valorAlertaEm',
+  fatura: 'avisoFaturaEm', vespera: 'avisoVesperaEm', venceu: 'avisoVenceuEm', ultimo_aviso: 'avisoUltimoEm', aviso_disparos: 'avisoDisparosEm', recibo: 'reciboEm', valor_alerta: 'valorAlertaEm',
 };
 
 const JIMENA: AssinaturaMotor = {
@@ -19,6 +19,7 @@ const JIMENA: AssinaturaMotor = {
   valorCentavos: 29700, status: 'ativa', diaVencimento: 10, inicioEm: '2026-10-01', companyId: 'c-conquista',
   descricao: 'Monitoramento de Usinas', leadId: null,
   pausaAutomatica: true, diasPausa: 3, pausaAdiadaAte: null, assistentePausadaEm: null, empresaNome: 'Conquista Solar',
+  diasTravaDisparos: 7, disparosPausadosEm: null,
 };
 
 function fakeDeps(o: { assinaturas?: AssinaturaMotor[]; aprovado?: boolean; linkFalha?: boolean; zapFalha?: boolean; emailFalha?: boolean; juniorFalha?: boolean } = {}) {
@@ -29,6 +30,7 @@ function fakeDeps(o: { assinaturas?: AssinaturaMotor[]; aprovado?: boolean; link
   const junior: string[] = [];
   const logs: Array<Record<string, unknown>> = [];
   const auditoria: Array<{ assinaturaId: string; acao: string }> = [];
+  const reagendados: Array<{ id: string; desde: string }> = [];
   let seq = 0;
   let relogio = '2026-10-07T12:00:00Z';
   const deps: MotorDeps = {
@@ -43,10 +45,18 @@ function fakeDeps(o: { assinaturas?: AssinaturaMotor[]; aprovado?: boolean; link
     },
     reativarAssistente: async (a) => {
       const x = assinaturas.find((y) => y.id === a.id)!;
-      if (!x.assistentePausadaEm) return false;
+      if (!x.assistentePausadaEm && !x.disparosPausadosEm) return false;
       x.assistentePausadaEm = null;
+      x.disparosPausadosEm = null;
       return true;
     },
+    pausarDisparos: async (a) => {
+      const x = assinaturas.find((y) => y.id === a.id)!;
+      if (x.disparosPausadosEm || !x.assistentePausadaEm || x.companyId === CASA || !x.companyId) return false;
+      x.disparosPausadosEm = relogio;
+      return true;
+    },
+    reagendarDisparos: async (a, desde) => { reagendados.push({ id: a.id, desde }); return 3; },
     auditar: async (e) => { auditoria.push(e); },
     listarCobraveis: async () => assinaturas.map((a) => ({ ...a })),
     faturasDaAssinatura: async (id) => faturas.filter((f) => f.assinaturaId === id).map((f) => ({ ...f })),
@@ -57,7 +67,7 @@ function fakeDeps(o: { assinaturas?: AssinaturaMotor[]; aprovado?: boolean; link
         competencia: n.competencia, venceEm: n.venceEm, valorCentavos: n.valorCentavos, descricao: n.descricao,
         status: 'aberta', cobrancaId: null, linkUrl: null, pagoEm: null, pagoCentavos: null, taxaCentavos: null,
         metodo: null, formaBaixa: null, baixadoPor: null, lancamentoId: null,
-        avisoFaturaEm: null, avisoVesperaEm: null, avisoVenceuEm: null, avisoUltimoEm: null, reciboEm: null,
+        avisoFaturaEm: null, avisoVesperaEm: null, avisoVenceuEm: null, avisoUltimoEm: null, avisoDisparosEm: null, reciboEm: null,
         canalUltimoAviso: null, criadoEm: relogio,
       };
       faturas.push(f);
@@ -84,7 +94,7 @@ function fakeDeps(o: { assinaturas?: AssinaturaMotor[]; aprovado?: boolean; link
     log: (ev) => { logs.push(ev); },
   };
   const rodar = (dia: string) => { relogio = `${dia}T12:00:00Z`; return rodarCobrancaRecorrente(deps, dia); };
-  return { deps, faturas, assinaturas, zap, emails, junior, logs, auditoria, rodar, setRelogio: (d: string) => { relogio = `${d}T12:00:00Z`; } };
+  return { deps, faturas, assinaturas, zap, emails, junior, logs, auditoria, reagendados, rodar, setRelogio: (d: string) => { relogio = `${d}T12:00:00Z`; } };
 }
 
 describe('régua "dois toques antes e dois depois"', () => {
@@ -127,10 +137,10 @@ describe('régua "dois toques antes e dois depois"', () => {
     expect(d.zap.at(-1)!.modelo).toBe('assistente_pausada_v1');
     expect(d.junior.some((t) => /Assistente de Conquista Solar PAUSADA por fatura em aberto/.test(t))).toBe(true);
     expect(d.auditoria).toContainEqual({ assinaturaId: 'a1', acao: 'assistente_pausada_auto', detalhe: '2026-10' });
-    // dias seguintes: nada se repete
+    // dias seguintes: nada se repete até a véspera da 2ª trava
     const antes = { zap: d.zap.length, junior: d.junior.length };
     expect(await d.rodar('2026-10-14')).toMatchObject({ avisos: 0, pausas: 0 });
-    await d.rodar('2026-10-20');
+    await d.rodar('2026-10-15');
     expect({ zap: d.zap.length, junior: d.junior.length }).toEqual(antes);
   });
 
@@ -285,5 +295,74 @@ describe('ações manuais', () => {
     expect(await reativarAssistenteDe(d.deps, JIMENA, 'manual')).toBe(true);
     expect(await reativarAssistenteDe(d.deps, JIMENA, 'manual')).toBe(false);
     expect(d.auditoria.map((x) => x.acao)).toEqual(['assistente_pausada_manual', 'assistente_reativada_manual']);
+  });
+});
+
+describe('2ª trava (padrão D+7): D+6 aviso, D+7 param os disparos', () => {
+  const ateD5 = ['2026-10-07', '2026-10-09', '2026-10-11', '2026-10-12', '2026-10-13', '2026-10-15'];
+  it('D+6: aviso (cliente + Junior); D+7: disparos pausados (cliente + Junior); depois silêncio', async () => {
+    const d = fakeDeps({ aprovado: true });
+    for (const dia of ateD5) await d.rodar(dia);
+    expect(d.assinaturas[0]!.assistentePausadaEm).not.toBeNull();
+    expect(d.assinaturas[0]!.disparosPausadosEm).toBeNull();
+    await d.rodar('2026-10-16');
+    expect(d.zap.at(-1)).toMatchObject({ modelo: 'aviso_pausa_disparos_v1', params: ['Jimena', 'Monitoramento de Usinas — outubro/2026', 'R$ 297,00', '16/10/2026', 'https://checkout.exemplo.invalid/f1'] });
+    expect(d.junior.some((t) => t.includes('Amanhã (17/10/2026) param também os DISPAROS AUTOMÁTICOS'))).toBe(true);
+    expect(d.assinaturas[0]!.disparosPausadosEm).toBeNull();
+    const r = await d.rodar('2026-10-17');
+    expect(r.pausas).toBe(1);
+    expect(d.assinaturas[0]!.disparosPausadosEm).not.toBeNull();
+    expect(d.zap.at(-1)!.modelo).toBe('disparos_pausados_v1');
+    expect(d.junior.some((t) => /Disparos automáticos de Conquista Solar PAUSADOS por fatura em aberto \(2ª trava\)/.test(t))).toBe(true);
+    expect(d.auditoria.map((x) => x.acao)).toContain('disparos_pausados_auto');
+    const antes = d.zap.length;
+    await d.rodar('2026-10-18'); await d.rodar('2026-10-30');
+    expect(d.zap.length).toBe(antes);
+  });
+  it('robô parado vários dias: aviso num dia, trava só no seguinte (nunca aviso e trava juntos)', async () => {
+    const d = fakeDeps({ aprovado: true });
+    for (const dia of ateD5) await d.rodar(dia);
+    await d.rodar('2026-10-25'); // pulou D+6 e D+7
+    expect(d.zap.at(-1)!.modelo).toBe('aviso_pausa_disparos_v1');
+    expect(d.assinaturas[0]!.disparosPausadosEm).toBeNull();
+    await d.rodar('2026-10-26');
+    expect(d.assinaturas[0]!.disparosPausadosEm).not.toBeNull();
+  });
+  it('pagou → as DUAS voltam e os disparos parados são reagendados de onde pararam', async () => {
+    const d = fakeDeps({ aprovado: true });
+    for (const dia of [...ateD5, '2026-10-16', '2026-10-17']) await d.rodar(dia);
+    const desde = d.assinaturas[0]!.disparosPausadosEm!;
+    d.faturas[0]!.status = 'paga';
+    const r = await d.rodar('2026-10-20');
+    expect(r.reativacoes).toBe(1);
+    expect(d.assinaturas[0]).toMatchObject({ assistentePausadaEm: null, disparosPausadosEm: null });
+    expect(d.reagendados).toEqual([{ id: 'a1', desde }]);
+  });
+  it('só a 1ª ligada ao pagar → não reagenda nada (os disparos nunca pararam)', async () => {
+    const d = fakeDeps({ aprovado: true });
+    for (const dia of ateD5) await d.rodar(dia);
+    d.faturas[0]!.status = 'paga';
+    await d.rodar('2026-10-16');
+    expect(d.reagendados).toEqual([]);
+  });
+  it('casa, avulso e "nunca pausar": nem 1ª nem 2ª trava, nem aviso de disparos', async () => {
+    for (const a of [{ ...JIMENA, companyId: CASA }, { ...JIMENA, companyId: null }, { ...JIMENA, pausaAutomatica: false }]) {
+      const d = fakeDeps({ aprovado: true, assinaturas: [a] });
+      for (const dia of [...ateD5, '2026-10-16', '2026-10-17', '2026-10-25']) await d.rodar(dia);
+      expect(d.assinaturas[0]).toMatchObject({ assistentePausadaEm: null, disparosPausadosEm: null });
+      expect(d.zap.map((z) => z.modelo)).not.toContain('aviso_pausa_disparos_v1');
+    }
+  });
+});
+
+describe('destinatários — só o contato de cobrança (proprietária) e o Junior', () => {
+  it('toda a régua (faturas, lembretes, 1ª e 2ª trava) vai SÓ pro WhatsApp/e-mail de cobrança; aviso interno só pro Junior', async () => {
+    const d = fakeDeps({ aprovado: true });
+    for (const dia of ['2026-10-07', '2026-10-09', '2026-10-11', '2026-10-12', '2026-10-13', '2026-10-15', '2026-10-16', '2026-10-17']) await d.rodar(dia);
+    expect(d.zap.length).toBeGreaterThanOrEqual(7);
+    expect(new Set(d.zap.map((z) => z.tel))).toEqual(new Set(['5577999610038']));
+    expect(new Set(d.emails.map((e) => e.to))).toEqual(new Set(['jimena@exemplo.invalid']));
+    // o motor não tem outro canal de saída: WhatsApp = modelo da casa (WABA), e-mail = casa, Junior = avisarJunior
+    expect(Object.keys(d.deps).filter((k) => /enviar|avisar|send/i.test(k)).sort()).toEqual(['avisarJunior', 'enviarEmail', 'enviarModelo']);
   });
 });

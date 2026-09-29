@@ -12,7 +12,10 @@
 //   D0   → vencimento (sem mensagem extra)
 //   D+1  → 3º toque: "venceu ontem"
 //   D+2  → 4º toque: ÚLTIMO AVISO ("sua assistente será pausada amanhã") + Junior
-//   D+3  → PAUSA a assistente do tenant (pausa.ts) — painel continua acessível
+//   D+3  → 1ª TRAVA: a assistente do tenant para de responder (pausa.ts)
+//   D+6  → aviso: "os disparos automáticos param amanhã" (+ Junior)
+//   D+7  → 2ª TRAVA: param os disparos automáticos pros clientes do tenant
+//   (painel, login e dados NUNCA são bloqueados)
 // Tudo por JANELA, não por data exata: se o robô ficar parado um dia, o aviso
 // sai no dia seguinte. Cada aviso tem a sua coluna na fatura (reservada antes
 // de enviar) → nunca sai duas vezes.
@@ -41,11 +44,13 @@ export interface FaturaCiclo {
   avisoVesperaEm: string | null;
   avisoVenceuEm: string | null;
   avisoUltimoEm: string | null;
+  /** Véspera da 2ª trava (disparos automáticos). Opcional: só tenant com pausa. */
+  avisoDisparosEm?: string | null;
   pagoEm: string | null;
 }
 
-/** fatura (D−3) · vespera (D−1) · venceu (D+1) · ultimo_aviso (D+pausa−1, também avisa o Junior). */
-export type AcaoFatura = 'fatura' | 'vespera' | 'venceu' | 'ultimo_aviso';
+/** fatura (D−3) · vespera (D−1) · venceu (D+1) · ultimo_aviso (véspera da 1ª trava) · aviso_disparos (véspera da 2ª). */
+export type AcaoFatura = 'fatura' | 'vespera' | 'venceu' | 'ultimo_aviso' | 'aviso_disparos';
 
 const DIA_MS = 86_400_000;
 /** A fatura nasce 3 dias antes do vencimento. */
@@ -196,15 +201,22 @@ export function proximaCompetenciaManual(
  *  - venceu:  de D+1 até a antevéspera da pausa;
  *  - ultimo_aviso: de D+(pausa−1) em diante (uma vez; também avisa o Junior).
  */
-export function acaoDaFatura(f: FaturaCiclo, hoje: string, diasPausa: number = DIAS_PAUSA_PADRAO): AcaoFatura | null {
+export function acaoDaFatura(
+  f: FaturaCiclo,
+  hoje: string,
+  /** número = dias da 1ª trava; objeto = dias EFETIVOS (já com o prazo dado) da 1ª e da 2ª trava (null = sem 2ª). */
+  travas: number | { pausaEm: number; disparosEm: number | null } = DIAS_PAUSA_PADRAO,
+): AcaoFatura | null {
   if (f.status !== 'aberta') return null;
   if (!f.avisoFaturaEm) return 'fatura';
-  const pausa = Math.min(DIAS_PAUSA_MAX, Math.max(DIAS_PAUSA_MIN, Math.round(diasPausa)));
+  const t = typeof travas === 'number' ? { pausaEm: travas, disparosEm: null } : travas;
+  const pausa = Math.min(DIAS_PAUSA_MAX + 60, Math.max(DIAS_PAUSA_MIN, Math.round(t.pausaEm)));
   const dias = diasEntre(f.venceEm, hoje); // positivo = atrasada
-  const enviados = [f.avisoFaturaEm, f.avisoVesperaEm, f.avisoVenceuEm, f.avisoUltimoEm]
+  const enviados = [f.avisoFaturaEm, f.avisoVesperaEm, f.avisoVenceuEm, f.avisoUltimoEm, f.avisoDisparosEm ?? null]
     .filter((x): x is string => !!x).map(diaDe).sort();
   const ultimoToque = enviados[enviados.length - 1] ?? '';
   if (ultimoToque >= hoje) return null; // já tocou hoje
+  if (t.disparosEm !== null && dias >= t.disparosEm - 1 && f.avisoUltimoEm && !f.avisoDisparosEm) return 'aviso_disparos';
   if (dias >= pausa - 1) return f.avisoUltimoEm ? null : 'ultimo_aviso';
   if (dias >= 1) return f.avisoVenceuEm ? null : 'venceu';
   if (dias >= -1) return f.avisoVesperaEm ? null : 'vespera';

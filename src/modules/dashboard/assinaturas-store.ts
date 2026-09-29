@@ -58,9 +58,12 @@ export interface AssinaturaRow {
   diasPausa?: number;
   pausaAdiadaAte?: string | null;
   assistentePausadaEm?: string | null;
+  // 2ª trava (disparos automáticos aos clientes do tenant)
+  diasTravaDisparos?: number;
+  disparosPausadosEm?: string | null;
 }
 
-const CAMPOS = 'id, produto_id, nome, email, telefone, zap_confirmado, valor_centavos, limite, vence_em, status, company_id, descricao, documento, dia_vencimento, inicio_em, observacao, lead_id, dona_company_id, pausa_automatica, dias_pausa, pausa_adiada_ate, assistente_pausada_em, assinatura_produtos(nome)';
+const CAMPOS = 'id, produto_id, nome, email, telefone, zap_confirmado, valor_centavos, limite, vence_em, status, company_id, descricao, documento, dia_vencimento, inicio_em, observacao, lead_id, dona_company_id, pausa_automatica, dias_pausa, pausa_adiada_ate, assistente_pausada_em, dias_trava_disparos, disparos_pausados_em, assinatura_produtos(nome)';
 
 function paraRow(r: any): AssinaturaRow {
   return {
@@ -74,6 +77,7 @@ function paraRow(r: any): AssinaturaRow {
     donaCompanyId: r.dona_company_id ?? undefined,
     pausaAutomatica: r.pausa_automatica ?? true, diasPausa: r.dias_pausa ?? 3,
     pausaAdiadaAte: r.pausa_adiada_ate ?? null, assistentePausadaEm: r.assistente_pausada_em ?? null,
+    diasTravaDisparos: r.dias_trava_disparos ?? 7, disparosPausadosEm: r.disparos_pausados_em ?? null,
   };
 }
 
@@ -139,7 +143,7 @@ export async function editarAssinatura(client: SupabaseClient, id: string, campo
   valorCentavos?: number; telefone?: string | null; limite?: number | null; venceEm?: string; zapConfirmado?: boolean;
   nome?: string; email?: string | null; descricao?: string | null; documento?: string | null;
   diaVencimento?: number; observacao?: string | null;
-  pausaAutomatica?: boolean; diasPausa?: number; pausaAdiadaAte?: string | null;
+  pausaAutomatica?: boolean; diasPausa?: number; pausaAdiadaAte?: string | null; diasTravaDisparos?: number;
 }, donaId?: string): Promise<void> {
   const row: Record<string, unknown> = {};
   if (campos.valorCentavos !== undefined) row.valor_centavos = campos.valorCentavos;
@@ -156,6 +160,7 @@ export async function editarAssinatura(client: SupabaseClient, id: string, campo
   if (campos.pausaAutomatica !== undefined) row.pausa_automatica = campos.pausaAutomatica;
   if (campos.diasPausa !== undefined) row.dias_pausa = campos.diasPausa;
   if (campos.pausaAdiadaAte !== undefined) row.pausa_adiada_ate = campos.pausaAdiadaAte;
+  if (campos.diasTravaDisparos !== undefined) row.dias_trava_disparos = campos.diasTravaDisparos;
   if (Object.keys(row).length === 0) return;
   let q = client.from('assinaturas').update(row).eq('id', id);
   if (donaId) q = q.eq('dona_company_id', donaId);
@@ -283,22 +288,43 @@ export async function pausarAssistenteNoBanco(client: SupabaseClient, id: string
   return (data?.length ?? 0) > 0;
 }
 
-/** Reativa SÓ se estava pausada (update condicional — idempotente). */
+/** Reativa: desfaz as DUAS travas (update condicional — idempotente). true = alguma estava ligada. */
 export async function reativarAssistenteNoBanco(client: SupabaseClient, id: string): Promise<boolean> {
   const { data, error } = await client.from('assinaturas')
-    .update({ assistente_pausada_em: null, atualizado_em: new Date().toISOString() })
-    .eq('id', id).not('assistente_pausada_em', 'is', null)
+    .update({ assistente_pausada_em: null, disparos_pausados_em: null, atualizado_em: new Date().toISOString() })
+    .eq('id', id).or('assistente_pausada_em.not.is.null,disparos_pausados_em.not.is.null')
     .select('id');
   if (error) throw new Error(`reativarAssistenteNoBanco: ${error.message}`);
   return (data?.length ?? 0) > 0;
 }
 
-/** A assistente desta empresa (tenant) está pausada por fatura? (banner do painel + consumer da fila) */
-export async function pausaDaEmpresa(client: SupabaseClient, companyId: string): Promise<{ pausada: boolean; assinaturaId: string | null }> {
-  if (!companyId) return { pausada: false, assinaturaId: null };
-  const { data, error } = await client.from('assinaturas').select('id')
+/** 2ª trava: para os disparos automáticos SÓ se a 1ª já está ligada e a 2ª não (nunca a casa). */
+export async function pausarDisparosNoBanco(client: SupabaseClient, id: string, casaId: string): Promise<boolean> {
+  const agora = new Date().toISOString();
+  const { data, error } = await client.from('assinaturas')
+    .update({ disparos_pausados_em: agora, atualizado_em: agora })
+    .eq('id', id).is('disparos_pausados_em', null).not('assistente_pausada_em', 'is', null)
+    .neq('company_id', casaId).not('company_id', 'is', null)
+    .select('id');
+  if (error) throw new Error(`pausarDisparosNoBanco: ${error.message}`);
+  return (data?.length ?? 0) > 0;
+}
+
+/** Estágio da pausa desta empresa (tenant): 0 = atendendo, 1 = assistente pausada, 2 = + disparos pausados. */
+export async function pausaDaEmpresa(client: SupabaseClient, companyId: string): Promise<{ pausada: boolean; estagio: 0 | 1 | 2; assinaturaId: string | null }> {
+  if (!companyId) return { pausada: false, estagio: 0, assinaturaId: null };
+  const { data, error } = await client.from('assinaturas').select('id, disparos_pausados_em')
     .eq('company_id', companyId).not('assistente_pausada_em', 'is', null).limit(1);
   if (error) throw new Error(`pausaDaEmpresa: ${error.message}`);
-  const id = (data as { id: string }[] | null)?.[0]?.id ?? null;
-  return { pausada: !!id, assinaturaId: id };
+  const r = (data as Array<{ id: string; disparos_pausados_em: string | null }> | null)?.[0];
+  if (!r) return { pausada: false, estagio: 0, assinaturaId: null };
+  return { pausada: true, estagio: r.disparos_pausados_em ? 2 : 1, assinaturaId: r.id };
+}
+
+/** Empresas com a 2ª trava ligada (o ponto único dos disparos automáticos consulta isto). */
+export async function empresasComDisparosPausados(client: SupabaseClient): Promise<Set<string>> {
+  const { data, error } = await client.from('assinaturas').select('company_id')
+    .not('disparos_pausados_em', 'is', null).not('company_id', 'is', null);
+  if (error) throw new Error(`empresasComDisparosPausados: ${error.message}`);
+  return new Set(((data ?? []) as Array<{ company_id: string }>).map((r) => r.company_id));
 }

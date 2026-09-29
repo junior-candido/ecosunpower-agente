@@ -30,7 +30,7 @@ export interface FaturaRow extends FaturaCiclo {
   criadoEm: string;
 }
 
-const CAMPOS = 'id, assinatura_id, company_id, dona_company_id, competencia, vence_em, valor_centavos, descricao, status, cobranca_id, link_url, pago_em, pago_centavos, taxa_centavos, metodo, forma_baixa, baixado_por, lancamento_id, aviso_fatura_em, aviso_vespera_em, aviso_venceu_em, aviso_ultimo_em, recibo_em, valor_alerta_em, canal_ultimo_aviso, criado_em';
+const CAMPOS = 'id, assinatura_id, company_id, dona_company_id, competencia, vence_em, valor_centavos, descricao, status, cobranca_id, link_url, pago_em, pago_centavos, taxa_centavos, metodo, forma_baixa, baixado_por, lancamento_id, aviso_fatura_em, aviso_vespera_em, aviso_venceu_em, aviso_ultimo_em, aviso_disparos_em, recibo_em, valor_alerta_em, canal_ultimo_aviso, criado_em';
 
 export function paraFatura(r: any): FaturaRow {
   return {
@@ -41,7 +41,7 @@ export function paraFatura(r: any): FaturaRow {
     metodo: r.metodo ?? null, formaBaixa: r.forma_baixa ?? null, baixadoPor: r.baixado_por ?? null,
     lancamentoId: r.lancamento_id ?? null,
     avisoFaturaEm: r.aviso_fatura_em ?? null, avisoVesperaEm: r.aviso_vespera_em ?? null, avisoVenceuEm: r.aviso_venceu_em ?? null,
-    avisoUltimoEm: r.aviso_ultimo_em ?? null, reciboEm: r.recibo_em ?? null, valorAlertaEm: r.valor_alerta_em ?? null,
+    avisoUltimoEm: r.aviso_ultimo_em ?? null, avisoDisparosEm: r.aviso_disparos_em ?? null, reciboEm: r.recibo_em ?? null, valorAlertaEm: r.valor_alerta_em ?? null,
     canalUltimoAviso: r.canal_ultimo_aviso ?? null, criadoEm: r.criado_em,
   };
 }
@@ -128,6 +128,7 @@ const COLUNA_AVISO: Record<TipoAviso, string> = {
   vespera: 'aviso_vespera_em',
   venceu: 'aviso_venceu_em',
   ultimo_aviso: 'aviso_ultimo_em',
+  aviso_disparos: 'aviso_disparos_em',
   recibo: 'recibo_em',
   valor_alerta: 'valor_alerta_em',
 };

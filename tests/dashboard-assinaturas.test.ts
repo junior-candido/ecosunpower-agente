@@ -240,7 +240,9 @@ describe('"se não pagar, a assistente para" — telas', () => {
   it('detalhe: cartão da assistente com estado, Reativar agora (confirm), Dar mais prazo e a regra', () => {
     const h = telaAssinaturaDetalhe();
     expect(h).toContain('Assistente do cliente');
-    expect(h).toContain('>pausada<');
+    expect(h).toContain('>1ª trava<');
+    expect(h).toContain('name="dias_trava_disparos"');
+    expect(h).toContain('param em <b>17/10/2026</b>');
     expect(h).toContain('/assistente/reativar');
     expect(h).toContain('/assistente/prazo');
     expect(h).toContain('/assistente/regra');
@@ -251,7 +253,7 @@ describe('"se não pagar, a assistente para" — telas', () => {
   it('detalhe atendendo: "Pausar agora" com confirm e a data em que pausa', () => {
     const h = telaAssinaturaDetalhe({ a: { assistentePausadaEm: null } });
     expect(h).toContain('/assistente/pausar');
-    expect(h).toContain('pausa em <b>13/10/2026</b>');
+    expect(h).toContain('para de responder em <b>13/10/2026</b>');
     expect(contratoDaTela(h).confirms).toEqual(expect.arrayContaining([expect.stringContaining('Pausar a assistente deste cliente')]));
   });
   it('cliente avulso: sem cartão de assistente', () => {
@@ -317,5 +319,40 @@ describe('tenant pausado: uma ação dourada só (a do plano)', () => {
     const corpo = h.slice(h.indexOf('<main'));
     expect((corpo.match(/cc-btn-gold/g) ?? []).length).toBe(1);
     expect(corpo).toContain('Pagar agora (Pix ou cartão de crédito)');
+  });
+});
+
+describe('faixa no painel do tenant — estágio e quem vê o quê', () => {
+  it('2ª trava: faixa fala da assistente E das mensagens automáticas', async () => {
+    const { faixaAssistentePausada } = await import('../src/modules/dashboard/views.js');
+    const h = faixaAssistentePausada({ ...USER_TENANT, assistentePausada: { linkPagar: 'https://checkout.exemplo.invalid/x', estagio: 2, admin: true } });
+    expect(h).toContain('Assistente e mensagens automáticas pausadas');
+    expect(h).toContain('Pagar agora');
+  });
+  it('usuário do tenant que NÃO é admin: só "fale com a administradora", sem valores nem Pagar', async () => {
+    const { faixaAssistentePausada } = await import('../src/modules/dashboard/views.js');
+    const h = faixaAssistentePausada({ ...USER_TENANT, isAdmin: false, assistentePausada: { linkPagar: 'https://checkout.exemplo.invalid/x', estagio: 2, admin: false } });
+    expect(h).toContain('Assistente pausada.');
+    expect(h).toContain('Fale com a administradora da conta');
+    expect(h).not.toContain('Pagar');
+    expect(h).not.toContain('checkout');
+    expect(h).not.toContain('R$');
+  });
+  it('"Minha assinatura" de quem não é admin: sem faturas, valores nem Pagar', async () => {
+    const { renderMinhaAssinaturaSoAdmin } = await import('../src/modules/dashboard/minha-assinatura-views.js');
+    const h = renderMinhaAssinaturaSoAdmin({ ...USER_TENANT, isAdmin: false });
+    expect(h).toContain('Só a administradora da conta vê as faturas');
+    expect(h).not.toContain('R$');
+    expect(h).not.toContain('Pagar');
+  });
+  it('router: faixa e "Minha assinatura" conferem admin do tenant', () => {
+    const fonte = readFileSync(join(process.cwd(), 'src', 'modules', 'dashboard', 'router.ts'), 'utf-8');
+    expect(fonte).toContain("const admin = can(u, 'usuarios', 'administrar');");
+    expect(fonte).toContain("if (!can(req.dashUser, 'usuarios', 'administrar')) {\n        res.type('html').send(renderMinhaAssinaturaSoAdmin(req.dashUser));");
+  });
+  it('detalhe com a 2ª trava ligada: pílula "2ª trava" e Reativar agora', () => {
+    const h = telaAssinaturaDetalhe({ a: { disparosPausadosEm: '2026-10-17T12:00:00Z' } });
+    expect(h).toContain('>2ª trava<');
+    expect(h).toContain('/assistente/reativar');
   });
 });

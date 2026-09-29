@@ -174,3 +174,16 @@ function secaoFaturas(a: AssinaturaRow, faturas: FaturaRow[], hoje: string): str
 function paraCliente(texto: string): string {
   return texto.replace(/^atrasada (\d+ dias?)$/, 'em atraso há $1');
 }
+
+/** Usuário do tenant que NÃO é admin/proprietário: sem valores, sem faturas, sem Pagar. */
+export function renderMinhaAssinaturaSoAdmin(user: DashUser | undefined): string {
+  return paginaConfiguracoes({
+    active: 'minha_assinatura', secao: 'minha_assinatura', title: 'Minha assinatura', user, css: CSS_ASSINATURA,
+    cabecalhoHtml: cabecalhoPagina({
+      trilha: [{ rotulo: 'Configurações' }, { rotulo: 'Minha assinatura' }],
+      titulo: 'Minha assinatura',
+      subtitulo: 'Situação da mensalidade da conta.',
+    }),
+    corpoHtml: `<div class="cc-as">${cartaoSecao({ titulo: 'Plano', corpoHtml: estadoVazio({ tipo: 'sem_dado', titulo: 'Só a administradora da conta vê as faturas.', texto: 'Qualquer dúvida sobre a assinatura, fale com ela.', icone: 'lock' }) })}</div>`,
+  });
+}

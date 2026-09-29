@@ -15,15 +15,15 @@
 // No fim da rodada, qualquer erro vira UM aviso pro Junior.
 
 import {
-  competenciasDevidas, proximaCompetenciaManual, acaoDaFatura, diasEntre,
+  competenciasDevidas, proximaCompetenciaManual, acaoDaFatura, diasEntre, hojeBrasilia,
   type AcaoFatura, type StatusAssinatura,
 } from './ciclo.js';
 import {
-  mensagemDoToque, mensagemPausa, emailReativada, avisoJuniorEncaminhar, avisoJuniorUltimo,
-  avisoJuniorPausada, avisoJuniorReativada, referenciaDaFatura, ROTULO_TOQUE,
+  mensagemDoToque, mensagemPausa, mensagemDisparosPausados, emailReativada, avisoJuniorEncaminhar, avisoJuniorUltimo,
+  avisoJuniorPausada, avisoJuniorReativada, avisoJuniorVesperaDisparos, avisoJuniorDisparosPausados, referenciaDaFatura, ROTULO_TOQUE,
   type DadosFatura, type MensagemCliente,
 } from './mensagens.js';
-import { decidirPausa, dataDaPausa, podePausar, diasPausaValidos } from './pausa.js';
+import { decidirPausa, dataDaPausa, dataDaTravaDisparos, podePausar } from './pausa.js';
 import type { FaturaRow, NovaFatura, TipoAviso } from './faturas-repo.js';
 
 export interface AssinaturaMotor {
@@ -44,6 +44,9 @@ export interface AssinaturaMotor {
   diasPausa: number;
   pausaAdiadaAte: string | null;
   assistentePausadaEm: string | null;
+  /** 2ª trava (disparos automáticos): dias depois do vencimento e desde quando está ligada. */
+  diasTravaDisparos: number;
+  disparosPausadosEm: string | null;
   /** Nome da empresa do painel (tenant), pros avisos do Junior. */
   empresaNome?: string | null;
 }
@@ -66,8 +69,12 @@ export interface PausaDeps {
   urlAssinatura(assinaturaId: string): string;
   /** true = pausou agora (estava atendendo). Nunca pausa a casa. */
   pausarAssistente(a: AssinaturaMotor): Promise<boolean>;
-  /** true = reativou agora (estava pausada). */
+  /** true = reativou agora (estava pausada). Desfaz as DUAS travas. */
   reativarAssistente(a: AssinaturaMotor): Promise<boolean>;
+  /** 2ª trava: true = travou agora. Nunca a casa. */
+  pausarDisparos(a: AssinaturaMotor): Promise<boolean>;
+  /** Na volta: reagenda os disparos que ficaram na fila (de onde parou, com espaçamento). */
+  reagendarDisparos(a: AssinaturaMotor, pausadoDesde: string): Promise<number>;
   /** Auditoria / linha do tempo. */
   auditar(ev: { assinaturaId: string; acao: string; detalhe?: string }): Promise<void>;
 }
@@ -159,7 +166,17 @@ function mensagemPara(deps: PausaDeps, a: AssinaturaMotor, f: FaturaRow, acao: A
   return mensagemDoToque(acao, dadosDaFatura(a, f, link), {
     pausavel, hoje,
     dataPausa: pausavel ? dataDaPausa(f.venceEm, a.diasPausa, a.pausaAdiadaAte) : null,
+    dataDisparos: pausavel ? dataDaTravaDisparos(f.venceEm, a.diasPausa, a.diasTravaDisparos, a.pausaAdiadaAte) : null,
   });
+}
+
+/** Dias EFETIVOS (já com o prazo dado) da 1ª e da 2ª trava — pra régua de avisos. */
+export function travasDaFatura(deps: PausaDeps, a: AssinaturaMotor, f: FaturaRow): { pausaEm: number; disparosEm: number | null } {
+  const pausavel = ehPausavel(a, deps.casaId);
+  return {
+    pausaEm: pausavel ? diasEntre(f.venceEm, dataDaPausa(f.venceEm, a.diasPausa, a.pausaAdiadaAte)) : a.diasPausa,
+    disparosEm: pausavel ? diasEntre(f.venceEm, dataDaTravaDisparos(f.venceEm, a.diasPausa, a.diasTravaDisparos, a.pausaAdiadaAte)) : null,
+  };
 }
 
 /** Toque do robô: link → reserva → envia → (nada saiu? solta a reserva). */
@@ -174,6 +191,12 @@ async function tocarNaRegua(deps: MotorDeps, a: AssinaturaMotor, f: FaturaRow, a
   }
   await deps.registrarCanal(f.id, canais.join('+'));
   deps.log({ evento: 'aviso_enviado', ...base, canais });
+  if (acao === 'aviso_disparos') {
+    await deps.avisarJunior(avisoJuniorVesperaDisparos({
+      ...dadosDaFatura(a, f, link), urlAssinatura: deps.urlAssinatura(a.id),
+      dataDisparos: dataDaTravaDisparos(f.venceEm, a.diasPausa, a.diasTravaDisparos, a.pausaAdiadaAte),
+    })).catch((e) => deps.log({ evento: 'erro_envio', canal: 'junior', ...base, erro: msg(e) }));
+  }
   if (acao === 'ultimo_aviso') {
     const pausavel = ehPausavel(a, deps.casaId);
     await deps.avisarJunior(avisoJuniorUltimo({
@@ -226,12 +249,46 @@ export async function reativarAssistenteDe(
 ): Promise<boolean> {
   if (!(await deps.reativarAssistente(a))) return false;
   deps.log({ evento: 'assistente_reativada', assinatura_id: a.id, company_id: a.companyId, motivo });
+  // 2ª trava ligada: os disparos que ficaram na fila voltam de onde pararam, espaçados (sem enxurrada).
+  if (a.disparosPausadosEm) {
+    try {
+      const n = await deps.reagendarDisparos(a, a.disparosPausadosEm);
+      deps.log({ evento: 'disparos_reagendados', assinatura_id: a.id, company_id: a.companyId, quantidade: n });
+    } catch (e) {
+      deps.log({ evento: 'erro_reagendar', assinatura_id: a.id, erro: msg(e) });
+    }
+  }
   await deps.auditar({ assinaturaId: a.id, acao: `assistente_reativada_${motivo}` }).catch(() => undefined);
   if (a.email) {
     const e = emailReativada(a.nome);
     await deps.enviarEmail(a.email, e.assunto, e.html, null).catch((err) => deps.log({ evento: 'erro_envio', canal: 'email', acao: 'reativada', assinatura_id: a.id, erro: msg(err) }));
   }
   await deps.avisarJunior(avisoJuniorReativada({ nome: a.nome, empresa: a.empresaNome ?? null, motivo })).catch(() => undefined);
+  return true;
+}
+
+/** 2ª trava: param os disparos automáticos pros clientes do tenant (ficam na fila). Nunca a casa. */
+export async function pausarDisparosDe(
+  deps: CanaisDeps & PausaDeps & { garantirLink?: MotorDeps['garantirLink'] },
+  a: AssinaturaMotor,
+  faturas: FaturaRow[],
+  hoje: string,
+  origem: 'auto' | 'manual',
+): Promise<boolean> {
+  if (!podePausar(a, deps.casaId)) return false;
+  if (!(await deps.pausarDisparos(a))) return false;
+  const f = faturaMaisAntigaVencida(faturas, hoje) ?? faturas.find((x) => x.status === 'aberta');
+  const base = { assinatura_id: a.id, company_id: a.companyId, origem };
+  deps.log({ evento: 'disparos_pausados', ...base, fatura_id: f?.id ?? null });
+  await deps.auditar({ assinaturaId: a.id, acao: origem === 'auto' ? 'disparos_pausados_auto' : 'disparos_pausados_manual', detalhe: f ? f.competencia.slice(0, 7) : undefined }).catch(() => undefined);
+  if (f) {
+    const link = f.linkUrl ?? (deps.garantirLink ? await deps.garantirLink(f, a).catch(() => null) : null);
+    await enviarAoCliente(deps, a, f, mensagemDisparosPausados(dadosDaFatura(a, f, link)), ROTULO_TOQUE.pausa_disparos, { ...base, acao: 'pausa_disparos', fatura_id: f.id });
+  }
+  await deps.avisarJunior(avisoJuniorDisparosPausados({
+    nome: a.nome, empresa: a.empresaNome ?? null, ref: f ? referenciaDaFatura(f.descricao, f.competencia) : 'sem fatura em aberto',
+    valorCentavos: f?.valorCentavos ?? a.valorCentavos, urlAssinatura: deps.urlAssinatura(a.id), manual: origem === 'manual',
+  })).catch(() => undefined);
   return true;
 }
 
@@ -260,7 +317,7 @@ export async function rodarCobrancaRecorrente(deps: MotorDeps, hoje: string): Pr
       }
 
       for (const f of faturas) {
-        const acao = acaoDaFatura(f, hoje, diasPausaValidos(a.diasPausa));
+        const acao = acaoDaFatura(f, hoje, travasDaFatura(deps, a, f));
         if (!acao) continue;
         try {
           if (await tocarNaRegua(deps, a, f, acao, hoje)) {
@@ -275,7 +332,11 @@ export async function rodarCobrancaRecorrente(deps: MotorDeps, hoje: string): Pr
 
       // "Se não pagar, a assistente para" — só tenant; a casa nunca.
       const decisao = decidirPausa(a, faturas, hoje, deps.casaId);
-      if (decisao === 'pausar' && await pausarAssistenteDe(deps, a, faturas, hoje, 'auto')) r.pausas++;
+      // Cada trava só depois que o aviso da véspera saiu num dia ANTERIOR (nunca aviso e trava juntos).
+      const alvo = faturaMaisAntigaVencida(faturas, hoje);
+      const avisouAntes = (ts: string | null | undefined) => !!ts && hojeBrasilia(new Date(ts)) < hoje;
+      if (decisao === 'pausar' && alvo && avisouAntes(alvo.avisoUltimoEm) && await pausarAssistenteDe(deps, a, faturas, hoje, 'auto')) r.pausas++;
+      if (decisao === 'pausar_disparos' && alvo && avisouAntes(alvo.avisoDisparosEm) && await pausarDisparosDe(deps, a, faturas, hoje, 'auto')) r.pausas++;
       if (decisao === 'reativar' && await reativarAssistenteDe(deps, a, 'pagou')) r.reativacoes++;
     } catch (e) {
       r.erros.push(`${a.nome}: ${msg(e)}`);

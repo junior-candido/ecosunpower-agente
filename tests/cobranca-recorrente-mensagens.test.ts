@@ -3,7 +3,8 @@
 // Português claro; "Pix ou cartão de crédito"; dado do cliente escapado.
 import { describe, it, expect } from 'vitest';
 import {
-  MODELO_COBRANCA, MODELO_AVISO_PAUSA, MODELO_PAUSADA, MODELO_RECIBO,
+  MODELO_COBRANCA, MODELO_AVISO_PAUSA, MODELO_PAUSADA, MODELO_RECIBO, MODELO_AVISO_DISPAROS, MODELO_DISPAROS_PAUSADOS,
+  TEXTO_MODELO_AVISO_DISPAROS, TEXTO_MODELO_DISPAROS_PAUSADOS, mensagemDisparosPausados,
   TEXTO_MODELO_COBRANCA, TEXTO_MODELO_AVISO_PAUSA, TEXTO_MODELO_PAUSADA, TEXTO_MODELO_RECIBO,
   paramsModeloCobranca, paramsModeloRecibo, preencherModelo, textoCobranca, mensagemDoToque, mensagemPausa,
   emailRecibo, emailReativada, avisoJuniorEncaminhar, avisoJuniorUltimo, avisoJuniorPausada, avisoJuniorReativada,
@@ -29,8 +30,23 @@ describe('modelos da Meta', () => {
       expect(t.trim().startsWith('{{')).toBe(false);
     }
     for (const t of [TEXTO_MODELO_COBRANCA, TEXTO_MODELO_AVISO_PAUSA, TEXTO_MODELO_PAUSADA]) expect(t).toContain('Pix ou cartão de crédito');
-    expect(TEXTO_MODELO_COBRANCA.trim().endsWith('}}')).toBe(false);
-    expect(TEXTO_MODELO_AVISO_PAUSA.trim().endsWith('}}')).toBe(false);
+  });
+  it('a Meta recusa variável no começo/fim: NENHUM dos 6 modelos começa ou termina com {{n}}', () => {
+    for (const t of [TEXTO_MODELO_COBRANCA, TEXTO_MODELO_AVISO_PAUSA, TEXTO_MODELO_PAUSADA, TEXTO_MODELO_RECIBO, TEXTO_MODELO_AVISO_DISPAROS, TEXTO_MODELO_DISPAROS_PAUSADOS]) {
+      expect(t.trim().startsWith('{{'), t.slice(0, 30)).toBe(false);
+      expect(t.trim().endsWith('}}'), t.slice(-30)).toBe(false);
+    }
+  });
+  it('modelos da 2ª trava: nomes, variáveis e "Pix ou cartão de crédito"', () => {
+    expect([MODELO_AVISO_DISPAROS, MODELO_DISPAROS_PAUSADOS]).toEqual(['aviso_pausa_disparos_v1', 'disparos_pausados_v1']);
+    for (let i = 1; i <= 5; i++) expect(TEXTO_MODELO_AVISO_DISPAROS).toContain(`{{${i}}}`);
+    for (let i = 1; i <= 4; i++) expect(TEXTO_MODELO_DISPAROS_PAUSADOS).toContain(`{{${i}}}`);
+    expect(TEXTO_MODELO_DISPAROS_PAUSADOS).not.toContain('{{5}}');
+    for (const t of [TEXTO_MODELO_AVISO_DISPAROS, TEXTO_MODELO_DISPAROS_PAUSADOS]) expect(t).toContain('Pix ou cartão de crédito');
+    const m = mensagemDoToque('aviso_disparos', D, { ...CTX, dataDisparos: '2026-10-17' });
+    expect(m.modelo).toBe(MODELO_AVISO_DISPAROS);
+    expect(m.params[3]).toBe('16/10/2026');
+    expect(mensagemDisparosPausados(D).texto).toContain('foram pausadas hoje');
   });
   it('parâmetros da cobrança: primeiro nome, referência, valor, vencimento, link', () => {
     expect(paramsModeloCobranca(D)).toEqual(['Jimena', 'Monitoramento de Usinas — outubro/2026', 'R$ 297,00', '10/10/2026', D.link]);

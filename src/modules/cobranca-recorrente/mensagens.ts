@@ -19,6 +19,8 @@ export const MODELO_COBRANCA = 'cobranca_mensalidade_v1';
 export const MODELO_AVISO_PAUSA = 'aviso_pausa_assistente_v1';
 export const MODELO_PAUSADA = 'assistente_pausada_v1';
 export const MODELO_RECIBO = 'recibo_mensalidade_v1';
+export const MODELO_AVISO_DISPAROS = 'aviso_pausa_disparos_v1';
+export const MODELO_DISPAROS_PAUSADOS = 'disparos_pausados_v1';
 
 /** fatura / véspera / venceu (e último aviso de quem não tem assistente pra pausar) — 5 variáveis. */
 export const TEXTO_MODELO_COBRANCA =
@@ -38,7 +40,23 @@ export const TEXTO_MODELO_AVISO_PAUSA =
 export const TEXTO_MODELO_PAUSADA =
   'Olá, {{1}}. Como a fatura de {{2}} ({{3}}) segue em aberto, a sua assistente virtual foi pausada hoje. ' +
   'O painel continua funcionando e as mensagens dos seus clientes continuam chegando nele, para você responder.\n\n' +
-  'Assim que o pagamento for confirmado, ela volta a atender sozinha. Pague por Pix ou cartão de crédito: {{4}}';
+  'Pague por Pix ou cartão de crédito neste link seguro: {{4}}\n\n' +
+  'Assim que o pagamento for confirmado, ela volta a atender sozinha.';
+
+/** Véspera da 2ª trava — 5 variáveis. */
+export const TEXTO_MODELO_AVISO_DISPAROS =
+  'Olá, {{1}}. A fatura de {{2}} ({{3}}) segue em aberto e a sua assistente virtual já está pausada. ' +
+  'Se o pagamento não for identificado até {{4}}, também vamos pausar as mensagens automáticas para os seus clientes ' +
+  '(acompanhamentos, lembretes e reativações).\n\n' +
+  'Pague por Pix ou cartão de crédito neste link seguro: {{5}}\n\n' +
+  'Seu painel continua funcionando normalmente. Se você já pagou, pode desconsiderar.';
+
+/** 2ª trava aconteceu — 4 variáveis. */
+export const TEXTO_MODELO_DISPAROS_PAUSADOS =
+  'Olá, {{1}}. Como a fatura de {{2}} ({{3}}) segue em aberto, as mensagens automáticas para os seus clientes ' +
+  '(acompanhamentos, lembretes e reativações) foram pausadas hoje, junto com a assistente virtual. O painel continua funcionando.\n\n' +
+  'Pague por Pix ou cartão de crédito neste link seguro: {{4}}\n\n' +
+  'Assim que o pagamento for confirmado, tudo volta sozinho, aos poucos.';
 
 /** Recibo — 4 variáveis. */
 export const TEXTO_MODELO_RECIBO =
@@ -119,10 +137,26 @@ Vencimento: <b>${escapeHtml(dataBr(d.venceEm))}</b></p>`
 export function mensagemDoToque(
   acao: AcaoFatura,
   d: DadosFatura,
-  ctx: { pausavel: boolean; dataPausa: string | null; hoje: string },
+  ctx: { pausavel: boolean; dataPausa: string | null; hoje: string; dataDisparos?: string | null },
 ): MensagemCliente {
   const mes = rotuloCompetencia(d.competencia);
   const desc = limpo(d.descricao);
+  if (acao === 'aviso_disparos' && ctx.pausavel && ctx.dataDisparos) {
+    const limite = dataBr(somarDias(ctx.dataDisparos, -1));
+    const params = [primeiroNome(d.nome), referenciaDaFatura(d.descricao, d.competencia), rs(d.valorCentavos), limite, d.link ?? SEM_LINK];
+    return {
+      modelo: MODELO_AVISO_DISPAROS, params, texto: preencherModelo(TEXTO_MODELO_AVISO_DISPAROS, params),
+      email: {
+        assunto: `Aviso: mensagens automáticas param amanhã — fatura de ${mes} em aberto`,
+        html: htmlEmail(d.nome, [
+          'A sua fatura segue em aberto e a sua assistente virtual já está pausada.',
+          `Se o pagamento não for identificado até <b>${escapeHtml(limite)}</b>, também vamos pausar as mensagens automáticas para os seus clientes (acompanhamentos, lembretes e reativações). Seu painel continua funcionando normalmente.`,
+          'Se você já pagou, pode desconsiderar.',
+        ], d),
+        ctaUrl: d.link,
+      },
+    };
+  }
   if (acao === 'ultimo_aviso' && ctx.pausavel && ctx.dataPausa) {
     const params = [primeiroNome(d.nome), referenciaDaFatura(d.descricao, d.competencia), rs(d.valorCentavos), dataBr(somarDias(ctx.dataPausa, -1)), d.link ?? SEM_LINK];
     return {
@@ -145,6 +179,7 @@ export function mensagemDoToque(
     vespera: { assunto: `${d.venceEm === ctx.hoje ? 'Vence hoje' : 'Vence amanhã'}: fatura de ${mes} — ${desc}`, linhas: [`Passando pra lembrar que a sua fatura ${vence}.`] },
     venceu: { assunto: `Fatura de ${mes} em aberto — ${desc}`, linhas: ['A sua fatura venceu e ainda está em aberto.', 'Se você já pagou, pode desconsiderar este aviso.'] },
     ultimo_aviso: { assunto: `Lembrete: fatura de ${mes} em aberto — ${desc}`, linhas: ['A sua fatura segue em aberto.', 'Se você já pagou, pode desconsiderar este aviso.'] },
+    aviso_disparos: { assunto: `Lembrete: fatura de ${mes} em aberto — ${desc}`, linhas: ['A sua fatura segue em aberto.', 'Se você já pagou, pode desconsiderar este aviso.'] },
   };
   const a = aberturas[acao];
   return {
@@ -164,6 +199,22 @@ export function mensagemPausa(d: DadosFatura): MensagemCliente {
         'Como a fatura abaixo segue em aberto, a sua assistente virtual foi pausada hoje.',
         'O painel continua funcionando e as mensagens dos seus clientes continuam chegando nele, para você responder.',
         'Assim que o pagamento for confirmado, ela volta a atender sozinha.',
+      ], d),
+      ctaUrl: d.link,
+    },
+  };
+}
+
+/** Aviso ao cliente: a 2ª trava aconteceu (disparos automáticos pausados). */
+export function mensagemDisparosPausados(d: DadosFatura): MensagemCliente {
+  const params = [primeiroNome(d.nome), referenciaDaFatura(d.descricao, d.competencia), rs(d.valorCentavos), d.link ?? SEM_LINK];
+  return {
+    modelo: MODELO_DISPAROS_PAUSADOS, params, texto: preencherModelo(TEXTO_MODELO_DISPAROS_PAUSADOS, params),
+    email: {
+      assunto: `Mensagens automáticas pausadas — fatura de ${rotuloCompetencia(d.competencia)} em aberto`,
+      html: htmlEmail(d.nome, [
+        'Como a fatura abaixo segue em aberto, as mensagens automáticas para os seus clientes (acompanhamentos, lembretes e reativações) foram pausadas hoje, junto com a assistente virtual.',
+        'O painel continua funcionando. Assim que o pagamento for confirmado, tudo volta sozinho, aos poucos.',
       ], d),
       ctaUrl: d.link,
     },
@@ -201,12 +252,14 @@ function somarDias(iso: string, n: number): string {
 // Avisos pro Junior (WhatsApp dele)
 // ---------------------------------------------------------------------------
 
-export const ROTULO_TOQUE: Record<AcaoFatura | 'pausa', string> = {
+export const ROTULO_TOQUE: Record<AcaoFatura | 'pausa' | 'pausa_disparos', string> = {
   fatura: 'Fatura nova',
   vespera: 'Lembrete (vence amanhã)',
   venceu: 'Lembrete (venceu)',
   ultimo_aviso: 'Último aviso',
+  aviso_disparos: 'Aviso (disparos param amanhã)',
   pausa: 'Assistente pausada',
+  pausa_disparos: 'Disparos automáticos pausados',
 };
 
 export function avisoJuniorEncaminhar(d: DadosFatura & {
@@ -244,6 +297,17 @@ export function avisoJuniorPausada(d: { nome: string; empresa: string | null; re
   return `⏸️ Assistente ${d.empresa ? `de ${d.empresa} ` : ''}PAUSADA ${d.manual ? '(por você)' : 'por fatura em aberto'}: ${d.nome} — ${d.ref} (${rs(d.valorCentavos)}).\n`
     + 'O painel dele continua funcionando; as mensagens dos clientes ficam guardadas lá. Volta sozinha quando pagar.\n'
     + `Reativar agora / dar mais prazo: ${d.urlAssinatura}`;
+}
+
+export function avisoJuniorVesperaDisparos(d: DadosFatura & { dataDisparos: string; urlAssinatura: string }): string {
+  return `⏰ Amanhã (${dataBr(d.dataDisparos)}) param também os DISPAROS AUTOMÁTICOS de ${d.nome} (cadência, follow-ups, reativação) — ${referenciaDaFatura(d.descricao, d.competencia)} segue em aberto (${rs(d.valorCentavos)}). O cliente foi avisado.\n`
+    + `Pra dar mais prazo ou não travar: ${d.urlAssinatura}`;
+}
+
+export function avisoJuniorDisparosPausados(d: { nome: string; empresa: string | null; ref: string; valorCentavos: number; urlAssinatura: string; manual: boolean }): string {
+  return `⛔ Disparos automáticos ${d.empresa ? `de ${d.empresa} ` : ''}PAUSADOS ${d.manual ? '(por você)' : 'por fatura em aberto (2ª trava)'}: ${d.nome} — ${d.ref} (${rs(d.valorCentavos)}).\n`
+    + 'Cadência, follow-ups e reativações dos clientes dele ficam na fila e voltam aos poucos quando pagar. O painel continua funcionando.\n'
+    + `Reativar / dar mais prazo: ${d.urlAssinatura}`;
 }
 
 export function avisoJuniorReativada(d: { nome: string; empresa: string | null; motivo: 'pagou' | 'manual' | 'prazo' }): string {

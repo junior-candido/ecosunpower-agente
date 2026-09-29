@@ -13,7 +13,7 @@ import { criarConfirmado, getCategorias } from '../financeiro/lancamentos-repo.j
 import { montarMolduraEmail } from '../email/email-moldura.js';
 import {
   getAssinaturaDaDona, getAssinatura, listarCobraveis, listarAssinaturas, registrarPagamentoNaAssinatura, descricaoDaAssinatura,
-  listarEmpresasSimples, pausarAssistenteNoBanco, reativarAssistenteNoBanco, editarAssinatura,
+  listarEmpresasSimples, pausarAssistenteNoBanco, reativarAssistenteNoBanco, pausarDisparosNoBanco, editarAssinatura,
   type AssinaturaRow,
 } from '../dashboard/assinaturas-store.js';
 import {
@@ -26,7 +26,8 @@ import {
   type AssinaturaMotor, type MotorDeps, type PausaDeps, type ResultadoManual, type ResumoRodada,
 } from './motor.js';
 import { baixarFatura, type BaixaDeps, type InfoPagamento } from './baixa.js';
-import { diasPausaValidos, podePausar } from './pausa.js';
+import { diasPausaValidos, diasTravaDisparosValidos, podePausar, limparCacheDisparos } from './pausa.js';
+import { reagendarDisparosDaEmpresa } from './disparos-repo.js';
 import { referenciaDaFatura, textoResumoMensalidades } from './mensagens.js';
 import { hojeBrasilia, reais, somarMeses, competenciaDe, diasEntre, proximoVencimento, resumoCarteira } from './ciclo.js';
 
@@ -39,6 +40,8 @@ export function paraMotor(a: AssinaturaRow, empresaNome: string | null = null): 
     companyId: a.companyId, descricao: descricaoDaAssinatura(a), leadId: a.leadId ?? null,
     pausaAutomatica: a.pausaAutomatica ?? true, diasPausa: diasPausaValidos(a.diasPausa),
     pausaAdiadaAte: a.pausaAdiadaAte ?? null, assistentePausadaEm: a.assistentePausadaEm ?? null,
+    diasTravaDisparos: diasTravaDisparosValidos(a.diasTravaDisparos, diasPausaValidos(a.diasPausa)),
+    disparosPausadosEm: a.disparosPausadosEm ?? null,
     empresaNome,
   };
 }
@@ -272,8 +275,15 @@ export function criarServicoCobranca(infra: InfraCobranca) {
     reativarAssistente: async (a) => {
       const ok = await reativarAssistenteNoBanco(client, a.id);
       if (ok && a.companyId) infra.pausaMudou?.(a.companyId);
+      if (ok) limparCacheDisparos();
       return ok;
     },
+    pausarDisparos: async (a) => {
+      const ok = await pausarDisparosNoBanco(client, a.id, donaId);
+      if (ok) limparCacheDisparos();
+      return ok;
+    },
+    reagendarDisparos: async (a, desde) => (a.companyId ? reagendarDisparosDaEmpresa(client, a.companyId, desde) : 0),
     auditar: async (ev) => { await infra.auditar?.(ev); },
   };
 

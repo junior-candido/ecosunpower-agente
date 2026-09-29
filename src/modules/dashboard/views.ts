@@ -140,15 +140,22 @@ interface LayoutInput {
  * Nunca pra casa. O painel continua funcionando normalmente.
  */
 export function faixaAssistentePausada(user: DashUser | undefined): string {
-  if (!user?.assistentePausada || user.companyId === ECOSUN_COMPANY_ID) return '';
-  const l = user.assistentePausada.linkPagar;
+  const p = user?.assistentePausada;
+  if (!p || user.companyId === ECOSUN_COMPANY_ID) return '';
+  const abre = `<div class="cc-aviso cc-aviso-erro cc-faixa-pausa" role="alert" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">${icone('alert', 'sm')}`;
+  // Quem não é admin/proprietário: só o recado (sem valores, sem Pagar).
+  if (p.admin === false) {
+    return `${abre}<span style="flex:1;min-width:220px"><b>Assistente pausada.</b> Fale com a administradora da conta.</span></div>`;
+  }
+  const l = p.linkPagar;
   const link = l && /^https:\/\//.test(l) ? l : null;
   const pagar = link
     ? `<a class="cc-btn cc-btn-sm" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Pagar agora (Pix ou cartão de crédito)</a>`
     : '';
-  return `<div class="cc-aviso cc-aviso-erro cc-faixa-pausa" role="alert" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">${icone('alert', 'sm')}`
-    + '<span style="flex:1;min-width:220px"><b>Assistente pausada por fatura em aberto.</b> Ela não está respondendo os seus clientes — as mensagens continuam chegando aqui no painel. Assim que o pagamento for confirmado, ela volta sozinha.</span>'
-    + `${pagar}<a class="cc-btn cc-btn-sm" href="/dashboard/minha-assinatura">Ver faturas</a></div>`;
+  const texto = p.estagio === 2
+    ? '<b>Assistente e mensagens automáticas pausadas por fatura em aberto.</b> A assistente não está respondendo e os acompanhamentos, lembretes e reativações dos seus clientes estão parados — as mensagens continuam chegando aqui no painel. Assim que o pagamento for confirmado, tudo volta sozinho, aos poucos.'
+    : '<b>Assistente pausada por fatura em aberto.</b> Ela não está respondendo os seus clientes — as mensagens continuam chegando aqui no painel. Assim que o pagamento for confirmado, ela volta sozinha.';
+  return `${abre}<span style="flex:1;min-width:220px">${texto}</span>${pagar}<a class="cc-btn cc-btn-sm" href="/dashboard/minha-assinatura">Ver faturas</a></div>`;
 }
 
 export function renderLayout(input: LayoutInput): string {

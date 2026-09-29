@@ -17,7 +17,7 @@ import {
   dataBr, reais, competenciaDe, somarMeses, DIAS_ANTES, DIAS_PAUSA_PADRAO, diasEntre, type Situacao,
 } from '../cobranca-recorrente/ciclo.js';
 import { MODELO_COBRANCA } from '../cobranca-recorrente/mensagens.js';
-import { dataDaPausa } from '../cobranca-recorrente/pausa.js';
+import { dataDaPausa, dataDaTravaDisparos, diasTravaDisparosValidos } from '../cobranca-recorrente/pausa.js';
 import { formatPhoneBR } from '../meta-leadgen.js';
 import {
   cabecalhoPagina, cartaoSecao, faixaKpis, tabela, pilulaStatus, botao, celulaDupla, menuAcoes,
@@ -246,7 +246,7 @@ export function renderAssinaturasPage(d: DadosAssinaturas, user: DashUser | unde
         { html: celulaDupla(a.nome, sub, `/dashboard/assinaturas/${a.id}`) },
         { html: `<span class="cc-asr-val">R$ ${escapeHtml(reais(a.valorCentavos))}<small>/mês</small></span>` },
         { html: `<span class="cc-asr-venc"><span class="cc-num">${escapeHtml(dataBr(prox))}</span><small>${escapeHtml(vencSub)}</small></span>` },
-        { html: `<span class="cc-asr-sits">${pilula(sit)}${a.assistentePausadaEm ? pilulaStatus('critico', 'assistente pausada') : ''}</span>` },
+        { html: `<span class="cc-asr-sits">${pilula(sit)}${a.disparosPausadosEm ? pilulaStatus('critico', 'assistente e disparos pausados') : a.assistentePausadaEm ? pilulaStatus('critico', 'assistente pausada') : ''}</span>` },
         { html: `<div class="cc-asr-acoes">${botao({ rotulo: 'Abrir', href: `/dashboard/assinaturas/${a.id}`, tamanho: 'sm' })}${menuAcoes({ rotulo: '⋯', alinhar: 'dir', itensHtml: acoesDaAssinatura(a, aberta) || '<span class="cc-asr-dica">Sem ações</span>' })}</div>` },
       ];
     }),
@@ -418,26 +418,34 @@ function blocoAssistente(a: AssinaturaRow, faturas: FaturaRow[], hoje: string): 
   const base = `/dashboard/assinaturas/${a.id}/assistente`;
   const auto = a.pausaAutomatica !== false;
   const dias = a.diasPausa ?? DIAS_PAUSA_PADRAO;
+  const diasDisp = diasTravaDisparosValidos(a.diasTravaDisparos, dias);
   const vencida = faturas.filter((f) => f.status === 'aberta' && f.venceEm < hoje).sort((x, y) => (x.venceEm < y.venceEm ? -1 : 1))[0];
+  const prazoTxt = a.pausaAdiadaAte ? ` (você deu prazo até ${escapeHtml(dataBr(a.pausaAdiadaAte))})` : '';
   let estado: string;
-  if (a.assistentePausadaEm) {
-    estado = `${pilulaStatus('critico', 'pausada')} <span class="cc-asr-nota-in">desde ${escapeHtml(dataBr(a.assistentePausadaEm))} — as mensagens dos clientes dele ficam guardadas no painel. Volta sozinha quando pagar.</span>`;
+  if (a.disparosPausadosEm) {
+    estado = `${pilulaStatus('critico', '2ª trava')} <span class="cc-asr-nota-in">assistente pausada desde ${escapeHtml(dataBr(a.assistentePausadaEm))} e disparos automáticos (cadência, follow-ups, reativação) parados desde ${escapeHtml(dataBr(a.disparosPausadosEm))}. Tudo volta sozinho quando pagar — os disparos, aos poucos.</span>`;
+  } else if (a.assistentePausadaEm) {
+    const extra = vencida && auto
+      ? ` Os disparos automáticos param em <b>${escapeHtml(dataBr(dataDaTravaDisparos(vencida.venceEm, dias, diasDisp, a.pausaAdiadaAte ?? null)))}</b> se não pagar${prazoTxt}.`
+      : '';
+    estado = `${pilulaStatus('critico', '1ª trava')} <span class="cc-asr-nota-in">assistente pausada desde ${escapeHtml(dataBr(a.assistentePausadaEm))} — as mensagens dos clientes dele ficam guardadas no painel.${extra} Volta sozinha quando pagar.</span>`;
   } else if (vencida && auto) {
     const quando = dataDaPausa(vencida.venceEm, dias, a.pausaAdiadaAte ?? null);
-    estado = `${pilulaStatus('atencao', 'atendendo')} <span class="cc-asr-nota-in">fatura vencida — pausa em <b>${escapeHtml(dataBr(quando))}</b> se não pagar${a.pausaAdiadaAte ? ` (você deu prazo até ${escapeHtml(dataBr(a.pausaAdiadaAte))})` : ''}.</span>`;
+    estado = `${pilulaStatus('atencao', 'atendendo')} <span class="cc-asr-nota-in">fatura vencida — a assistente para de responder em <b>${escapeHtml(dataBr(quando))}</b> se não pagar${prazoTxt}.</span>`;
   } else {
-    estado = `${pilulaStatus('normal', 'atendendo')} <span class="cc-asr-nota-in">${auto ? `se atrasar, pausa ${dias} dia${dias === 1 ? '' : 's'} depois do vencimento (último aviso na véspera).` : 'pausa automática desligada — nunca pausa sozinha.'}</span>`;
+    estado = `${pilulaStatus('normal', 'atendendo')} <span class="cc-asr-nota-in">${auto ? `se atrasar: 1ª trava (para de responder) ${dias} dias depois do vencimento; 2ª trava (param os disparos automáticos) em ${diasDisp} dias. Aviso sempre na véspera.` : 'pausa automática desligada — nunca pausa sozinha (nem os disparos).'}</span>`;
   }
   const botoes: string[] = [];
-  if (a.assistentePausadaEm) botoes.push(formBotao(`${base}/reativar`, 'Reativar agora', { confirmar: CONFIRMA_REATIVAR_ASSISTENTE, icone: 'check' }));
+  if (a.assistentePausadaEm || a.disparosPausadosEm) botoes.push(formBotao(`${base}/reativar`, 'Reativar agora', { confirmar: CONFIRMA_REATIVAR_ASSISTENTE, icone: 'check' }));
   else botoes.push(formBotao(`${base}/pausar`, 'Pausar agora', { tom: 'critico', confirmar: CONFIRMA_PAUSAR_ASSISTENTE }));
   const prazo = `<form method="post" action="${escapeHtml(base)}/prazo" class="cc-form cc-asr-inline">
-    <label class="cc-campo"><span>Dar mais prazo</span><select name="dias">${[1, 2, 3, 5, 7, 10, 15, 30].map((n) => `<option value="${n}"${n === 3 ? ' selected' : ''}>+${n} dia${n === 1 ? '' : 's'}</option>`).join('')}</select></label>
+    <label class="cc-campo"><span>Dar mais prazo (adia as duas travas)</span><select name="dias">${[1, 2, 3, 5, 7, 10, 15, 30].map((n) => `<option value="${n}"${n === 3 ? ' selected' : ''}>+${n} dia${n === 1 ? '' : 's'}</option>`).join('')}</select></label>
     ${botao({ rotulo: 'Dar prazo', tipo: 'submit', tamanho: 'sm', icone: 'clock' })}
   </form>`;
   const regra = `<form method="post" action="${escapeHtml(base)}/regra" class="cc-form cc-asr-inline">
     <label class="cc-cf-check"><input type="checkbox" name="pausa_automatica" value="1"${auto ? ' checked' : ''}> Pausar automaticamente quando atrasar</label>
-    <label class="cc-campo"><span>Pausa quantos dias depois do vencimento</span><select name="dias_pausa">${[2, 3, 4, 5, 7, 10, 15, 30].map((n) => `<option value="${n}"${n === dias ? ' selected' : ''}>${n} dias</option>`).join('')}</select></label>
+    <label class="cc-campo"><span>1ª trava: para de responder (dias após o vencimento)</span><select name="dias_pausa">${[2, 3, 4, 5, 7, 10, 15, 30].map((n) => `<option value="${n}"${n === dias ? ' selected' : ''}>${n} dias</option>`).join('')}</select></label>
+    <label class="cc-campo"><span>2ª trava: param os disparos automáticos (dias)</span><select name="dias_trava_disparos">${[4, 5, 7, 10, 14, 21, 30, 45, 60].map((n) => `<option value="${n}"${n === diasDisp ? ' selected' : ''}>${n} dias</option>`).join('')}</select></label>
     ${botao({ rotulo: 'Salvar regra', tipo: 'submit', tamanho: 'sm' })}
   </form>`;
   return `<div class="cc-asr-assist">

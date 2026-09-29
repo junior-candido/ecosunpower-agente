@@ -4,7 +4,7 @@ import { EvolutionService } from './modules/evolution.js';
 import { MessageQueue } from './modules/queue.js';
 import { temTelefone, montarJobDaFila, processarMensagemSemTelefone, backfillWaUserId } from './modules/whatsapp-bsuid.js';
 import { criarTenantResolver, ECOSUN_COMPANY_ID } from './modules/tenant-resolver.js';
-import { criarCachePausa, empresaPausadaNoCache } from './modules/cobranca-recorrente/pausa.js';
+import { criarCachePausa, empresaPausadaNoCache, configurarTravaDisparos } from './modules/cobranca-recorrente/pausa.js';
 import { criarEvolutionTenantResolver } from './modules/evolution-tenant.js';
 import { comCanal, canalExigeEvolution, canalAtual } from './modules/canal-contexto.js';
 import { SupabaseService } from './modules/supabase.js';
@@ -533,6 +533,12 @@ async function main() {
   const cachePausaAssistente = criarCachePausa(async (cid) => {
     const { pausaDaEmpresa } = await import('./modules/dashboard/assinaturas-store.js');
     return (await pausaDaEmpresa(supabase.getClient(), cid)).pausada;
+  });
+  // 2ª trava (disparos automáticos): o PONTO ÚNICO (pausa.ts#filtrarDisparosLiberados)
+  // pergunta aqui quais empresas estão travadas (cache 60 s). A casa nunca.
+  configurarTravaDisparos(async () => {
+    const { empresasComDisparosPausados } = await import('./modules/dashboard/assinaturas-store.js');
+    return empresasComDisparosPausados(supabase.getClient());
   });
   let servicoCobrancaP: Promise<import('./modules/cobranca-recorrente/servico.js').ServicoCobranca> | null = null;
   const obterServicoCobranca = () => (servicoCobrancaP ??= (async () => {

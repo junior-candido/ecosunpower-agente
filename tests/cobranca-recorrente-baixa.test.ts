@@ -16,6 +16,7 @@ const A: AssinaturaMotor = {
   valorCentavos: 35000, status: 'ativa', diaVencimento: 10, inicioEm: '2026-10-01', companyId: 'c-conquista',
   descricao: 'Monitoramento de Usinas', leadId: null,
   pausaAutomatica: true, diasPausa: 3, pausaAdiadaAte: null, assistentePausadaEm: null, empresaNome: 'Conquista Solar',
+  diasTravaDisparos: 7, disparosPausadosEm: null,
 };
 const F: FaturaRow = {
   id: 'f1', assinaturaId: 'a1', companyId: 'c-conquista', donaCompanyId: CASA, competencia: '2026-10-01', venceEm: '2026-10-10',
@@ -27,7 +28,7 @@ const F: FaturaRow = {
 function fake(o: { jaPaga?: boolean; caixaFalha?: boolean; destrava?: boolean; aprovado?: boolean; reciboJaSaiu?: boolean; outras?: FaturaRow[]; alertaJaSaiu?: boolean } = {}) {
   const ev = {
     marcadas: [] as any[], receitas: [] as any[], vinculos: [] as any[], pagamentos: [] as any[], liberados: [] as string[],
-    reativadas: [] as string[], zap: [] as any[], emails: [] as any[], junior: [] as string[], logs: [] as any[], auditoria: [] as any[],
+    reativadas: [] as string[], reagendados: [] as any[], zap: [] as any[], emails: [] as any[], junior: [] as string[], logs: [] as any[], auditoria: [] as any[],
   };
   const deps: BaixaDeps = {
     casaId: CASA,
@@ -35,6 +36,8 @@ function fake(o: { jaPaga?: boolean; caixaFalha?: boolean; destrava?: boolean; a
     pausarAssistente: async () => true,
     reativarAssistente: async (a) => { ev.reativadas.push(a.id); return true; },
     auditar: async (e) => { ev.auditoria.push(e); },
+    pausarDisparos: async () => true,
+    reagendarDisparos: async (a, desde) => { ev.reagendados.push([a.id, desde]); return 2; },
     marcarFaturaPaga: async (id, info) => { ev.marcadas.push({ id, ...info }); return !o.jaPaga; },
     lancarReceita: async (a, f, info) => { if (o.caixaFalha) throw new Error('caixa fora'); ev.receitas.push({ a: a.id, f: f.id, ...info }); return 'lanc-1'; },
     vincularLancamento: async (id, l) => { ev.vinculos.push([id, l]); },
@@ -145,5 +148,15 @@ describe('baixarFatura', () => {
     expect(ev.marcadas[0]).toMatchObject({ metodo: 'pix_direto', formaBaixa: 'manual', baixadoPor: 'Junior' });
     expect(ev.junior.at(-1)).toContain('Pix direto');
     expect(ev.auditoria[0].acao).toBe('fatura_paga_manual');
+  });
+});
+
+describe('pagou com a 2ª trava ligada', () => {
+  it('desfaz as duas travas e reagenda os disparos que ficaram na fila', async () => {
+    const { deps, ev } = fake();
+    const r = await baixarFatura(deps, { ...A, assistentePausadaEm: '2026-10-13T12:00:00Z', disparosPausadosEm: '2026-10-17T12:00:00Z' }, F, PELO_LINK);
+    expect(r).toMatchObject({ ok: true, reativou: true });
+    expect(ev.reagendados).toEqual([['a1', '2026-10-17T12:00:00Z']]);
+    expect(ev.logs.some((l) => l.evento === 'disparos_reagendados' && l.quantidade === 2)).toBe(true);
   });
 });

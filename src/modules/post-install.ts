@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { registrarEvento } from './elo/eventos.js';
 import { empresa } from './empresa-config.js';
+import { filtrarDisparosLiberados } from './cobranca-recorrente/pausa.js';
 
 // Enum de installation_status. Fonte unica — importe no endpoint pra
 // validacao, evita drift entre codigo e migration (CHECK constraint espelha
@@ -186,7 +187,7 @@ export class PostInstallService {
   async processDueTouches(): Promise<number> {
     const { data, error } = await this.supabase
       .from('post_install_touches')
-      .select('id, touch_type, leads(id, phone, name, city, energy_data, opt_out)')
+      .select('id, touch_type, company_id, leads(id, phone, name, city, energy_data, opt_out)')
       .eq('status', 'pending')
       .lte('scheduled_for', new Date().toISOString())
       .limit(10);
@@ -195,9 +196,11 @@ export class PostInstallService {
       return 0;
     }
     if (!data || data.length === 0) return 0;
+    // Cobrança recorrente — 2ª trava (ponto único): tenant inadimplente fica na fila.
+    const liberados = await filtrarDisparosLiberados(data as unknown as Array<{ company_id?: string | null }>, (t) => t.company_id, 'toque pós-instalação');
 
     let sent = 0;
-    for (const touch of data as unknown as Array<{
+    for (const touch of liberados as unknown as Array<{
       id: string;
       touch_type: TouchStep['type'];
       leads: {

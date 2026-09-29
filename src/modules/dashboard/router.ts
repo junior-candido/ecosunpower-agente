@@ -509,10 +509,19 @@ export function createDashboardRouter(
     if (!u || u.companyId === ECOSUN_CASA) { next(); return; }
     try {
       if (await empresaPausadaNoCache(cachePausaPainel, u.companyId, ECOSUN_CASA)) {
-        const { faturasDoTenant } = await import('../cobranca-recorrente/faturas-repo.js');
-        const aberta = (await faturasDoTenant(supabase, u.companyId))
-          .filter((f) => f.status === 'aberta' && f.linkUrl).sort((x, y) => (x.venceEm < y.venceEm ? -1 : 1))[0];
-        u.assistentePausada = { linkPagar: aberta?.linkUrl ?? null };
+        const { pausaDaEmpresa } = await import('./assinaturas-store.js');
+        const estado = await pausaDaEmpresa(supabase, u.companyId);
+        // Valores e botão Pagar SÓ pro admin/proprietário do tenant; os outros
+        // usuários (vendedoras) veem só "fale com a administradora da conta".
+        const admin = can(u, 'usuarios', 'administrar');
+        let linkPagar: string | null = null;
+        if (admin) {
+          const { faturasDoTenant } = await import('../cobranca-recorrente/faturas-repo.js');
+          const aberta = (await faturasDoTenant(supabase, u.companyId))
+            .filter((f) => f.status === 'aberta' && f.linkUrl).sort((x, y) => (x.venceEm < y.venceEm ? -1 : 1))[0];
+          linkPagar = aberta?.linkUrl ?? null;
+        }
+        u.assistentePausada = { linkPagar, estagio: estado.estagio === 2 ? 2 : 1, admin };
       }
     } catch (err) {
       console.warn('[cobranca-recorrente] faixa da pausa falhou:', (err as Error).message);
@@ -1019,11 +1028,15 @@ b.onclick=async function(){
         ok = `Prazo dado: a assistente não pausa até ${dataBr(r.ate!)}.${r.reativou ? ' Ela estava pausada e já voltou a atender.' : ''}`;
       } else {
         const { diasPausaValidos } = await import('../cobranca-recorrente/pausa.js');
+        const { diasTravaDisparosValidos } = await import('../cobranca-recorrente/pausa.js');
         const pausaAutomatica = req.body?.pausa_automatica === '1';
         const diasPausa = diasPausaValidos(Number(req.body?.dias_pausa));
-        await editarAssinatura(supabase, id, { pausaAutomatica, diasPausa }, dona);
-        await audit(supabase, { companyId: dona, userId: req.dashUser!.id, entidade: 'assinatura', entidadeId: id, acao: 'regra_pausa', campo: `auto=${pausaAutomatica};dias=${diasPausa}` });
-        ok = pausaAutomatica ? `Regra salva: se atrasar, a assistente pausa ${diasPausa} dias depois do vencimento.` : 'Regra salva: esta assistente nunca pausa automaticamente.';
+        const diasTravaDisparos = diasTravaDisparosValidos(Number(req.body?.dias_trava_disparos), diasPausa);
+        await editarAssinatura(supabase, id, { pausaAutomatica, diasPausa, diasTravaDisparos }, dona);
+        await audit(supabase, { companyId: dona, userId: req.dashUser!.id, entidade: 'assinatura', entidadeId: id, acao: 'regra_pausa', campo: `auto=${pausaAutomatica};dias=${diasPausa};disparos=${diasTravaDisparos}` });
+        ok = pausaAutomatica
+          ? `Regra salva: se atrasar, a assistente para de responder ${diasPausa} dias depois do vencimento e os disparos automáticos param em ${diasTravaDisparos} dias.`
+          : 'Regra salva: esta assistente nunca pausa automaticamente (nem os disparos).';
       }
       if (acao !== 'regra') await audit(supabase, { companyId: dona, userId: req.dashUser!.id, entidade: 'assinatura', entidadeId: id, acao: `assistente_${acao}_manual` });
       if (a.companyId) cachePausaPainel.limpar(a.companyId);
@@ -1897,8 +1910,13 @@ b.onclick=async function(){
   router.get('/minha-assinatura', async (req: AuthedRequest, res) => {
     try {
       const { assinaturaDaEmpresa, contarUsinasAtivas, linkPendente } = await import('./assinaturas-store.js');
-      const { renderMinhaAssinaturaPage } = await import('./minha-assinatura-views.js');
+      const { renderMinhaAssinaturaPage, renderMinhaAssinaturaSoAdmin } = await import('./minha-assinatura-views.js');
       const cid = req.dashUser!.companyId;
+      // Valores, faturas e botão Pagar SÓ pro admin/proprietário do tenant.
+      if (!can(req.dashUser, 'usuarios', 'administrar')) {
+        res.type('html').send(renderMinhaAssinaturaSoAdmin(req.dashUser));
+        return;
+      }
       const a = await assinaturaDaEmpresa(supabase, cid);
       const uso = a && a.limite !== null ? await contarUsinasAtivas(supabase, cid).catch(() => null) : null;
       // Cobrança recorrente: SÓ as faturas em que a empresa da SESSÃO é a assinante.
