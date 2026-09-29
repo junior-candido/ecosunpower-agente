@@ -20,6 +20,8 @@ import { renderFinanceiroPage } from '../../src/modules/dashboard/financeiro-vie
 import { usina, ALERTAS_RESUMO, SPARK_7D, KPIS_EVA } from './casos-monitoramento.js';
 import { telasOnda3 } from './telas-onda3.js';
 import { USER_CASA, leadRow, leadDetalhe, SERVICOS_LEAD, FILTROS_CHEIOS } from './miolo-leads.js';
+import { renderCustoIaPage } from '../../src/modules/dashboard/custo-ia-views.js';
+import { painelCustoIaExemplo } from './casos-custo-ia.js';
 
 const hora = (h: number) => new Date(Date.now() - h * 3600_000).toISOString();
 const uuid = (i: number) => `${String(i).padStart(8, '0')}-1111-4111-8111-111111111111`;
@@ -129,5 +131,7 @@ export function telasRenovadas(n: number, user: DashUser = USER_CASA): Record<No
     monitoramento: renderMonitoramentoPage(frota(n), {}, casa ? ALERTAS_RESUMO : undefined, casa ? SPARK_7D : undefined, casa ? KPIS_EVA : undefined, user),
     // Onda 3 (R13–R19): cada fatia tem o seu arquivo tests/fixtures/telas-rNN.ts
     ...telasOnda3(n, user),
+    // Custo de IA (28/09/2026) — tela só da casa
+    'custo-ia': renderCustoIaPage(painelCustoIaExemplo(Math.max(2, Math.min(n, 30))), user),
   };
 }

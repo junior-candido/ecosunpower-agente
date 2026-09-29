@@ -51,6 +51,7 @@ import { CasesFetcher, type Case } from './cases-fetcher.js';
 import { empresa, interpolarEmpresa, comEmpresaDe } from './empresa-config.js';
 import { renderSocialProofPage } from './proposal/social-proof-page.js';
 import { resumirRascunho } from './proposal/rascunho.js';
+import { medirIa } from './custos/ia-metering.js';
 
 const IORedis = (Redis as any).default ?? Redis;
 
@@ -1213,6 +1214,7 @@ export class ProposalAssistant {
       system: [{ type: 'text', text: interpolarEmpresa(this.getSystemPrompt(), empresa()), cache_control: { type: 'ephemeral' } }],
       messages: history,
     }, { timeout: 30_000 });
+    medirIa({ modelo: response.model ?? 'claude-sonnet-4-6', origem: 'admin:proposta', usage: response.usage });
 
     const rawReply = response.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
