@@ -99,6 +99,7 @@ const CSS_COMERCIAL = `
   .cc-cm-linha>.cc-campo,.cc-cm-linha>.cc-campo-estreito{flex:1 1 100%}
   .cc-cm-linha .cc-btn{flex:1 1 auto;justify-content:center}
   .cc-cm-acoes>.cc-btn,.cc-cm-acoes form{flex:1 1 100%}
+  .cc-cm-acoes>.cc-btn{justify-content:center}
   .cc-cm-acoes form .cc-btn{flex:1 1 auto;justify-content:center}
   .cc-cm-acoes input[type=file]{flex:1 1 100%}
   .cc-cf-prev{height:420px}
