@@ -410,7 +410,7 @@ function addFixo(){
   return renderLayout({
     active: 'cerebro', title: 'Elo — cérebro do EcoSunPower', body, scripts, user: user as DashUser | undefined,
     dark: true, largo: true, imersivo: true, tailwind: false, cabeca: `<style>
-  #cerebro, #cerebro * { margin:0; padding:0; box-sizing:border-box; }
+  :where(#cerebro, #cerebro *) { margin:0; padding:0; box-sizing:border-box; }
   #cerebro {
     --ground:#0a1526; --ground-2:#0e1c33; --card:#13233f; --card-2:#182c4d;
     --line:#2a4066; --ink:#eaf1fb; --ink-soft:#a9bcd8; --ink-faint:#6f85a8;
