@@ -10,6 +10,7 @@ import { join } from 'path';
 import { contratoDaTela, aplicarMudancas } from './helpers/contrato-tela.js';
 // R5 (Onda 4): o Cockpit saiu do menu — sai o link /dashboard/cockpit das telas da casa.
 import { r5Menu } from './fixtures/mudancas-onda4.js';
+import { menuTenantSemAssinaturas } from './fixtures/mudancas-telas-leves.js';
 // Trocas deliberadas da R15 (inclui TELAS_LEVES) — seção R15 de mudancas-onda3.ts.
 import { MUDANCAS_R15 } from './fixtures/mudancas-onda3.js';
 import { CASOS_OBRAS } from './fixtures/casos-obras.js';
@@ -19,7 +20,8 @@ const CONTRATO = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures'
 describe('Quadro de Obras + Vincular — contrato da tela não muda', () => {
   for (const [nome, render] of Object.entries(CASOS_OBRAS)) {
     it(`contrato: ${nome}`, () => {
-      expect(contratoDaTela(render())).toEqual(aplicarMudancas(CONTRATO[nome], ...r5Menu(CONTRATO[nome]), ...(MUDANCAS_R15[nome] ?? [])));
+      const h = render();
+      expect(contratoDaTela(h)).toEqual(aplicarMudancas(CONTRATO[nome], ...r5Menu(CONTRATO[nome]), ...menuTenantSemAssinaturas(h), ...(MUDANCAS_R15[nome] ?? [])));
     });
   }
 });

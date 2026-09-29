@@ -163,3 +163,58 @@ export const ENTRA_CITAR_REAGIR: MudancaContrato = {
     ],
   },
 };
+
+// ---------------------------------------------------------------------------
+// Troca suave (28/09/2026) — trocar de contato e enviar SEM piscar.
+// ---------------------------------------------------------------------------
+
+/** Ids que o script do chat procura (existem só quando a conversa tem campo de resposta). */
+const IDS_DO_CHAT = [
+  'cc-at-anexo-prev', 'cc-at-arquivo', 'cc-at-citando', 'cc-at-citando-txt', 'cc-at-gravar', 'cc-at-legenda',
+  'cc-at-modelo-custo', 'cc-at-modelo-nome', 'cc-at-modelo-sel', 'cc-at-msgs', 'cc-at-previa', 'cc-at-texto',
+  'cc-at-topo', 'conversa', 'responder',
+];
+
+/**
+ * Junior (28/09): "ao clicar noutro contato a tela pisca" — trocar de contato
+ * agora busca só o miolo (chat + resumo) pela MESMA rota e troca as duas
+ * colunas, sem recarregar. Por isso o script do chat (enviar/anexar/citar/
+ * reagir/atualizar) e o da troca vão em TODA tela de Conversas — mesmo sem
+ * campo de resposta ou sem lead aberto: a próxima conversa pode ter. Nenhum
+ * formulário, link ou confirm() muda. `html` = a tela, para saber quais ids o
+ * script procura que ainda não existem nela.
+ */
+export const entraTrocaSuave = (html: string): MudancaContrato => ({
+  motivo: 'Junior: trocar de contato sem recarregar (script do chat sempre na tela de Conversas)',
+  entra: {
+    // 'ac' = ✋ Assumir / ↩ Devolver sem recarregar (o MESMO POST do formulário)
+    fetches: ['URLR', 'ac', 'chave(u)', "f.getAttribute('action')", 'u'],
+    ids: IDS_DO_CHAT,
+    idsAusentes: IDS_DO_CHAT.filter((id) => !html.includes(`id="${id}"`)),
+    seletores: [
+      '#cc-at-gravar', '#cc-at-topo', '#conversa', '#responder', '.cc-at', '.cc-at-abas-voltar', '.cc-at-aviso-envio', '.cc-at-chat-topo', '.cc-at-como', '.cc-at-dia',
+      '.cc-at-esq', '.cc-at-foto', '.cc-at-grade', '.cc-at-item', '.cc-at-janela', '.cc-at-menu-msg', '.cc-at-midia,.cc-at-doc-txt strong',
+      '.cc-at-msg-h', '.cc-at-msg-q', '.cc-at-msg-t', '.cc-at-msgs', '.cc-at-reacoes', '.cc-at-vazio', '[data-acoes]', '[data-msg]',
+      '[data-pronta]', '[data-tirar-citacao]', 'a[href]', 'audio', 'button', 'button[type=submit]', 'details', 'form[data-envio-midia]',
+      'form[data-envio]', 'input[name=chave]', 'input[name=citando]', 'textarea[name=texto]', 'video',
+    ],
+    dataAttrs: ['data-acoes', 'data-envio', 'data-envio-midia', 'data-msg', 'data-pronta', 'data-tirar-citacao'],
+  },
+});
+
+/**
+ * Junior (28/09): "senti falta de baixar as imagens e PDF somente com um
+ * clique". Cada foto/PDF/áudio/vídeo do chat ganha ⬇ Baixar (?baixar=1 na
+ * MESMA rota protegida) e a seção Arquivos ganha "⬇ Baixar tudo (.zip)".
+ * `temArquivos` = o lead tem arquivos (a seção só aparece com arquivo).
+ */
+export const entraBaixar = (temArquivos: boolean): MudancaContrato => ({
+  motivo: 'Junior: baixar foto/PDF com um clique e tudo num .zip',
+  entra: { links: temArquivos ? [`/dashboard/leads/${ID}/arquivos.zip`] : [] },
+});
+
+/** Agendamento aguardando confirmação (28/09): os botões do aviso respondem sem recarregar (mesmo POST). */
+export const ENTRA_AGENDA_PENDENTE: MudancaContrato = {
+  motivo: 'Junior: a Eva não marca sozinha — o aviso de agendamento responde sem recarregar a tela',
+  entra: { seletores: ['.cc-at-agenda'] },
+};

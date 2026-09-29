@@ -59,10 +59,10 @@ describe('sem <style> no corpo das telas renovadas (sobe pro <head>)', () => {
 
 /** Telas que AINDA carregam o Tailwind do CDN (miolo antigo). Esta lista só
  *  pode DIMINUIR: tela nova nasce no padrão cc- (tailwind:false, TELAS_RENOVADAS).
- *  - Financeiro II (R20 — fora da Onda 4: a cobrança recorrente mexe nessas telas);
+ *  - Notas fiscais (R20 — fora da Onda 4; Assinaturas já veio renovada da cobrança recorrente #339);
  *  - Cockpit antigo (aposentado — só abre com ?antigo=1);
  *  - Propostas (lista e formulário: views.ts#renderPropostasPage e proposta-form-view.ts). */
-const AINDA_COM_TAILWIND = ['assinaturas-views.ts', 'cockpit-views.ts', 'fiscal-views.ts', 'proposta-form-view.ts'];
+const AINDA_COM_TAILWIND = ['cockpit-views.ts', 'fiscal-views.ts', 'proposta-form-view.ts'];
 
 describe('teto das telas com Tailwind do CDN', () => {
   it('só as da lista (e nenhuma renovada) ainda carregam o Tailwind', () => {

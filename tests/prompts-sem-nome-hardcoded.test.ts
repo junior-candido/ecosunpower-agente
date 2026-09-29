@@ -171,10 +171,11 @@ describe('confirmação de visita diz quem vai, não "eu te espero"', () => {
     });
   }
 
-  it('o passo de confirmar agendamento usa o marcador de quem vai', () => {
+  it('o passo de agendamento usa o marcador de quem CONFIRMA', () => {
     const sp = readFileSync(join(promptsDir, 'system-prompt.md'), 'utf-8');
-    const passo = sp.slice(sp.indexOf('### Passo 4 — Confirmar o agendamento'));
-    expect(passo.slice(0, 900)).toContain('{{rt_O}}');
+    const i = sp.indexOf('### Passo 4 — Conferir a preferência e passar pra confirmação');
+    expect(i).toBeGreaterThan(0);
+    expect(sp.slice(i, i + 1200)).toContain('{{rt_confirma_O}} vai entrar em contato pra confirmar');
   });
 
   it('interpolado, cada empresa diz a sua frase', () => {
@@ -187,5 +188,51 @@ describe('confirmação de visita diz quem vai, não "eu te espero"', () => {
     expect(interpolarEmpresa(modelo, EMPRESA_DEFAULTS)).toContain('O Junior te espera');
     expect(interpolarEmpresa(modelo, conquista)).toContain('A nossa equipe te espera');
     expect(interpolarEmpresa(modelo, conquista)).not.toContain('Junior');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 28/09/2026 — a Eva NÃO marca visita/Meet sozinha. Ela anota a preferência e
+// quem confirma é o admin da empresa. O prompt não pode mandar ela dizer que
+// está "agendado/marcado/confirmado" nem "te espera" no fluxo de agendamento.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('agendamento só com a confirmação do admin', () => {
+  const sp = readFileSync(join(promptsDir, 'system-prompt.md'), 'utf-8').replace(/\r\n/g, '\n');
+  const ini = sp.indexOf('## FLUXO DE ENCERRAMENTO');
+  const fim = sp.indexOf('## Formato das respostas');
+  const fluxo = sp.slice(ini, fim);
+
+  it('o fluxo existe e tem a regra de ouro', () => {
+    expect(ini).toBeGreaterThan(0);
+    expect(fim).toBeGreaterThan(ini);
+    expect(fluxo).toContain('VOCÊ NÃO MARCA, VOCÊ ANOTA');
+    expect(fluxo).toContain('"lead_summary"');
+  });
+
+  it('nenhuma frase modelo promete horário (fora das linhas que PROÍBEM)', () => {
+    const proibicao = /nunca|não diga|nao diga|proibid|só depois|so depois|aí sim|ai sim|não invente|nada está|ainda não/i;
+    const linhas = fluxo.split('\n').filter(l => !proibicao.test(l));
+    for (const frase of ['agendado', 'marcado', 'confirmado', 'te espera', 'vou agendar', 'agendo so']) {
+      const culpada = linhas.find(l => l.toLowerCase().includes(frase));
+      expect(culpada, `"${frase}" no fluxo de agendamento`).toBeUndefined();
+    }
+  });
+
+  it('não manda transferir no agendamento', () => {
+    const passo5 = fluxo.slice(fluxo.indexOf('### Passo 5'));
+    expect(passo5).toMatch(/NAO emita transfer_to_human no agendamento/);
+  });
+
+  it('interpolado: EcoSun diz "O Junior", tenant diz "Nossa equipe" (nunca o nome da casa)', () => {
+    const modelo = '{{rt_confirma_O}} vai entrar em contato pra confirmar; passo pra {{rt_confirma}}';
+    const conquista = normalizarEmpresaRow({
+      company_id: 'c1a2b3c4-0000-0000-0000-00000000aaaa',
+      nome_fantasia: 'Conquista Solar',
+      rt_nome: 'JIMENA SOUZA', rt_apelido: 'Jimena', rt_genero: 'f',
+    });
+    expect(interpolarEmpresa(modelo, EMPRESA_DEFAULTS)).toBe('O Junior vai entrar em contato pra confirmar; passo pra o Junior');
+    const t = interpolarEmpresa(modelo, conquista);
+    expect(t).toBe('Nossa equipe vai entrar em contato pra confirmar; passo pra nossa equipe');
+    expect(t).not.toMatch(/Junior|Jimena/);
   });
 });

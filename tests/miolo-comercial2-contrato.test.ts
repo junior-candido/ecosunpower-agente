@@ -10,6 +10,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { contratoDaTela, aplicarMudancas } from './helpers/contrato-tela.js';
+import { menuTenantSemAssinaturas } from './fixtures/mudancas-telas-leves.js';
 import { CASOS_COMERCIAL2 } from './fixtures/casos-comercial2.js';
 import { MUDANCAS_R21, r5Menu } from './fixtures/mudancas-onda4.js';
 // Troca comum das telas renovadas: sai o Tailwind do CDN (telas leves, #328).
@@ -20,7 +21,9 @@ const CONTRATO = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures'
 describe('Comercial II — contrato das telas não muda', () => {
   for (const [nome, render] of Object.entries(CASOS_COMERCIAL2)) {
     it(`contrato: ${nome}`, () => {
-      expect(contratoDaTela(render())).toEqual(aplicarMudancas(CONTRATO[nome], ...r5Menu(CONTRATO[nome]), TELAS_LEVES, ...(MUDANCAS_R21[nome] ?? [])));
+      const h = render();
+      // Cobrança recorrente (#339): Assinaturas some do menu do tenant.
+      expect(contratoDaTela(h)).toEqual(aplicarMudancas(CONTRATO[nome], ...menuTenantSemAssinaturas(h), ...r5Menu(CONTRATO[nome]), TELAS_LEVES, ...(MUDANCAS_R21[nome] ?? [])));
     });
   }
 });

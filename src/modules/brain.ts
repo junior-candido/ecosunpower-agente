@@ -1,26 +1,22 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { buildSystemBlocks } from './system-blocks.js';
 import { formatCacheUsage } from './cache-log.js';
-import { registrarUsoIa } from './custos/ia-metering.js';
+import { medirIa } from './custos/ia-metering.js';
 import { empresa, interpolarEmpresa, type EmpresaConfig } from './empresa-config.js';
 import { promptFileDoModo } from './eva-modo.js';
 
-// Client Supabase dedicado ao medidor de custos de IA. Lazy + memoizado:
-// criado sob demanda a partir das mesmas envs do SupabaseService. Em
-// teste/build (sem env) fica null → registrarUsoIa vira no-op best-effort.
-// Assim o medidor liga em prod sem refatorar o construtor do Brain nem o
-// index.ts (o Brain hoje só recebe apiKey + reviewLink).
-let _custosClient: SupabaseClient | null | undefined;
-function getCustosClient(): SupabaseClient | null {
-  if (_custosClient !== undefined) return _custosClient;
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_KEY;
-  _custosClient = url && key ? createClient(url, key) : null;
-  return _custosClient;
+const MODELO_CONVERSA = 'claude-sonnet-4-6';
+
+// [28/09/2026] Duração do cache do prompt fixo. O cliente costuma responder
+// depois de 5+ min: com o cache de 5 min quase TODA mensagem reescrevia ~25 mil
+// tokens (1,25× o preço). Com 1 hora (escrita 2×, leitura 0,1×) a conversa
+// e as outras conversas da mesma empresa reaproveitam. Mesmo texto, mesma
+// resposta — só a conta muda. EVA_CACHE_TTL=5m desliga (chave de emergência).
+function ttlDoCache(): '5m' | '1h' | undefined {
+  return (process.env.EVA_CACHE_TTL ?? '').trim().toLowerCase() === '5m' ? undefined : '1h';
 }
 
 interface MessageEntry {
@@ -295,6 +291,8 @@ export class Brain {
     /** Ficha permanente do cliente (fatos que não expiram). Opcional: chamadas
      *  antigas seguem funcionando igual. */
     ficha?: string | null,
+    /** conhecimentoEstavel: começo FIXO da base (core) → 2º ponto de cache. */
+    opcoes?: { conhecimentoEstavel?: string },
   ): Promise<BrainResponse> {
     // review_link substituido aqui (estavel por processo) -> prefixo cacheavel.
     // [ECOSOF] Placeholders de empresa ({{nome_atendente}}, {{empresa_nome}}, ...)
@@ -318,6 +316,8 @@ export class Brain {
       summary,
       ficha,
       now: new Date(),
+      ttl: ttlDoCache(),
+      conhecimentoEstavel: opcoes?.conhecimentoEstavel,
     });
 
     const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
@@ -329,7 +329,7 @@ export class Brain {
       // Sonnet (não Haiku): conversa mais esperta e natural, segue a regra de não
       // ecoar/cravar preço que o Haiku ignorava. Cálculo certo já é garantido pela
       // calculadora + trava-número, independente do modelo.
-      model: 'claude-sonnet-4-6',
+      model: MODELO_CONVERSA,
       max_tokens: 1024,
       system,
       messages,
@@ -341,11 +341,9 @@ export class Brain {
     // Medidor de custo de IA (best-effort, nunca derruba a resposta). A Eva é
     // o maior consumidor de tokens — grava tokens + custo estimado em BRL na
     // custos_ia_uso. Sem await pra não somar latência na resposta ao cliente.
-    void registrarUsoIa(getCustosClient(), {
-      modelo: 'claude-sonnet-4-6',
-      origem: 'eva',
-      usage: response.usage,
-    });
+    // A EMPRESA vem do contexto do job (a fila roda cada mensagem dentro de
+    // comCanal({companyId})): Eva → casa, Clara → Conquista Solar.
+    medirIa({ modelo: MODELO_CONVERSA, origem: 'conversa:lead', usage: response.usage });
 
     const text = response.content
       .filter((block): block is Anthropic.TextBlock => block.type === 'text')

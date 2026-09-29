@@ -13,7 +13,7 @@ import { r5Menu } from './fixtures/mudancas-onda4.js';
 import type { MudancaContrato } from './helpers/contrato-tela.js';
 import { CASOS_CLIENTES } from './fixtures/casos-clientes.js';
 // Troca comum das telas renovadas: sai o Tailwind do CDN (telas leves, #328).
-import { TELAS_LEVES } from './fixtures/mudancas-telas-leves.js';
+import { TELAS_LEVES, menuTenantSemAssinaturas } from './fixtures/mudancas-telas-leves.js';
 // Trocas deliberadas desta fatia (explicadas lá, seção R16).
 import { R16_VINCULO_POR_DATASET, R16_ABAS_POR_ANCORA, R16_TRILHA_LISTA } from './fixtures/mudancas-onda3.js';
 
@@ -31,7 +31,8 @@ const MUDANCAS: Record<string, MudancaContrato[]> = {
 describe('Clientes — contrato das 5 telas não muda', () => {
   for (const [nome, render] of Object.entries(CASOS_CLIENTES)) {
     it(`contrato: ${nome}`, () => {
-      expect(contratoDaTela(render())).toEqual(aplicarMudancas(CONTRATO[nome], ...r5Menu(CONTRATO[nome]), TELAS_LEVES, ...(MUDANCAS[nome] ?? [])));
+      const h = render();
+      expect(contratoDaTela(h)).toEqual(aplicarMudancas(CONTRATO[nome], ...r5Menu(CONTRATO[nome]), ...menuTenantSemAssinaturas(h), TELAS_LEVES, ...(MUDANCAS[nome] ?? [])));
     });
   }
 });

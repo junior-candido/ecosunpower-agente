@@ -7,6 +7,25 @@
 /** CSS só do Atendimento (tokens cc- → funciona nos dois temas). */
 export const CSS_ATENDIMENTO = `
 .cc-at-topo{display:contents}
+/* troca suave de contato (28/09): nada de tela branca — esqueleto leve só se demorar */
+.cc-at-chat{position:relative}
+.cc-at-chat-topo:focus{outline:none}
+/* aviso "Agendamento aguardando sua confirmação" (28/09) — dentro da coluna do chat */
+.cc-at-agenda{margin:8px 18px 0;flex:0 0 auto;max-height:40vh;overflow-y:auto}
+.cc-at-agenda-item{margin-top:8px}
+.cc-at-agenda-botoes{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.cc-at-agenda-botoes form{display:inline-flex;margin:0}
+.cc-at-agenda-sugerir{display:inline-flex;gap:6px;align-items:center}
+.cc-at-agenda-sugerir input{min-width:0;width:200px;max-width:100%}
+.cc-at-chat-topo:focus-visible{outline:2px solid var(--cc-gold-2);outline-offset:-2px}
+.cc-at-chat-topo,.cc-at-assumido,.cc-at-cockpit>*{transition:opacity .15s}
+.cc-at-carregando .cc-at-chat-topo,.cc-at-carregando .cc-at-assumido,.cc-at-cockpit.cc-at-carregando>*{opacity:.5}
+.cc-at-chat.cc-at-carregando .cc-at-msgs>*{visibility:hidden}
+.cc-at-esq{position:absolute;left:0;right:0;z-index:2;display:flex;flex-direction:column;justify-content:flex-end;gap:10px;padding:16px 18px;pointer-events:none;overflow:hidden;animation:ccEsqEntra .15s ease-out}
+@keyframes ccEsqEntra{from{opacity:0}to{opacity:1}}
+@media (prefers-reduced-motion:reduce){.cc-at-esq{animation:none}.cc-at-chat-topo,.cc-at-assumido,.cc-at-cockpit>*{transition:none}}
+.cc-at-esq-b{flex:none;height:46px;border-radius:14px;background:var(--cc-surface-3);opacity:.7}
+.cc-at-esq-eva{align-self:flex-end;background:rgba(61,187,110,.16)}
 .cc-at-msg-otimista .cc-at-msg-h{opacity:.85}
 .cc-at-aviso-envio{margin-bottom:6px}
 .cc-at .cc-top{margin-bottom:14px}
@@ -93,7 +112,9 @@ export const CSS_ATENDIMENTO = `
 .cc-at-zap-link{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:600;color:var(--cc-ok)}
 .cc-at-resp{display:flex;gap:8px;align-items:flex-end;margin:0}
 .cc-at-resp textarea{flex:1;min-width:0;min-height:44px;max-height:180px;resize:vertical;border-radius:12px;font:inherit;font-size:14px}
-.cc-btn.cc-at-enviar{background:linear-gradient(180deg,#3DBB6E,#2a9a57);color:#fff;border-color:transparent;height:44px;padding:0 18px;font-weight:700;flex:none}
+.cc-btn.cc-at-enviar{background:linear-gradient(180deg,#3DBB6E,#2a9a57);color:#fff;border-color:transparent;height:44px;padding:0 18px;font-weight:700;flex:none;justify-content:center}
+.cc-at-resp .cc-btn.cc-at-enviar{width:120px;padding:0}
+.cc-btn.cc-at-enviar-arq{min-width:136px}
 .cc-btn.cc-at-enviar:disabled{opacity:.6;cursor:wait}
 .cc-at-modelos-det>summary{cursor:pointer;font-size:12.5px;color:var(--cc-info);font-weight:600}
 .cc-at-modelo{display:flex;flex-direction:column;gap:8px;margin:6px 0 0}
@@ -119,10 +140,16 @@ export const CSS_ATENDIMENTO = `
 .cc-at-vazio,.cc-at-chat-vazio{justify-content:center}
 .cc-at-chat-vazio .cc-empty,.cc-at-vazio{margin:auto;max-width:360px;text-align:center}
 /* W1 — mídia no balão e anexar */
-.cc-at-foto{display:block;margin:2px 0 4px;border-radius:10px;overflow:hidden;max-width:260px;background:var(--cc-surface-2)}
-.cc-at-foto img{display:block;width:100%;height:auto;max-height:260px;object-fit:cover}
+.cc-at-foto{display:block;margin:2px 0 4px;border-radius:10px;overflow:hidden;width:260px;max-width:100%;aspect-ratio:1;background:var(--cc-surface-2)}
+.cc-at-foto img{display:block;width:100%;height:100%;object-fit:contain}
 .cc-at-audio{display:block;width:260px;max-width:100%;height:40px;margin:2px 0}
-.cc-at-video{display:block;width:280px;max-width:100%;max-height:220px;border-radius:10px;background:#000;margin:2px 0}
+.cc-at-video{display:block;width:280px;max-width:100%;aspect-ratio:16/9;height:auto;object-fit:contain;border-radius:10px;background:#000;margin:2px 0}
+/* ⬇ Baixar (um clique) */
+.cc-at-baixar{display:inline-flex;align-items:center;gap:4px;margin:2px 0 4px;font-size:12px;font-weight:600;color:var(--cc-info);text-decoration:none}
+.cc-at-baixar:hover{text-decoration:underline}
+.cc-at-doc .cc-at-baixar{margin:0;flex:none}
+.cc-at-anx .cc-at-baixar{margin:0}
+.cc-btn.cc-at-baixar-tudo{margin-bottom:10px}
 .cc-at-transc{margin-top:4px;padding:6px 9px;border-radius:8px;background:var(--cc-surface-2);font-size:12.5px;color:var(--cc-text-2);white-space:pre-wrap;word-break:break-word}
 .cc-at-transc span{display:block;font-size:10.5px;font-weight:700;color:var(--cc-muted);margin-bottom:1px}
 .cc-at-doc{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;background:var(--cc-surface-2);border:1px solid var(--cc-line);margin:2px 0 4px;min-width:min(250px,100%);flex-wrap:wrap}

@@ -113,7 +113,8 @@ export const MENU_AREAS: GrupoMenu[] = [
       { href: '/dashboard/financeiro', key: 'financeiro', label: 'Visão financeira', area: 'financeiro' },
       { href: '/dashboard/fiscal', key: 'fiscal', label: 'Notas fiscais', area: 'financeiro' },
       { href: '/dashboard/cobrar', key: 'cobrar', label: 'Cobrar cliente', area: 'financeiro' },
-      { href: '/dashboard/assinaturas', key: 'assinaturas', label: 'Assinaturas', area: 'financeiro' },
+      // Cobrança recorrente (28/09/2026): SÓ a casa — é a carteira de TODOS os assinantes.
+      { href: '/dashboard/assinaturas', key: 'assinaturas', label: 'Assinaturas', area: 'financeiro', soEcosun: true },
     ],
   },
   {

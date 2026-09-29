@@ -35,6 +35,7 @@ import {
 import { parametroNome, type ModeloAtendimento } from './modelos-atendimento.js';
 import { respostasProntas } from './respostas-prontas.js';
 import { tamanhoLegivel, ACEITA_NO_SELETOR, LIMITE_IMAGEM_BYTES, LIMITE_MIDIA_BYTES, LIMITE_LEGENDA } from '../midia-whatsapp.js';
+import { casarMidiaAntiga, tipoDoArquivo, type AnexoDoLead } from './atendimento-arquivos.js';
 
 const FUSO = 'America/Sao_Paulo';
 
@@ -135,17 +136,51 @@ export function corpoDaMidia(m: Pick<MensagemChat, 'content' | 'midia' | 'transc
   const transc = m.transcricao ? `<div class="cc-at-transc"><span>Transcrição</span>${escapeHtml(m.transcricao)}</div>` : '';
   if (!ID_MIDIA_OK.test(md.id)) return `<span class="cc-at-midia">📎 Arquivo</span>${txt}${transc}`;
   const url = `/dashboard/leads/midia/${md.id}`;
+  const baixar = botaoBaixar(url, md.tipo === 'imagem' ? 'a foto' : md.tipo === 'audio' ? 'o áudio' : md.tipo === 'video' ? 'o vídeo' : 'o arquivo');
   if (md.tipo === 'imagem') {
-    return `<a class="cc-at-foto" href="${url}" target="_blank" rel="noopener" data-ampliar aria-label="Ampliar foto"><img src="${url}" alt="Foto enviada na conversa" loading="lazy" decoding="async"></a>${txt}`;
+    return `<a class="cc-at-foto" href="${url}" target="_blank" rel="noopener" data-ampliar aria-label="Ampliar foto"><img src="${url}" alt="Foto enviada na conversa" loading="lazy" decoding="async"></a>${baixar}${txt}`;
   }
-  if (md.tipo === 'audio') return `<audio controls preload="none" src="${url}" class="cc-at-audio"></audio>${txt}${transc}`;
-  if (md.tipo === 'video') return `<video controls preload="none" src="${url}" class="cc-at-video" playsinline></video>${txt}${transc}`;
+  if (md.tipo === 'audio') return `<audio controls preload="none" src="${url}" class="cc-at-audio"></audio>${baixar}${txt}${transc}`;
+  if (md.tipo === 'video') return `<video controls preload="none" src="${url}" class="cc-at-video" playsinline></video>${baixar}${txt}${transc}`;
   const mime = (md.mime ?? '').toLowerCase();
   const ic = ICONE_DOC.find(([re]) => re.test(mime))?.[1] ?? '📄';
   const nome = md.nome || 'Documento';
   const tam = tamanhoLegivel(md.bytes);
+  return cartaoDoc(ic, nome, tam, url) + txt;
+}
+
+/**
+ * ⬇ Baixar com UM clique (Junior 28/09): `?baixar=1` na MESMA rota protegida
+ * (confere empresa, vendedor e dono do número) — o servidor manda o arquivo
+ * como anexo, com nome amigável ("Ana-Exemplo_2026-09-28_foto.jpg").
+ */
+function botaoBaixar(url: string, oQue: string): string {
+  return `<a class="cc-at-baixar" href="${url}?baixar=1" download aria-label="Baixar ${escapeHtml(oQue)}">⬇ Baixar</a>`;
+}
+
+function cartaoDoc(ic: string, nome: string, tam: string, url: string): string {
   return `<div class="cc-at-doc"><span class="cc-at-doc-ic" aria-hidden="true">${ic}</span><span class="cc-at-doc-txt"><strong>${escapeHtml(nome)}</strong>${tam ? `<small>${escapeHtml(tam)}</small>` : ''}</span>
-      <a class="cc-link" href="${url}" target="_blank" rel="noopener">Abrir</a><a class="cc-link" href="${url}?baixar=1">Baixar</a></div>${txt}`;
+      <a class="cc-link" href="${url}" target="_blank" rel="noopener">Abrir</a>${botaoBaixar(url, 'o arquivo')}</div>`;
+}
+
+/**
+ * Mídia ANTIGA da Eva (antes do bucket novo): o balão só dizia "[Enviou uma
+ * foto]"; o arquivo está nos Arquivos do lead (lead_anexos). Quando casa com
+ * certeza (casarMidiaAntiga), mostra a miniatura/cartão + ⬇ Baixar pela rota
+ * protegida /dashboard/leads/:id/anexo/:anexoId. PURA.
+ */
+export function corpoDaMidiaAntiga(leadId: string, a: AnexoDoLead, conteudo: string): string {
+  const resto = conteudo.replace(/^\[[^\]]*\]\s*/, '').trim();
+  const txt = resto ? `<div class="cc-at-msg-t">${escapeHtml(resto)}</div>` : '';
+  if (!ID_MSG_OK.test(leadId) || !ID_MSG_OK.test(a.id)) return `<span class="cc-at-midia">📎 Arquivo</span>${txt}`;
+  const url = `/dashboard/leads/${leadId}/anexo/${a.id}`;
+  const t = tipoDoArquivo(a.mime_type);
+  if (t === 'foto') {
+    return `<a class="cc-at-foto" href="${url}" target="_blank" rel="noopener" data-ampliar aria-label="Ampliar foto"><img src="${url}" alt="Foto enviada na conversa" loading="lazy" decoding="async"></a>${botaoBaixar(url, 'a foto')}${txt}`;
+  }
+  const mime = (a.mime_type ?? '').toLowerCase();
+  const ic = ICONE_DOC.find(([re]) => re.test(mime))?.[1] ?? '📄';
+  return cartaoDoc(ic, t === 'pdf' ? 'PDF enviado pelo cliente' : 'Arquivo enviado pelo cliente', '', url) + txt;
 }
 
 function qsFiltros(f: FiltrosConversa, extra: Partial<FiltrosConversa> = {}): string {
@@ -258,7 +293,7 @@ export function blocoReacoes(rs: NonNullable<MensagemChat['reacoes']>): string {
   return `<div class="cc-at-reacoes" title="${escapeHtml(titulo)}">${rs.map((r) => `<span>${escapeHtml(r.emoji)}</span>`).join('')}${rs.length > 1 ? `<small>${rs.length}</small>` : ''}</div>`;
 }
 
-function balao(m: MensagemChat, rotuloAssistente: string, nomeCliente: string, temArquivos: boolean, mostrarCanal: boolean, donoPessoal: string | null, acoes = false): string {
+function balao(m: MensagemChat, rotuloAssistente: string, nomeCliente: string, temArquivos: boolean, mostrarCanal: boolean, donoPessoal: string | null, acoes = false, corpoAntigo: string | null = null): string {
   if (m.role === 'evento' || m.autor === 'evento') {
     return `<div class="cc-at-evento cc-at-evento-${m.evento === 'assumiu' ? 'assumiu' : m.evento === 'reagiu' ? 'reagiu' : 'devolveu'}" role="note">${escapeHtml(textoDoEvento(m, rotuloAssistente))}</div>`;
   }
@@ -277,7 +312,7 @@ function balao(m: MensagemChat, rotuloAssistente: string, nomeCliente: string, t
   return `<div class="cc-at-msg ${classe}${reacoes ? ' cc-at-com-reacao' : ''}"${podeAgir ? ` data-msg="${m.painelId}"` : ''}>
       <div class="cc-at-msg-q">${escapeHtml(quem)}${canal}${podeAgir ? `<button type="button" class="cc-at-acoes-btn" data-acoes aria-label="Responder ou reagir" title="Responder ou reagir">⋯</button>` : ''}</div>
       ${m.citando ? blocoCitacao(m.citando) : ''}
-      ${m.midia ? corpoDaMidia(m) : corpoDaMensagem(m.content, temArquivos)}${!m.midia && m.transcricao ? `<div class="cc-at-transc"><span>Transcrição</span>${escapeHtml(m.transcricao)}</div>` : ''}
+      ${m.midia ? corpoDaMidia(m) : corpoAntigo ?? corpoDaMensagem(m.content, temArquivos)}${!m.midia && m.transcricao ? `<div class="cc-at-transc"><span>Transcrição</span>${escapeHtml(m.transcricao)}</div>` : ''}
       ${falhou}
       ${hora ? `<div class="cc-at-msg-h">${escapeHtml(hora + enviando)}${humano ? tique(m.status) : ''}</div>` : ''}
       ${reacoes}
@@ -487,7 +522,9 @@ function faixaAssumir(lead: LeadDetail, mensagens: MensagemChat[], assistente: s
 }
 
 /** Os balões da conversa (com a divisória de cada dia). Usado na página E no "sem recarregar". */
-export function blocoMensagens(mensagens: MensagemChat[], assistente: string, nomeCliente: string, temArquivos: boolean, donoPessoal: string | null, soDono = false, acoes = false, digitando: 'digitando' | 'gravando' | null = null): string {
+export function blocoMensagens(mensagens: MensagemChat[], assistente: string, nomeCliente: string, temArquivos: boolean, donoPessoal: string | null, soDono = false, acoes = false, digitando: 'digitando' | 'gravando' | null = null,
+  /** Mídia antiga da Eva: os anexos do lead para casar com os balões "[Enviou uma foto]". */
+  antigas: { leadId: string; anexos: AnexoDoLead[] } | null = null): string {
   // W3: "digitando…" / "gravando áudio…" no fim da conversa (quando o WhatsApp avisa).
   const dig = digitando ? `<div class="cc-at-digitando" role="status" aria-live="polite"><span class="cc-at-dig-pts" aria-hidden="true"><i></i><i></i><i></i></span>${escapeHtml(nomeCliente)} está ${digitando === 'gravando' ? 'gravando áudio…' : 'digitando…'}</div>` : '';
   if (mensagens.length === 0 && dig) return dig;
@@ -498,8 +535,9 @@ export function blocoMensagens(mensagens: MensagemChat[], assistente: string, no
   }
   const canais = new Set(mensagens.map((m) => m.canal).filter(Boolean));
   const mostrarCanal = !soDono && canais.size > 1;
+  const casadas = antigas ? casarMidiaAntiga(mensagens, antigas.anexos) : new Map<number, AnexoDoLead>();
   let diaAnterior = '';
-  return mensagens.map((m) => {
+  return mensagens.map((m, i) => {
     let sep = '';
     if (m.timestamp && Number.isFinite(Date.parse(m.timestamp))) {
       const dia = rotuloDia(m.timestamp);
@@ -507,7 +545,8 @@ export function blocoMensagens(mensagens: MensagemChat[], assistente: string, no
     }
     // Conversa do número pessoal com quem não é lead: quem responde é o dono (nunca a assistente).
     const mm = soDono && m.role === 'assistant' && m.autor !== 'humano' ? { ...m, autor: 'humano' as const, autorNome: m.autorNome ?? donoPessoal } : m;
-    return sep + balao(mm, assistente, nomeCliente, temArquivos, mostrarCanal, donoPessoal, acoes);
+    const anx = casadas.get(i);
+    return sep + balao(mm, assistente, nomeCliente, temArquivos, mostrarCanal, donoPessoal, acoes, anx && antigas ? corpoDaMidiaAntiga(antigas.leadId, anx, m.content) : null);
   }).join('') + dig;
 }
 
@@ -525,7 +564,7 @@ function topoDoChat(lead: LeadDetail, mensagens: MensagemChat[], assistente: str
     : lead.eva_active ? pilulaStatus('normal', `${assistente} ativa`) : pilulaStatus('acompanhar', `${assistente} pausada`);
   const canalChip = envio ? `<span class="cc-at-canal cc-at-canal-${escapeHtml(envio.canal)}">${escapeHtml(rotuloCanal(envio.canal, assistente, donoPessoal))}</span>` : '';
   return `<div class="cc-at-topo" id="cc-at-topo">
-    <header class="cc-at-chat-topo">
+    <header class="cc-at-chat-topo" tabindex="-1">
       ${avatarAt(lead.name, lead.phone)}
       <div class="cc-at-chat-id">
         <div class="cc-at-chat-nome"><strong>${escapeHtml(nome)}</strong>${pilulaEtapa(lead.status)}${eva}${canalChip}</div>
@@ -535,6 +574,12 @@ function topoDoChat(lead: LeadDetail, mensagens: MensagemChat[], assistente: str
     </header>
     ${!lead.eva_active ? faixaAssumir(lead, mensagens, assistente, assistenteMin, podeEditar) : ''}
     </div>`;
+}
+
+/** Anexos do lead para casar com os balões antigos da Eva (só metadados; a URL é a rota protegida). */
+function antigasDo(lead: Pick<LeadDetail, 'id' | 'anexos'>): { leadId: string; anexos: AnexoDoLead[] } | null {
+  const anexos = (lead.anexos ?? []).filter((a) => a && a.id && a.created_at);
+  return anexos.length ? { leadId: lead.id, anexos } : null;
 }
 
 /** W2: citar/reagir aparece para quem pode responder por algum número. */
@@ -563,7 +608,7 @@ export function pedacosDaConversa(p: {
   const temArquivos = (p.lead.anexos ?? []).length > 0;
   return {
     topo: topoDoChat(p.lead, p.mensagens, assistente, assistenteMin, p.envio, p.donoPessoal ?? null, can(p.user, 'leads', 'editar')),
-    msgs: blocoMensagens(p.mensagens, assistente, p.lead.name ?? 'Sem nome', temArquivos, p.donoPessoal ?? null, false, podeAgirNoChat(p.envio), p.digitando ?? null),
+    msgs: blocoMensagens(p.mensagens, assistente, p.lead.name ?? 'Sem nome', temArquivos, p.donoPessoal ?? null, false, podeAgirNoChat(p.envio), p.digitando ?? null, antigasDo(p.lead)),
     compor: compositor(p.lead, p.mensagens, p.envio, assistente),
     estado: estadoDoCompositor(p.lead, p.mensagens, p.envio),
   };
@@ -589,15 +634,15 @@ export function estadoDoCompositor(lead: Pick<LeadDetail, 'opt_out' | 'phone'>, 
   return `${c.canal}|${t}|${m}|${c.modelos.length}`;
 }
 
-function colunaChat(lead: LeadDetail, mensagens: MensagemChat[], assistente: string, assistenteMin: string, envio: CompositorInput | undefined, donoPessoal: string | null, podeEditar: boolean): string {
+function colunaChat(lead: LeadDetail, mensagens: MensagemChat[], assistente: string, assistenteMin: string, envio: CompositorInput | undefined, donoPessoal: string | null, podeEditar: boolean, eu: string | null = null, agendaHtml = ''): string {
   const nome = lead.name ?? 'Sem nome';
   const temArquivos = (lead.anexos ?? []).length > 0;
-  const corpo = blocoMensagens(mensagens, assistente, nome, temArquivos, donoPessoal, false, podeAgirNoChat(envio));
+  const corpo = blocoMensagens(mensagens, assistente, nome, temArquivos, donoPessoal, false, podeAgirNoChat(envio), null, antigasDo(lead));
   const topo = topoDoChat(lead, mensagens, assistente, assistenteMin, envio, donoPessoal, podeEditar);
   // Sem recarregar: o script busca os pedaços desta conversa (mesmo número da resposta).
   const estado = envio ? estadoDoCompositor(lead, mensagens, envio) : '';
   const vivo = envio
-    ? ` data-conversa="/dashboard/leads/${escapeHtml(lead.id)}/conversa.json?canal=${escapeHtml(envio.canal)}" data-estado="${escapeHtml(estado)}" data-assinatura="${assinaturaDaConversa({ topo, msgs: corpo, estado })}"${podeAgirNoChat(envio) ? ` data-reagir="/dashboard/leads/${escapeHtml(lead.id)}/reagir"` : ''}`
+    ? ` data-conversa="/dashboard/leads/${escapeHtml(lead.id)}/conversa.json?canal=${escapeHtml(envio.canal)}" data-estado="${escapeHtml(estado)}" data-assinatura="${assinaturaDaConversa({ topo, msgs: corpo, estado })}"${podeAgirNoChat(envio) ? ` data-reagir="/dashboard/leads/${escapeHtml(lead.id)}/reagir"` : ''}${eu ? ` data-eu="${escapeHtml(eu)}"` : ''}`
     : '';
   return `<section class="cc-at-col cc-at-chat" id="conversa" aria-label="Conversa"${vivo}>
     <nav class="cc-at-abas-cel" aria-label="Navegação do atendimento">
@@ -606,6 +651,7 @@ function colunaChat(lead: LeadDetail, mensagens: MensagemChat[], assistente: str
       <a class="cc-at-aba cc-at-aba-resumo" href="#resumo">Resumo</a>
     </nav>
     ${topo}
+    ${agendaHtml}
     <div class="cc-at-msgs" id="cc-at-msgs" role="log" aria-label="Mensagens">${corpo}</div>
     ${compositor(lead, mensagens, envio, assistente)}
   </section>`;
@@ -685,8 +731,9 @@ function blocoLinhaDoTempo(leadId: string, timeline: Atividade[]): string {
   return secao('Linha do tempo', `${registrar}${lista}`);
 }
 
-function blocoArquivos(anexos: LeadDetail['anexos']): string {
-  if (!anexos || anexos.length === 0) return '';
+function blocoArquivos(leadId: string, anexos: LeadDetail['anexos'], temMidiaNoChat = false): string {
+  if ((!anexos || anexos.length === 0) && !temMidiaNoChat) return '';
+  anexos = anexos ?? [];
   const card = (a: LeadDetail['anexos'][number]) => {
     const mime = (a.mime_type ?? '').toLowerCase();
     const rotulo = a.tipo === 'conta_luz' ? 'Conta de luz' : a.tipo === 'recebido_cliente' ? 'Enviado pelo cliente' : a.tipo;
@@ -699,9 +746,12 @@ function blocoArquivos(anexos: LeadDetail['anexos']): string {
     else if (mime.includes('pdf')) prev = `<a class="cc-at-anx-prev" href="${url}" target="_blank" rel="noopener">${icone('file')}<span>PDF</span></a>`;
     else if (mime.startsWith('video/')) prev = `<a class="cc-at-anx-prev" href="${url}" target="_blank" rel="noopener">${icone('eye')}<span>Vídeo</span></a>`;
     else prev = `<a class="cc-at-anx-prev" href="${url}" target="_blank" rel="noopener">${icone('ext')}<span>Arquivo</span></a>`;
-    return `<div class="cc-at-anx" title="${escapeHtml(a.descricao ?? '')}">${prev}<small>${escapeHtml(rotulo)}${quando ? ` · ${escapeHtml(quando)}` : ''}</small></div>`;
+    const baixar = ID_MSG_OK.test(leadId) && ID_MSG_OK.test(a.id) ? botaoBaixar(`/dashboard/leads/${leadId}/anexo/${a.id}`, rotulo) : '';
+    return `<div class="cc-at-anx" title="${escapeHtml(a.descricao ?? '')}">${prev}<small>${escapeHtml(rotulo)}${quando ? ` · ${escapeHtml(quando)}` : ''}</small>${baixar}</div>`;
   };
-  return secao(`Arquivos (${anexos.length})`, `<div class="cc-at-anx-grade">${anexos.map(card).join('')}</div>`, 'arquivos');
+  // ⬇ Baixar tudo: um .zip com as fotos e os PDFs do lead (cofre + conversa), nomes amigáveis.
+  const tudo = ID_MSG_OK.test(leadId) ? `<a class="cc-btn cc-btn-sm cc-at-baixar-tudo" href="/dashboard/leads/${leadId}/arquivos.zip" download>⬇ Baixar tudo (.zip)</a>` : '';
+  return secao(`Arquivos (${anexos.length})`, `${tudo}${anexos.length ? `<div class="cc-at-anx-grade">${anexos.map(card).join('')}</div>` : '<p class="cc-at-nada">As fotos e os PDFs da conversa entram no .zip.</p>'}`, 'arquivos');
 }
 
 function blocoServicos(servicos: ServicoDoLead[]): string {
@@ -723,7 +773,7 @@ const CLIENTE_STATUSES = ['contrato_assinado', 'instalado', 'medidor_trocado', '
 
 export interface ServicoDoLead { id: string; tipoNome: string; dataServico: string; fotos: number; videos: number }
 
-function colunaCockpit(lead: LeadDetail, servicos: ServicoDoLead[], assistente: string, assistenteMin: string): string {
+function colunaCockpit(lead: LeadDetail, servicos: ServicoDoLead[], assistente: string, assistenteMin: string, temMidiaNoChat = false): string {
   const id = escapeHtml(lead.id);
   const perdido = lead.status === 'perdido';
   const jaVenda = CLIENTE_STATUSES.includes(String(lead.installation_status ?? ''));
@@ -828,7 +878,7 @@ function colunaCockpit(lead: LeadDetail, servicos: ServicoDoLead[], assistente: 
     ${resumo}
     ${blocoTarefas(lead.id, lead.tarefas)}
     ${blocoLinhaDoTempo(lead.id, lead.timeline)}
-    ${blocoArquivos(lead.anexos)}
+    ${blocoArquivos(lead.id, lead.anexos, temMidiaNoChat)}
     ${blocoServicos(servicos)}
     ${contato}
   </aside>`;
@@ -925,6 +975,67 @@ export interface AtendimentoInput {
   donoPessoal?: string | null;
   /** Parte 2b: conversa do número pessoal com quem AINDA NÃO é lead (sem lead aberto). */
   contato?: ContatoPessoalTela | null;
+  /** Pedidos de agendamento deste lead esperando a confirmação do admin (28/09/2026). */
+  agendamentos?: PedidoAgendaPainel[];
+  /** Resultado da última ação num pedido (vem na URL depois do POST). */
+  agendaMsg?: string;
+  /**
+   * Troca suave (28/09): o navegador pediu SÓ o miolo (chat + resumo) para
+   * trocar de contato sem recarregar — sem menu, sem lista, sem scripts. A rota
+   * é a MESMA (mesmas travas de empresa/vendedor/dono do número).
+   */
+  soMiolo?: boolean;
+}
+
+export interface PedidoAgendaPainel {
+  id: string;
+  tipo: 'visita' | 'meet';
+  /** Já formatado ("quinta (01/10), às 14h"). */
+  quando: string;
+  endereco?: string;
+  resumo?: string;
+}
+
+/**
+ * "Agendamento aguardando sua confirmação" (28/09/2026). A Eva não marca mais
+ * sozinha: o pedido espera o admin. Os mesmos botões do WhatsApp; só o admin
+ * da empresa responde (os outros veem o aviso).
+ */
+export function blocoAgendaPendente(leadId: string, pedidos: PedidoAgendaPainel[], podeResponder: boolean, msg?: string): string {
+  const flash = msg ? `<div class="cc-aviso cc-aviso-info cc-at-agenda" role="status">${escapeHtml(msg)}</div>` : '';
+  if (pedidos.length === 0) return flash;
+  const itens = pedidos.map((p) => {
+    const acao = `/dashboard/leads/${escapeHtml(leadId)}/agendamento/${escapeHtml(p.id)}`;
+    const botao = (valor: string, rotulo: string, classe: string) =>
+      `<form method="POST" action="${acao}"><input type="hidden" name="acao" value="${valor}"><button type="submit" class="cc-btn ${classe} cc-btn-sm">${rotulo}</button></form>`;
+    const botoes = podeResponder
+      ? `<div class="cc-at-agenda-botoes">
+          ${botao('ok', '✅ Confirmar e avisar', 'cc-btn-gold')}
+          ${botao('eu', '📞 Eu mesmo aviso', 'cc-btn-ghost')}
+          ${botao('nao', '❌ Não posso', 'cc-btn-crit')}
+          <form method="POST" action="${acao}" class="cc-at-agenda-sugerir"><input type="hidden" name="acao" value="outro"><input name="sugestao" required maxlength="200" placeholder="Outro horário (ex.: sexta 10h)" aria-label="Sugerir outro horário"><button type="submit" class="cc-btn cc-btn-ghost cc-btn-sm">🕐 Sugerir</button></form>
+        </div>`
+      : '<div class="cc-faint">Só o administrador da empresa confirma.</div>';
+    return `<div class="cc-at-agenda-item">
+      <strong>${p.tipo === 'meet' ? '🎥 Google Meet' : '🚗 Visita técnica'} — ${escapeHtml(p.quando)}</strong>
+      ${p.endereco ? `<div class="cc-muted">📍 ${escapeHtml(p.endereco)}</div>` : ''}
+      ${p.resumo ? `<div class="cc-muted">📝 ${escapeHtml(p.resumo)}</div>` : ''}
+      ${botoes}
+    </div>`;
+  }).join('');
+  return `${flash}<div class="cc-aviso cc-aviso-atencao cc-at-agenda" role="status" id="cc-agenda-pendente">${icone('alert', 'sm')}<div><strong>Agendamento aguardando sua confirmação</strong>
+    <div class="cc-muted">O cliente escolheu o horário e ouviu que vocês vão confirmar. Nada foi marcado na agenda ainda.</div>${itens}</div></div>`;
+}
+
+/** Cabeçalho que o script da troca suave manda para pedir só o miolo. */
+export const CABECALHO_MIOLO = 'X-Atendimento-Miolo';
+
+/** Lista vazia para o miolo (a lista da página aberta continua a mesma). */
+export const LISTA_VAZIA: ListaConversas = { itens: [], contagem: { todas: 0, aguardando: 0, meus: 0, porEtapa: {} } };
+
+/** O pedido veio da troca suave (quer só o miolo)? PURA. */
+export function pedeSoMiolo(ler: (nome: string) => string | undefined): boolean {
+  return ler(CABECALHO_MIOLO) === '1';
 }
 
 export interface ContatoPessoalTela {
@@ -979,16 +1090,16 @@ export function pedacosDoContato(p: { user: DashUser | undefined; contato: Conta
   };
 }
 
-function colunaChatContato(ct: ContatoPessoalTela, donoPessoal: string | null, assistente: string): string {
+function colunaChatContato(ct: ContatoPessoalTela, donoPessoal: string | null, assistente: string, eu: string | null = null): string {
   const nome = ct.nome || formatPhoneBR(ct.telefone);
   const corpo = blocoMensagens(ct.mensagens, assistente, nome, false, donoPessoal, true, ct.envio?.via === 'evolution');
   const estado = ct.envio?.via === 'evolution' ? 'pessoal|livre' : 'pessoal|desconectado';
-  const vivo = ct.envio ? ` data-conversa="/dashboard/leads/conversas/contato.json?contato=${encodeURIComponent(ct.telefone)}" data-estado="${escapeHtml(estado)}" data-assinatura="${assinaturaDaConversa({ msgs: corpo, estado })}"${ct.envio.via === 'evolution' ? ` data-reagir="/dashboard/leads/conversas/contato/reagir" data-telefone="${escapeHtml(ct.telefone)}"` : ''}` : '';
+  const vivo = ct.envio ? ` data-conversa="/dashboard/leads/conversas/contato.json?contato=${encodeURIComponent(ct.telefone)}" data-estado="${escapeHtml(estado)}" data-assinatura="${assinaturaDaConversa({ msgs: corpo, estado })}"${ct.envio.via === 'evolution' ? ` data-reagir="/dashboard/leads/conversas/contato/reagir" data-telefone="${escapeHtml(ct.telefone)}"` : ''}${eu ? ` data-eu="${escapeHtml(eu)}"` : ''}` : '';
   return `<section class="cc-at-col cc-at-chat" id="conversa" aria-label="Conversa"${vivo}>
     <nav class="cc-at-abas-cel" aria-label="Navegação do atendimento">
       <a class="cc-at-voltar" href="/dashboard/leads/conversas" aria-label="Voltar para a lista">${icone('chev', 'sm')}Conversas</a>
     </nav>
-    <header class="cc-at-chat-topo">
+    <header class="cc-at-chat-topo" tabindex="-1">
       ${avatarAt(ct.nome, ct.telefone)}
       <div class="cc-at-chat-id">
         <div class="cc-at-chat-nome"><strong>${escapeHtml(nome)}</strong><span class="cc-at-naolead">Não é lead</span><span class="cc-at-canal cc-at-canal-whatsapp_business">${escapeHtml(rotuloCanal('whatsapp_business', assistente, donoPessoal))}</span></div>
@@ -1039,22 +1150,37 @@ export function renderAtendimentoPage(p: AtendimentoInput): string {
   });
 
   const ct = !lead ? p.contato ?? null : null;
-  const body = `<div class="cc-root cc-at${lead || ct ? ' cc-at-com-lead' : ''}">
+  const raiz = `cc-root cc-at${lead || ct ? ' cc-at-com-lead' : ''}`;
+  // nome de quem escreve: o balão "enviando…" já nasce igual ao de verdade ("Junior · pelo painel")
+  const eu = p.user?.nome?.trim() || null;
+  // Aviso de agendamento esperando o admin (28/09): DENTRO da coluna do chat, pra
+  // vir junto na troca suave de contato (o miolo troca só chat + resumo).
+  const agendaHtml = lead ? blocoAgendaPendente(lead.id, p.agendamentos ?? [], Boolean(p.user?.isAdmin) && can(p.user, 'leads', 'editar'), p.agendaMsg) : '';
+  const colChat = lead ? colunaChat(lead, mensagens, assistente, assistenteMin, p.envio, p.donoPessoal ?? null, can(p.user, 'leads', 'editar'), eu, agendaHtml) : ct ? colunaChatContato(ct, p.donoPessoal ?? null, assistente, eu) : chatSemLead();
+  const colResumo = lead ? colunaCockpit(lead, p.servicos ?? [], assistente, assistenteMin, mensagens.some((m) => { const md = (m as MensagemChat).midia; return !!md && (md.tipo === 'imagem' || md.tipo === 'documento'); })) : ct ? cockpitContato(ct, p.donoPessoal ?? null) : cockpitSemLead();
+  const modais = `${lead && !CLIENTE_STATUSES.includes(String(lead.installation_status ?? '')) ? modalFechou(lead) : ''}
+    ${lead && lead.status !== 'perdido' ? modalPerdido(lead, assistente) : ''}`;
+  const titulo = lead ? `Conversa: ${lead.name ?? 'Sem nome'}` : ct ? `Conversa: ${ct.nome || formatPhoneBR(ct.telefone)}` : 'Conversas';
+  if (p.soMiolo) {
+    // Troca suave: só o título, as colunas do chat e do resumo e as janelinhas
+    // (sem menu, sem lista, sem scripts — a página aberta já tem tudo isso).
+    return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${escapeHtml(titulo)}</title></head><body><div class="${raiz}"><div class="cc-at-grade">${colChat}${colResumo}</div>${modais}</div></body></html>`;
+  }
+  const body = `<div class="${raiz}">
     ${cabecalho}
     <div class="cc-at-grade">
       ${colunaLista(p.lista, p.filtros, lead?.id ?? null, assistente, ct?.telefone ?? null, p.donoPessoal ?? null)}
-      ${lead ? colunaChat(lead, mensagens, assistente, assistenteMin, p.envio, p.donoPessoal ?? null, can(p.user, 'leads', 'editar')) : ct ? colunaChatContato(ct, p.donoPessoal ?? null, assistente) : chatSemLead()}
-      ${lead ? colunaCockpit(lead, p.servicos ?? [], assistente, assistenteMin) : ct ? cockpitContato(ct, p.donoPessoal ?? null) : cockpitSemLead()}
+      ${colChat}
+      ${colResumo}
     </div>
-    ${lead && !CLIENTE_STATUSES.includes(String(lead.installation_status ?? '')) ? modalFechou(lead) : ''}
-    ${lead && lead.status !== 'perdido' ? modalPerdido(lead, assistente) : ''}
+    ${modais}
   </div>`;
 
-  // Alças das colunas (sempre) + rolar o chat até a última mensagem (com lead).
-  const script = `<script>${SCRIPT_COLUNAS}</script>` + (lead || ct ? `<script>(function(){function fim(){var c=document.getElementById('cc-at-msgs');if(c){c.scrollTop=c.scrollHeight;}}fim();window.addEventListener('load',fim);})();</script><script>${SCRIPT_AMPLIAR}</script>` : '')
-    + ((lead && p.envio) || ct?.envio ? `<script>${SCRIPT_RESPONDER}</script>` : '');
+  // Alças das colunas + rolar o chat até a última mensagem + ampliar foto +
+  // responder sem recarregar + TROCAR DE CONTATO sem recarregar (28/09). Vão
+  // sempre (mesmo sem lead aberto): a troca suave pode abrir uma conversa depois.
+  const script = `<script>${SCRIPT_COLUNAS}</script><script>(function(){function fim(){var c=document.getElementById('cc-at-msgs');if(c){c.scrollTop=c.scrollHeight;}}fim();window.addEventListener('load',fim);})();</script><script>${SCRIPT_AMPLIAR}</script><script>${SCRIPT_RESPONDER}</script><script>${SCRIPT_TROCA}</script>`;
 
-  const titulo = lead ? `Conversa: ${lead.name ?? 'Sem nome'}` : ct ? `Conversa: ${ct.nome || formatPhoneBR(ct.telefone)}` : 'Conversas';
   return renderLayout({ active: 'conversas', title: titulo, body: body + script, user: p.user, tailwind: false, dark: temaDaTela(p.user, 'escuro') === 'escuro', largo: true,
     // CSS da grade por arquivo, no <head>: a tela já nasce com as 3 colunas (sem piscada).
     cabeca: `<link rel="stylesheet" href="${URL_CSS_ATENDIMENTO}">` });
@@ -1073,22 +1199,23 @@ function gravar(v){try{localStorage.setItem(CHAVE,JSON.stringify(v));}catch(e){}
 var w=ler();
 function aplicar(){['l','r'].forEach(function(k){if(w[k])g.style.setProperty('--at-'+k,w[k]+'px');else g.style.removeProperty('--at-'+k);});}
 function limitar(k,v){return Math.max(LIM[k][0],Math.min(LIM[k][1],Math.round(v)));}
+function alca(e){var a=e.target&&e.target.closest?e.target.closest('.cc-at-alca'):null;return a&&g.contains(a)?a:null;}
 aplicar();
-g.querySelectorAll('.cc-at-alca').forEach(function(a){
+/* Ouvintes no documento (um só de cada): a alça do resumo é trocada junto com a coluna na troca suave. */
+document.addEventListener('pointerdown',function(ev){var a=alca(ev);if(!a)return;
   var k=a.getAttribute('data-lado'),col=a.parentElement;
-  a.addEventListener('pointerdown',function(ev){
-    ev.preventDefault();var x0=ev.clientX,l0=col.getBoundingClientRect().width;
-    a.setPointerCapture(ev.pointerId);document.body.classList.add('cc-at-arrastando');
-    function mover(e){var d=e.clientX-x0;w[k]=limitar(k,k==='l'?l0+d:l0-d);aplicar();}
-    function soltar(){a.removeEventListener('pointermove',mover);a.removeEventListener('pointerup',soltar);a.removeEventListener('pointercancel',soltar);document.body.classList.remove('cc-at-arrastando');gravar(w);}
-    a.addEventListener('pointermove',mover);a.addEventListener('pointerup',soltar);a.addEventListener('pointercancel',soltar);
-  });
-  a.addEventListener('dblclick',function(){delete w[k];aplicar();gravar(w);});
-  a.addEventListener('keydown',function(e){
-    if(e.key!=='ArrowLeft'&&e.key!=='ArrowRight')return;e.preventDefault();
-    var atual=w[k]||col.getBoundingClientRect().width,passo=e.key==='ArrowRight'?20:-20;
-    w[k]=limitar(k,k==='l'?atual+passo:atual-passo);aplicar();gravar(w);
-  });
+  ev.preventDefault();var x0=ev.clientX,l0=col.getBoundingClientRect().width;
+  try{a.setPointerCapture(ev.pointerId);}catch(x){}document.body.classList.add('cc-at-arrastando');
+  function mover(e){var d=e.clientX-x0;w[k]=limitar(k,k==='l'?l0+d:l0-d);aplicar();}
+  function soltar(){a.removeEventListener('pointermove',mover);a.removeEventListener('pointerup',soltar);a.removeEventListener('pointercancel',soltar);document.body.classList.remove('cc-at-arrastando');gravar(w);}
+  a.addEventListener('pointermove',mover);a.addEventListener('pointerup',soltar);a.addEventListener('pointercancel',soltar);
+});
+document.addEventListener('dblclick',function(e){var a=alca(e);if(!a)return;delete w[a.getAttribute('data-lado')];aplicar();gravar(w);});
+document.addEventListener('keydown',function(e){var a=alca(e);if(!a)return;
+  if(e.key!=='ArrowLeft'&&e.key!=='ArrowRight')return;e.preventDefault();
+  var k=a.getAttribute('data-lado'),col=a.parentElement;
+  var atual=w[k]||col.getBoundingClientRect().width,passo=e.key==='ArrowRight'?20:-20;
+  w[k]=limitar(k,k==='l'?atual+passo:atual-passo);aplicar();gravar(w);
 });
 })();`;
 
@@ -1107,50 +1234,81 @@ g.querySelectorAll('.cc-at-alca').forEach(function(a){
  *  - prévia do modelo e respostas prontas (textContent: nada vira HTML).
  */
 export const SCRIPT_RESPONDER = `(function(){
-var chat=document.getElementById('conversa'),URLC=chat?chat.getAttribute('data-conversa'):null,assin=chat?chat.getAttribute('data-assinatura'):null,enviando=false,buscando=false,geracao=0,parados=0,tiques=0;
+var chat=null,URLC=null,assin=null,URLR=null,TELR=null,enviando=false,buscando=false,geracao=0,parados=0,tiques=0,nav=0,contB=0,rascunhos={};
 var podeFetch=!!(window.fetch&&window.FormData&&window.URLSearchParams);
 function rolar(){var c=document.getElementById('cc-at-msgs');if(c)c.scrollTop=c.scrollHeight;}
 function noFim(c){return c.scrollHeight-c.scrollTop-c.clientHeight<120;}
 function pedaco(html){var t=document.createElement('template');t.innerHTML=html;return t.content;}
+function lista(p){return Array.prototype.slice.call(p.children);}
+/* Balões novos SEM trocar o chat inteiro: o que não mudou fica (foto, áudio tocando, rolagem); só entra/sai/troca o diferente. */
+function igual(o,n){var a=o.querySelectorAll('details'),b=n.querySelectorAll('details');for(var k=0;k<a.length&&k<b.length;k++){if(a[k].open)b[k].open=true;}return o.isEqualNode(n);}
+/* até 12 itens à frente: vários balões novos no meio (fila da assistente atrasada) ou vários que saíram */
+function achaNovo(ns,de,o){for(var k=de;k<ns.length&&k<de+12;k++){if(igual(o,ns[k]))return k;}return -1;}
+function achaVelho(os,de,n){for(var k=de;k<os.length&&k<de+12;k++){if(igual(os[k],n))return k;}return -1;}
+function aplicarMsgs(c,html){var ns=lista(pedaco(html)),os=lista(c),i=0,j=0,n,o,k;
+while(j<ns.length){n=ns[j];o=os[i];
+if(!o){c.appendChild(n);j++;continue;}
+if(igual(o,n)){i++;j++;continue;}
+k=achaNovo(ns,j+1,o);if(k>0){while(j<k){c.insertBefore(ns[j],o);j++;}continue;}
+k=achaVelho(os,i+1,n);if(k>0){while(i<k){c.removeChild(os[i]);i++;}continue;}
+c.replaceChild(n,o);i++;j++;}
+while(i<os.length){c.removeChild(os[i]);i++;}}
 function aviso(html){var f=document.getElementById('responder');if(!f)return;f.querySelectorAll('.cc-at-aviso-envio').forEach(function(x){x.remove();});if(!html)return;var d=document.createElement('div');d.className='cc-at-aviso-envio';d.setAttribute('role','status');d.innerHTML=html;f.insertBefore(d,f.firstChild);}
+function horaAgora(){var d=new Date();return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);}
 function balao(texto){var c=document.getElementById('cc-at-msgs');if(!c)return null;var v=c.querySelector('.cc-at-vazio');if(v)v.remove();
+var dias=c.querySelectorAll('.cc-at-dia'),ult=dias.length?dias[dias.length-1]:null;
+if(!ult||(ult.textContent||'').trim()!=='Hoje'){var sd=document.createElement('div');sd.className='cc-at-dia';var ss=document.createElement('span');ss.textContent='Hoje';sd.appendChild(ss);c.appendChild(sd);}
 var d=document.createElement('div');d.className='cc-at-msg cc-at-msg-eva cc-at-msg-hum cc-at-msg-otimista';
-var q=document.createElement('div');q.className='cc-at-msg-q';q.textContent='Você · pelo painel';
+var q=document.createElement('div');q.className='cc-at-msg-q';q.textContent=((chat&&chat.getAttribute('data-eu'))||'Você')+' · pelo painel';
+var r=document.createElement('span');r.className='cc-at-acoes-btn';r.setAttribute('aria-hidden','true');r.setAttribute('style','visibility:hidden');r.textContent='⋯';q.appendChild(r);
 var t=document.createElement('div');t.className='cc-at-msg-t';t.textContent=texto;
-var h=document.createElement('div');h.className='cc-at-msg-h';h.textContent='enviando…';
+var h=document.createElement('div');h.className='cc-at-msg-h';h.textContent=horaAgora()+' · enviando…';
 d.appendChild(q);d.appendChild(t);d.appendChild(h);c.appendChild(d);rolar();return d;}
-function marcar(d,ok,motivo){if(!d)return;var h=d.querySelector('.cc-at-msg-h');if(ok){h.textContent='✓ enviado';return;}
+function marcar(d,ok,motivo){if(!d)return;var h=d.querySelector('.cc-at-msg-h');if(ok){h.textContent=horaAgora()+' ✓';return;}
 var f=document.createElement('div');f.className='cc-at-msg-falha';f.textContent='⚠ não saiu — '+(motivo||'tente de novo.');d.insertBefore(f,h);h.textContent='';}
 function novaChave(k){if(!k)return;var f=document.getElementById('responder');if(f)f.querySelectorAll('input[name=chave]').forEach(function(i){i.value=k;});}
-function trocarRodape(html,estado){var f=document.getElementById('responder');if(!f||typeof html!=='string')return;var novo=pedaco(html).querySelector('#responder');if(!novo)return;
+function trocarRodape(html,estado){var f=document.getElementById('responder');if(!f||!chat||typeof html!=='string')return;var novo=pedaco(html).querySelector('#responder');if(!novo)return;
 var ia=document.getElementById('cc-at-arquivo');if(grav||(ia&&ia.files&&ia.files.length))estado=null;
 if(estado&&chat.getAttribute('data-estado')!==estado){var ta=document.getElementById('cc-at-texto'),txt=ta?ta.value:'',foco=document.activeElement===ta;f.parentNode.replaceChild(novo,f);chat.setAttribute('data-estado',estado);var nt=document.getElementById('cc-at-texto');if(nt&&txt){nt.value=txt;}if(nt&&foco)nt.focus();atualizarPrevia();return;}
-var jv=f.querySelector('.cc-at-janela'),jn=novo.querySelector('.cc-at-janela');if(jv&&jn)jv.parentNode.replaceChild(jn,jv);}
-function buscar(depoisDeEnviar){if(!URLC||buscando||!window.fetch)return;buscando=true;var g=geracao;
+var jv=f.querySelector('.cc-at-janela'),jn=novo.querySelector('.cc-at-janela');if(jv&&jn&&!jv.isEqualNode(jn))jv.parentNode.replaceChild(jn,jv);}
+function buscar(depoisDeEnviar){if(!URLC||buscando||!window.fetch)return;if(enviando&&!depoisDeEnviar)return;buscando=true;var g=geracao,meuB=++contB;
 var u=URLC+(URLC.indexOf('?')>=0?'&':'?')+'assinatura='+encodeURIComponent(assin||'')+(document.hasFocus&&document.hasFocus()?'&foco=1':'');
 return fetch(u,{credentials:'same-origin',headers:{'Accept':'application/json'}}).then(function(r){return r.ok?r.json():null;}).then(function(j){
-if(!j||g!==geracao)return;if(j.irPara){location.href=j.irPara;return;}if(j.igual){parados++;return;}parados=0;assin=j.assinatura||null;
-var c=document.getElementById('cc-at-msgs');if(c&&typeof j.msgs==='string'){var fim=depoisDeEnviar||noFim(c);c.innerHTML=j.msgs;if(fim)rolar();}
-if(typeof j.topo==='string'){var t=document.getElementById('cc-at-topo'),n=pedaco(j.topo).querySelector('#cc-at-topo');if(t&&n)t.parentNode.replaceChild(n,t);}
+if(!j||g!==geracao)return;if(j.irPara){if(!(window.ccAtTroca&&window.ccAtTroca.ir(j.irPara)))location.href=j.irPara;return;}if(j.igual){parados++;return;}parados=0;assin=j.assinatura||null;
+var c=document.getElementById('cc-at-msgs'),fim=!!c&&(depoisDeEnviar||noFim(c));
+if(typeof j.topo==='string'){var t=document.getElementById('cc-at-topo'),n=pedaco(j.topo).querySelector('#cc-at-topo');if(t&&n&&!t.isEqualNode(n))t.parentNode.replaceChild(n,t);}
 trocarRodape(j.compor,j.estado);
-if(typeof j.msgs==='string'&&j.msgs.indexOf('cc-at-digitando')>=0){setTimeout(function(){if(!document.hidden)buscar(false);},3000);}
-}).catch(function(){}).then(function(){buscando=false;});}
+if(c&&typeof j.msgs==='string')aplicarMsgs(c,j.msgs);if(fim)rolar();
+if(typeof j.msgs==='string'&&j.msgs.indexOf('cc-at-digitando')>=0){setTimeout(function(){if(!document.hidden&&g===geracao)buscar(false);},3000);}
+}).catch(function(){}).then(function(){if(meuB===contB)buscando=false;});}
+/* Troca de contato sem recarregar (SCRIPT_TROCA): antes de trocar as colunas, desmontar; depois, montar a conversa nova. */
+function chaveR(u){return u?u.replace(/([?&])canal=[^&]*&?/,'$1').replace(/[?&]$/,''):u;}
+function montar(){chat=document.getElementById('conversa');URLC=chat?chat.getAttribute('data-conversa'):null;assin=chat?chat.getAttribute('data-assinatura'):null;
+URLR=chat?chat.getAttribute('data-reagir'):null;TELR=chat?chat.getAttribute('data-telefone'):null;enviando=false;buscando=false;contB++;geracao++;parados=0;
+if(chat){chat.classList.add('cc-at-js');if(window.MediaRecorder&&navigator.mediaDevices&&navigator.mediaDevices.getUserMedia)chat.classList.add('cc-at-pode-gravar');}
+var ta=document.getElementById('cc-at-texto'),k=chaveR(URLC);if(ta&&k&&rascunhos[k]&&!ta.value)ta.value=rascunhos[k];
+rolar();}
+function desmontar(){var ta=document.getElementById('cc-at-texto'),k=chaveR(URLC);if(k){if(ta&&ta.value.trim())rascunhos[k]=ta.value;else delete rascunhos[k];}
+nav++;geracao++;fecharMenu();if(grav){var g0=grav;grav=null;g0.cancelado=true;if(g0.cancelar)g0.cancelar();}limparPrev();tirarCitacao();}
+/* Envio que não saiu enquanto o usuário estava noutra conversa: o texto volta (no campo, se ela já está aberta de novo). */
+function guardar(u,texto){var k=chaveR(u);if(!k||!texto)return;if(k===chaveR(URLC)){var ta=document.getElementById('cc-at-texto');if(ta&&!ta.value){ta.value=texto;aviso('<div class="cc-aviso cc-aviso-atencao">A última mensagem não saiu — o texto voltou para o campo.</div>');return;}}if(!rascunhos[k])rascunhos[k]=texto;}
 document.addEventListener('submit',function(e){var f=e.target&&e.target.closest?e.target.closest('form[data-envio]'):null;if(!f)return;
 var b=f.querySelector('button[type=submit]');
 if(!podeFetch){if(b){if(b.disabled){e.preventDefault();return;}setTimeout(function(){b.disabled=true;b.textContent='Enviando…';},0);}return;}
 e.preventDefault();if(enviando)return;
 var ta=f.querySelector('textarea[name=texto]'),pv=document.getElementById('cc-at-previa');
 var texto=ta?ta.value.trim():(pv?pv.textContent:'');if(ta&&!texto){ta.focus();return;}
-enviando=true;geracao++;parados=0;var rot=b?b.textContent:'';if(b){b.disabled=true;b.textContent='Enviando…';}
+enviando=true;geracao++;parados=0;var n0=nav,u0=URLC,rot=b?b.textContent:'';if(b){b.disabled=true;b.textContent='Enviando…';}
 var corpo=new URLSearchParams(new FormData(f)).toString();
 var d=balao(texto);aviso('');if(ta){ta.value='';ta.focus();}
 return fetch(f.getAttribute('action'),{method:'POST',credentials:'same-origin',headers:{'Accept':'application/json','Content-Type':'application/x-www-form-urlencoded'},body:corpo})
 .then(function(r){return r.json().catch(function(){return {ok:false,texto:'resposta inesperada do servidor. Recarregue a página.'};});})
-.then(function(j){novaChave(j.chave);var jaFoi=j.resultado==='duplicado';marcar(d,!!j.ok||jaFoi,j.texto);if(j.ok||jaFoi)tirarCitacao();if(jaFoi){aviso(j.avisoHtml||'');}
+.then(function(j){var jaFoi=j.resultado==='duplicado';if(n0!==nav){if(ta&&!j.ok&&!jaFoi)guardar(u0,texto);return;}
+novaChave(j.chave);marcar(d,!!j.ok||jaFoi,j.texto);if(j.ok||jaFoi)tirarCitacao();if(jaFoi){aviso(j.avisoHtml||'');}
 else if(!j.ok){aviso(j.avisoHtml||'');if(ta&&!ta.value)ta.value=texto;}
 if(j.ok||jaFoi||j.resultado==='falhou'){assin=null;buscando=false;geracao++;buscar(true);}})
-.catch(function(){marcar(d,false,'sem conexão com o painel. Confira a internet e tente de novo.');if(ta&&!ta.value)ta.value=texto;})
-.then(function(){enviando=false;if(b&&document.body.contains(b)){b.disabled=false;b.textContent=rot||'Enviar';}});});
+.catch(function(){if(n0!==nav){if(ta)guardar(u0,texto);return;}marcar(d,false,'sem conexão com o painel. Confira a internet e tente de novo.');if(ta&&!ta.value)ta.value=texto;})
+.then(function(){if(n0!==nav)return;enviando=false;if(b&&document.body.contains(b)){b.disabled=false;b.textContent=rot||'Enviar';}});});
 function atualizarPrevia(){var sel=document.getElementById('cc-at-modelo-sel'),nome=document.getElementById('cc-at-modelo-nome'),prev=document.getElementById('cc-at-previa'),custo=document.getElementById('cc-at-modelo-custo');if(!sel||!prev)return;var o=sel.options[sel.selectedIndex];if(!o)return;var n=(nome&&nome.value.trim())||'tudo bem';var t=o.getAttribute('data-texto')||'';prev.textContent=t?t.split('{nome}').join(n):'O texto deste modelo está na Meta (nome: '+n+').';if(custo)custo.textContent=o.getAttribute('data-custo')||'';}
 document.addEventListener('change',function(e){if(e.target&&e.target.id==='cc-at-modelo-sel')atualizarPrevia();});
 document.addEventListener('input',function(e){if(e.target&&e.target.id==='cc-at-modelo-nome')atualizarPrevia();});
@@ -1159,7 +1317,6 @@ var t=document.getElementById('cc-at-texto');if(t){t.value=b.getAttribute('data-
 var m=b.getAttribute('data-modelo'),sel=document.getElementById('cc-at-modelo-sel');if(sel&&m){sel.value=m;atualizarPrevia();var d=sel.closest('details');if(d)d.open=true;sel.focus();}});
 document.addEventListener('keydown',function(e){var t=e.target;if(!t||t.id!=='cc-at-texto')return;if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();var f=t.form;if(f){if(f.requestSubmit)f.requestSubmit();else f.submit();}}});
 var grav=null,urlPrev=null;
-if(chat){chat.classList.add('cc-at-js');if(window.MediaRecorder&&navigator.mediaDevices&&navigator.mediaDevices.getUserMedia)chat.classList.add('cc-at-pode-gravar');}
 function formArq(){return document.querySelector('form[data-envio-midia]');}
 function inArq(){return document.getElementById('cc-at-arquivo');}
 function tamanho(b){return b<1024?b+' B':b<1048576?Math.round(b/1024)+' KB':(b/1048576).toFixed(1).replace('.',',')+' MB';}
@@ -1186,41 +1343,43 @@ document.addEventListener('dragleave',function(e){if(chat&&(!e.relatedTarget||!c
 document.addEventListener('drop',function(e){if(!noChat(e))return;chat.classList.remove('cc-at-soltar');var fs=e.dataTransfer&&e.dataTransfer.files;if(!inArq()||!fs||!fs[0])return;e.preventDefault();porArquivo(fs[0]);});
 document.addEventListener('paste',function(e){var t=e.target;if(!inArq()||!t||(t.id!=='cc-at-texto'&&t.id!=='cc-at-legenda'))return;var cd=e.clipboardData,fs=cd&&cd.files;if(!fs||!fs[0])return;if(cd.getData&&cd.getData('text'))return;e.preventDefault();porArquivo(fs[0]);});
 document.addEventListener('click',function(e){var g=e.target&&e.target.closest?e.target.closest('#cc-at-gravar'):null;if(!g)return;if(grav){if(grav.parar)grav.parar();return;}
-grav={pendente:true};
+var meu={pendente:true};grav=meu;
 navigator.mediaDevices.getUserMedia({audio:true}).then(function(st){
+if(meu.cancelado||grav!==meu){st.getTracks().forEach(function(x){x.stop();});return;}
 var tipos=['audio/ogg;codecs=opus','audio/webm;codecs=opus','audio/webm','audio/mp4'],tipo='';for(var k=0;k<tipos.length;k++){if(MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(tipos[k])){tipo=tipos[k];break;}}
 var mr=tipo?new MediaRecorder(st,{mimeType:tipo}):new MediaRecorder(st),partes=[],ini=Date.now(),tm=null;
 mr.ondataavailable=function(ev){if(ev.data&&ev.data.size)partes.push(ev.data);};
-mr.onstop=function(){if(tm)clearInterval(tm);st.getTracks().forEach(function(x){x.stop();});grav=null;var bt=document.getElementById('cc-at-gravar');if(bt){bt.textContent='🎤 Gravar áudio';bt.classList.remove('cc-at-gravando');}
+mr.onstop=function(){if(tm)clearInterval(tm);st.getTracks().forEach(function(x){x.stop();});if(meu.cancelado)return;grav=null;var bt=document.getElementById('cc-at-gravar');if(bt){bt.textContent='🎤 Gravar áudio';bt.classList.remove('cc-at-gravando');}
 var mt=(mr.mimeType||tipo||'audio/webm').split(';')[0],ext=mt.indexOf('ogg')>=0?'ogg':mt.indexOf('mp4')>=0?'m4a':'webm';if(partes.length)porArquivo(new File(partes,'gravacao.'+ext,{type:mt}));};
 function rel(){var s=Math.floor((Date.now()-ini)/1000),bt=document.getElementById('cc-at-gravar');if(bt)bt.textContent='⏹ Parar ('+Math.floor(s/60)+':'+('0'+(s%60)).slice(-2)+')';if(s>=300&&mr.state!=='inactive')mr.stop();}
-grav={parar:function(){if(mr.state!=='inactive')mr.stop();}};mr.start(1000);g.classList.add('cc-at-gravando');rel();tm=setInterval(rel,500);
-}).catch(function(){grav=null;aviso('<div class="cc-aviso cc-aviso-erro">Não consegui usar o microfone. Libere o microfone no navegador ou anexe um arquivo de áudio.</div>');});});
+meu.pendente=false;meu.parar=function(){if(mr.state!=='inactive')mr.stop();};meu.cancelar=function(){if(tm)clearInterval(tm);if(mr.state!=='inactive')mr.stop();else st.getTracks().forEach(function(x){x.stop();});};
+mr.start(1000);g.classList.add('cc-at-gravando');rel();tm=setInterval(rel,500);
+}).catch(function(){if(grav===meu)grav=null;if(meu.cancelado)return;aviso('<div class="cc-aviso cc-aviso-erro">Não consegui usar o microfone. Libere o microfone no navegador ou anexe um arquivo de áudio.</div>');});});
 document.addEventListener('submit',function(e){var f=e.target&&e.target.closest?e.target.closest('form[data-envio-midia]'):null;if(!f)return;
 var i=inArq();if(!i||!i.files||!i.files[0]){e.preventDefault();if(i)i.click();return;}
 if(!podeFetch)return;e.preventDefault();if(enviando)return;
 var b=f.querySelector('button[type=submit]'),file=i.files[0],lg=document.getElementById('cc-at-legenda'),leg=lg?lg.value.trim():'';
-enviando=true;geracao++;parados=0;var rot=b?b.textContent:'';if(b){b.disabled=true;b.textContent='Enviando…';}
+enviando=true;geracao++;parados=0;var n0=nav,rot=b?b.textContent:'';if(b){b.disabled=true;b.textContent='Enviando…';}
 var fd=new FormData(f),ic=/^image\\//.test(file.type)?'📷 ':/^audio\\//.test(file.type)?'🎤 ':/^video\\//.test(file.type)?'🎬 ':'📄 ';
 var d=balao(ic+(file.name||'arquivo')+(leg?'\\n'+leg:''));aviso('');
 return fetch(f.getAttribute('action'),{method:'POST',credentials:'same-origin',headers:{'Accept':'application/json'},body:fd})
 .then(function(r){return r.json().catch(function(){return {ok:false,texto:'resposta inesperada do servidor. Recarregue a página.'};});})
-.then(function(j){novaChave(j.chave);var jaFoi=j.resultado==='duplicado';marcar(d,!!j.ok||jaFoi,j.texto);
+.then(function(j){if(n0!==nav)return;novaChave(j.chave);var jaFoi=j.resultado==='duplicado';marcar(d,!!j.ok||jaFoi,j.texto);
 if(j.ok||jaFoi){i.value='';if(lg)lg.value='';limparPrev();tirarCitacao();}else{aviso(j.avisoHtml||'');}
 if(j.ok||jaFoi||j.resultado==='falhou'){assin=null;buscando=false;geracao++;buscar(true);}})
-.catch(function(){marcar(d,false,'sem conexão com o painel. Confira a internet e tente de novo.');})
-.then(function(){enviando=false;if(b&&document.body.contains(b)){b.disabled=false;b.textContent=rot||'Enviar arquivo';}});});
-var URLR=chat?chat.getAttribute('data-reagir'):null,TELR=chat?chat.getAttribute('data-telefone'):null,menuAc=null,EMOJIS=['👍','❤️','😂','😮','😢','🙏'];
+.catch(function(){if(n0!==nav)return;marcar(d,false,'sem conexão com o painel. Confira a internet e tente de novo.');})
+.then(function(){if(n0!==nav)return;enviando=false;if(b&&document.body.contains(b)){b.disabled=false;b.textContent=rot||'Enviar arquivo';}});});
+var menuAc=null,EMOJIS=['👍','❤️','😂','😮','😢','🙏'];
 function fecharMenu(){if(menuAc){menuAc.remove();menuAc=null;}}
 function textoDoBalao(b){var t=b.querySelector('.cc-at-msg-t'),m=b.querySelector('.cc-at-midia,.cc-at-doc-txt strong');var s=(t&&t.textContent)||(b.querySelector('.cc-at-foto')?'📷 Foto':b.querySelector('audio')?'🎤 Áudio':b.querySelector('video')?'🎬 Vídeo':(m&&m.textContent)||'mensagem');return s.trim().slice(0,160);}
 function citar(b){var id=b.getAttribute('data-msg');if(!id)return;var f=document.getElementById('responder');if(!f)return;f.querySelectorAll('input[name=citando]').forEach(function(i){i.value=id;});
 var cx=document.getElementById('cc-at-citando'),tx=document.getElementById('cc-at-citando-txt');if(cx&&tx){var q=b.querySelector('.cc-at-msg-q');var quem=q?(q.firstChild&&q.firstChild.textContent||'').trim():'';tx.textContent=(quem?quem+': ':'')+textoDoBalao(b);cx.hidden=false;}
 var ta=document.getElementById('cc-at-texto');if(ta)ta.focus();}
 function tirarCitacao(){var f=document.getElementById('responder');if(f)f.querySelectorAll('input[name=citando]').forEach(function(i){i.value='';});var cx=document.getElementById('cc-at-citando');if(cx)cx.hidden=true;}
-function reagir(b,emoji){if(!URLR||!window.fetch)return;var id=b.getAttribute('data-msg');if(!id)return;var p=new URLSearchParams();p.set('alvo',id);p.set('emoji',emoji);if(TELR)p.set('telefone',TELR);
+function reagir(b,emoji){if(!URLR||!window.fetch)return;var id=b.getAttribute('data-msg');if(!id)return;var n0=nav,p=new URLSearchParams();p.set('alvo',id);p.set('emoji',emoji);if(TELR)p.set('telefone',TELR);
 fetch(URLR,{method:'POST',credentials:'same-origin',headers:{'Accept':'application/json','Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
-.then(function(r){return r.json().catch(function(){return {ok:false};});}).then(function(j){if(j&&j.ok){assin=null;buscando=false;geracao++;buscar(true);}else{aviso((j&&j.avisoHtml)||'<div class="cc-aviso cc-aviso-erro">A reação não saiu. Tente de novo.</div>');}})
-.catch(function(){aviso('<div class="cc-aviso cc-aviso-erro">Sem conexão com o painel.</div>');});}
+.then(function(r){return r.json().catch(function(){return {ok:false};});}).then(function(j){if(n0!==nav)return;if(j&&j.ok){assin=null;buscando=false;geracao++;buscar(true);}else{aviso((j&&j.avisoHtml)||'<div class="cc-aviso cc-aviso-erro">A reação não saiu. Tente de novo.</div>');}})
+.catch(function(){if(n0===nav)aviso('<div class="cc-aviso cc-aviso-erro">Sem conexão com o painel.</div>');});}
 function abrirMenu(b,ancora){fecharMenu();var m=document.createElement('div');m.className='cc-at-menu-msg';m.setAttribute('role','menu');
 var r=document.createElement('button');r.type='button';r.className='cc-at-menu-resp';r.setAttribute('role','menuitem');r.textContent='↩ Responder';r.addEventListener('click',function(){fecharMenu();citar(b);});m.appendChild(r);
 var linha=document.createElement('div');linha.className='cc-at-menu-emojis';EMOJIS.forEach(function(em){var e=document.createElement('button');e.type='button';e.setAttribute('role','menuitem');e.setAttribute('aria-label','Reagir '+em);e.textContent=em;e.addEventListener('click',function(){fecharMenu();reagir(b,em);});linha.appendChild(e);});
@@ -1233,7 +1392,10 @@ if(t.closest('[data-tirar-citacao]')){tirarCitacao();return;}
 var bt=t.closest('[data-acoes]');if(bt){e.preventDefault();var b=bt.closest('[data-msg]');if(b)abrirMenu(b,bt);return;}
 if(menuAc&&!t.closest('.cc-at-menu-msg'))fecharMenu();});
 document.addEventListener('keydown',function(e){if(e.key==='Escape')fecharMenu();});
-if(URLC&&window.fetch){setInterval(function(){tiques++;if(document.hidden||enviando)return;if(parados>=4&&tiques%3!==0)return;buscar(false);},8000);document.addEventListener('visibilitychange',function(){if(!document.hidden)buscar(false);});}
+/* UM relógio só, para a conversa que estiver aberta (a troca de contato não cria outro). */
+if(window.fetch){setInterval(function(){tiques++;if(!URLC||document.hidden||enviando)return;if(parados>=4&&tiques%3!==0)return;buscar(false);},8000);document.addEventListener('visibilitychange',function(){if(!document.hidden)buscar(false);});}
+window.ccAtChat={montar:montar,desmontar:desmontar};
+montar();
 })();`;
 
 /**
@@ -1251,6 +1413,97 @@ dlg.addEventListener('click',function(e){if(e.target!==im)fechar();});}
 dlg.querySelector('img').setAttribute('src',src);dlg.classList.add('cc-on');dlg.querySelector('button').focus();}
 document.addEventListener('click',function(e){var a=e.target&&e.target.closest?e.target.closest('[data-ampliar]'):null;if(!a)return;if(e.ctrlKey||e.metaKey||e.shiftKey)return;e.preventDefault();abrir(a.getAttribute('href'));});
 document.addEventListener('keydown',function(e){if(e.key==='Escape')fechar();});
+})();`;
+
+/**
+ * TROCAR DE CONTATO SEM RECARREGAR (Junior 28/09: "ao clicar noutro contato a
+ * tela pisca" — era a página inteira sendo trocada). Clicar num nome da lista
+ * (ou em "Responder como") busca a MESMA rota do contato pedindo só o miolo
+ * (cabeçalho X-Atendimento-Miolo: 1 — mesmas travas de empresa, vendedor e
+ * dono do número pessoal) e troca SÓ as colunas do chat e do resumo:
+ *  - a lista da esquerda não é redesenhada (rolagem, busca e filtros ficam);
+ *    o item clicado ganha o destaque na hora;
+ *  - endereço novo no histórico (voltar/avançar funcionam), título novo, foco
+ *    no cabeçalho do chat, chat rolado até o fim;
+ *  - o script do chat é desmontado/montado (um relógio só, sem ouvinte duplo;
+ *    o rascunho de cada conversa fica guardado enquanto a página está aberta);
+ *  - demorou (> 120 ms)? esqueleto leve no chat, nunca tela branca; clicou
+ *    noutro no meio do caminho? o pedido anterior é cancelado;
+ *  - deu errado (rede, sessão vencida, lead de outro vendedor…)? navegação
+ *    normal. Ctrl/⌘/Shift/botão do meio: comportamento normal do navegador.
+ */
+export const SCRIPT_TROCA = `(function(){
+var grade=document.querySelector('.cc-at-grade'),raiz=grade&&grade.closest?grade.closest('.cc-at'):null;
+if(!grade||!raiz||!window.fetch||!window.DOMParser||!window.URL||!window.history||!history.pushState)return;
+var RE=/^\\/dashboard\\/leads\\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,LISTA='/dashboard/leads/conversas';
+var ctrl=null,seq=0,pendente=false,tEsq=null,atual=location.pathname+location.search;
+function chave(u){return u.pathname+u.search;}
+function lista(p){return Array.prototype.slice.call(p.children);}
+function podeTrocar(u){if(u.origin!==location.origin)return false;if(RE.test(u.pathname))return true;return u.pathname===LISTA&&!!u.searchParams.get('contato');}
+function col(sel,doc){var g=(doc||document).querySelector('.cc-at-grade');if(!g)return null;for(var i=0;i<g.children.length;i++){if(g.children[i].matches(sel))return g.children[i];}return null;}
+function mesmo(a,b){return a.pathname===b.pathname&&(a.pathname!==LISTA||a.searchParams.get('contato')===b.searchParams.get('contato'));}
+function destacar(u){var its=grade.querySelectorAll('.cc-at-item');for(var i=0;i<its.length;i++){var a=its[i],on=mesmo(new URL(a.getAttribute('href'),location.href),u);
+a.classList.toggle('cc-on',on);if(on)a.setAttribute('aria-current','true');else a.removeAttribute('aria-current');}}
+function esqueleto(on){var c=col('.cc-at-chat'),r=col('.cc-at-cockpit');if(r)r.classList.toggle('cc-at-carregando',on);if(!c)return;c.classList.toggle('cc-at-carregando',on);
+var x=c.querySelector('.cc-at-esq');if(!on){if(x)x.remove();c.removeAttribute('aria-busy');return;}var m=c.querySelector('.cc-at-msgs');if(x||!m)return;
+x=document.createElement('div');x.className='cc-at-esq';x.setAttribute('aria-hidden','true');x.style.top=m.offsetTop+'px';x.style.height=m.offsetHeight+'px';
+[['cli',46],['eva',34],['cli',58],['eva',40],['cli',30]].forEach(function(k){var b=document.createElement('div');b.className='cc-at-esq-b cc-at-esq-'+k[0];b.style.width=k[1]+'%';x.appendChild(b);});
+c.appendChild(x);c.setAttribute('aria-busy','true');}
+function focar(c){var h=c&&c.querySelector('.cc-at-chat-topo');if(!h)return;if(!h.hasAttribute('tabindex'))h.setAttribute('tabindex','-1');try{h.focus({preventScroll:true});}catch(e){h.focus();}}
+function parar(){seq++;if(ctrl){try{ctrl.abort();}catch(e){}}ctrl=null;pendente=false;clearTimeout(tEsq);esqueleto(false);}
+function ir(href,empurrar,rolagem){var u=new URL(href,location.href),meu=++seq;
+if(ctrl){try{ctrl.abort();}catch(e){}}ctrl=window.AbortController?new AbortController():null;pendente=true;
+destacar(u);clearTimeout(tEsq);tEsq=setTimeout(function(){if(meu===seq)esqueleto(true);},120);
+return fetch(chave(u),{credentials:'same-origin',headers:{'X-Atendimento-Miolo':'1','Accept':'text/html'},signal:ctrl?ctrl.signal:undefined})
+.then(function(r){if(!r.ok)throw new Error('http '+r.status);var fim=r.url?new URL(r.url):u;return r.text().then(function(t){return {t:t,fim:fim};});})
+.then(function(x){if(meu!==seq)return;
+var doc=new DOMParser().parseFromString(x.t,'text/html'),nc=col('.cc-at-chat',doc),nr=col('.cc-at-cockpit',doc),vc=col('.cc-at-chat'),vr=col('.cc-at-cockpit');
+if(!nc||!nr||!vc||!vr||x.fim.origin!==location.origin||(!podeTrocar(x.fim)&&x.fim.pathname!==LISTA))throw new Error('sem colunas');
+if(!empurrar&&chave(new URL(location.href))!==chave(u))return;
+clearTimeout(tEsq);if(window.ccAtChat)window.ccAtChat.desmontar();
+nc=document.adoptNode(nc);nr=document.adoptNode(nr);vc.parentNode.replaceChild(nc,vc);vr.parentNode.replaceChild(nr,vr);
+var nraiz=doc.querySelector('.cc-at');lista(raiz).forEach(function(m){if(m.classList.contains('cc-modal'))m.remove();});if(nraiz)lista(nraiz).forEach(function(m){if(m.classList.contains('cc-modal'))raiz.appendChild(document.adoptNode(m));});raiz.classList.toggle('cc-at-com-lead',!!(nraiz&&nraiz.classList.contains('cc-at-com-lead')));
+var tt=(doc.title||'').split(' · ')[0],k=document.title.indexOf(' · ');if(tt)document.title=tt+(k>=0?document.title.slice(k):'');
+var destino=chave(x.fim)+(x.fim.pathname===u.pathname?u.hash:'');atual=chave(x.fim);
+if(empurrar&&destino!==location.pathname+location.search+location.hash){try{history.replaceState({ccAt:1,y:window.scrollY},'');}catch(e){}history.pushState({ccAt:1},'',destino);}
+else if(empurrar)history.replaceState(history.state,'',destino);
+else if(destino!==location.pathname+location.search+location.hash)history.replaceState(history.state,'',destino);
+if(!mesmo(x.fim,u))destacar(x.fim);
+if(window.ccAtChat)window.ccAtChat.montar();
+if(typeof rolagem==='number')window.scrollTo(0,rolagem);else if(window.innerWidth<=900)window.scrollTo(0,0);
+focar(nc);})
+.catch(function(e){if(e&&e.name==='AbortError')return;if(meu!==seq)return;location.href=href;})
+.then(function(){if(meu===seq){pendente=false;clearTimeout(tEsq);esqueleto(false);}});}
+document.addEventListener('click',function(e){if(e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;
+var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;if(!a||!grade.contains(a))return;
+var volta=a.classList.contains('cc-at-voltar')||!!a.closest('.cc-at-abas-voltar');
+if(!a.classList.contains('cc-at-item')&&!a.closest('.cc-at-como')&&!volta)return;
+if((a.target&&a.target!=='_self')||a.hasAttribute('download'))return;
+var u=new URL(a.getAttribute('href'),location.href);
+/* "‹ Conversas" (notebook/celular): volta para a lista sem recarregar, com os mesmos filtros. */
+if(volta&&u.origin===location.origin&&u.pathname===LISTA&&!u.search){var aq=new URL(location.href).searchParams;['filtro','etapa','q'].forEach(function(k){if(aq.get(k))u.searchParams.set(k,aq.get(k));});e.preventDefault();if(chave(u)!==atual||pendente)ir(u.href,true);return;}
+if(!podeTrocar(u))return;
+e.preventDefault();if(chave(u)===atual&&!pendente){focar(col('.cc-at-chat'));return;}
+ir(u.href,true);});
+window.addEventListener('popstate',function(e){var u=new URL(location.href);if(chave(u)===atual){if(pendente){parar();destacar(u);}return;}
+if(!podeTrocar(u)&&u.pathname!==LISTA){location.reload();return;}
+ir(location.href,false,e.state&&typeof e.state.y==='number'?e.state.y:undefined);});
+window.ccAtTroca={ir:function(h){var u=new URL(h,location.href);if(!podeTrocar(u))return false;ir(u.href,true);return true;},
+  /* redesenha o miolo da conversa aberta (depois de Assumir/Devolver), sem esqueleto nem histórico novo */
+  recarregar:function(){ir(location.href,false);}};
+/* Aviso de agendamento (✅/📞/❌/🕐) sem recarregar: o MESMO POST; depois redesenha o miolo e mostra o resultado. */
+document.addEventListener('submit',function(e){var f=e.target;if(!f||!f.closest||!f.closest('.cc-at-agenda'))return;var ac=f.getAttribute('action')||'';
+if(!/^\\/dashboard\\/leads\\/[0-9a-f-]{36}\\/agendamento\\/[0-9a-f-]{36}$/i.test(ac))return;e.preventDefault();
+var bs=f.closest('.cc-at-agenda').querySelectorAll('button');for(var i=0;i<bs.length;i++)bs[i].disabled=true;
+fetch(ac,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(new FormData(f)).toString()})
+.then(function(r){if(!r.ok)throw new Error('http');var msg='';try{msg=new URL(r.url).searchParams.get('agenda')||'';}catch(x){}
+return ir(location.href,false).then(function(){var c=col('.cc-at-chat');if(!c||!msg)return;var d=document.createElement('div');d.className='cc-aviso cc-aviso-info cc-at-agenda';d.setAttribute('role','status');d.textContent=msg;
+var m=c.querySelector('.cc-at-msgs');if(m)c.insertBefore(d,m);else c.appendChild(d);});}).catch(function(){f.submit();});});
+/* ✋ Assumir / ↩ Devolver sem recarregar: o MESMO POST (o servidor confere tudo); depois o miolo é redesenhado. */
+document.addEventListener('submit',function(e){var f=e.target;if(!f||!f.closest||!f.closest('#cc-at-topo'))return;var ac=f.getAttribute('action')||'';
+if(!/^\\/dashboard\\/leads\\/[0-9a-f-]{36}\\/(pause|resume)-eva$/i.test(ac))return;e.preventDefault();var b=f.querySelector('button[type=submit]');if(b)b.disabled=true;
+fetch(ac,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(new FormData(f)).toString()})
+.then(function(r){if(!r.ok)throw new Error('http');ir(location.href,false);}).catch(function(){f.submit();});});
 })();`;
 
 /** CSS só do Atendimento — mora em ui/css-atendimento.ts (vai por arquivo, no <head>). */

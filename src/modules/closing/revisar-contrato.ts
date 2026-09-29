@@ -216,7 +216,7 @@ export async function revisarContrato(anthropic: Anthropic, ctx: ContextoRevisao
       } as any,
       { timeout: TIMEOUT_MS },
     );
-    medirIa({ modelo: MODELO, origem: 'central_contratos', usage: resp?.usage });
+    medirIa({ modelo: MODELO, origem: 'admin:contratos', usage: resp?.usage });
     const texto = (resp?.content ?? [])
       .filter((b: any) => b?.type === 'text')
       .map((b: any) => b.text)

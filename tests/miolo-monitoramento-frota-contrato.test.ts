@@ -9,7 +9,7 @@ import { contratoDaTela, aplicarMudancas } from './helpers/contrato-tela.js';
 // R5 (Onda 4): o Cockpit saiu do menu — sai o link /dashboard/cockpit das telas da casa.
 import { r5Menu } from './fixtures/mudancas-onda4.js';
 // Única troca: tela renovada sai do Tailwind do CDN (a mesma das telas leves, #328).
-import { TELAS_LEVES } from './fixtures/mudancas-telas-leves.js';
+import { TELAS_LEVES, menuTenantSemAssinaturas } from './fixtures/mudancas-telas-leves.js';
 import { CASOS_FROTA } from './fixtures/casos-monitoramento.js';
 
 const CONTRATO = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contrato-monitoramento-frota.json'), 'utf-8'));
@@ -17,7 +17,8 @@ const CONTRATO = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures'
 describe('Monitoramento (frota) — contrato da tela não muda', () => {
   for (const [nome, render] of Object.entries(CASOS_FROTA)) {
     it(`contrato: ${nome}`, () => {
-      expect(contratoDaTela(render())).toEqual(aplicarMudancas(CONTRATO[nome], ...r5Menu(CONTRATO[nome]), TELAS_LEVES));
+      const h = render();
+      expect(contratoDaTela(h)).toEqual(aplicarMudancas(CONTRATO[nome], ...r5Menu(CONTRATO[nome]), ...menuTenantSemAssinaturas(h), TELAS_LEVES));
     });
   }
 });

@@ -9,7 +9,7 @@ export type Linha = Record<string, unknown>;
 
 export interface Operacao { tabela: string; tipo: 'select' | 'update'; filtros: Array<[string, string, unknown]>; patch?: Linha }
 
-/** Filtro `or` do PostgREST — só o que o código usa: "col.is.null,col.neq.valor". */
+/** Filtro `or` do PostgREST — só o que o código usa: "col.is.null,col.neq.valor" e "col.eq.x,col.gte.y". */
 function casaOr(linha: Linha, expr: string): boolean {
   return expr.split(',').some((parte) => {
     const [col, op, ...resto] = parte.split('.');
@@ -18,6 +18,7 @@ function casaOr(linha: Linha, expr: string): boolean {
     if (op === 'is' && v === 'null') return atual === null;
     if (op === 'eq') return String(atual) === v;
     if (op === 'neq') return atual !== null && String(atual) !== v;
+    if (op === 'gte') return atual !== null && String(atual) >= v;
     throw new Error(`banco falso: or com operador ${op} não implementado`);
   });
 }

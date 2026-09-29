@@ -43,7 +43,8 @@ const ITENS_ANTIGOS_TODOS: Legado[] = [
   { href: '/dashboard/financeiro', key: 'financeiro', area: 'financeiro' },
   { href: '/dashboard/fiscal', key: 'fiscal', area: 'financeiro' },
   { href: '/dashboard/cobrar', key: 'cobrar', area: 'financeiro' },
-  { href: '/dashboard/assinaturas', key: 'assinaturas', area: 'financeiro' },
+  // 28/09/2026 (cobrança recorrente): Assinaturas virou SÓ da casa (mudança deliberada).
+  { href: '/dashboard/assinaturas', key: 'assinaturas', area: 'financeiro', soEcosun: true },
   { href: '/dashboard/rh/candidatos', key: 'rh_candidatos', area: 'rh' },
   { href: '/dashboard/rh/vagas', key: 'rh_vagas', area: 'rh' },
   { href: '/dashboard/rh/busca', key: 'rh_busca', area: 'rh' },

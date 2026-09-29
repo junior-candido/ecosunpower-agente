@@ -99,7 +99,7 @@ export async function responderCopilotoPosVenda(
     system,
     messages: messages as Anthropic.MessageParam[],
   });
-  medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'pos-venda', usage: resp.usage });
+  medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'admin:copiloto-pos-venda', usage: resp.usage });
   const texto = resp.content
     .filter((b): b is Anthropic.TextBlock => b.type === 'text')
     .map((b) => b.text)

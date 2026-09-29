@@ -11,7 +11,7 @@ import { contratoDaTela, aplicarMudancas } from './helpers/contrato-tela.js';
 import { r5Menu } from './fixtures/mudancas-onda4.js';
 import { CASOS_RH } from './fixtures/casos-rh.js';
 // Troca comum das telas renovadas: sai o Tailwind do CDN (telas leves, #328).
-import { TELAS_LEVES } from './fixtures/mudancas-telas-leves.js';
+import { TELAS_LEVES, menuTenantSemAssinaturas } from './fixtures/mudancas-telas-leves.js';
 import { MUDANCAS_R18 } from './fixtures/mudancas-onda3.js';
 
 const CONTRATO = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contrato-rh.json'), 'utf-8'));
@@ -19,7 +19,8 @@ const CONTRATO = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures'
 describe('RH — contrato das 4 telas não muda', () => {
   for (const [nome, render] of Object.entries(CASOS_RH)) {
     it(`contrato: ${nome}`, () => {
-      expect(contratoDaTela(render())).toEqual(aplicarMudancas(CONTRATO[nome], ...r5Menu(CONTRATO[nome]), TELAS_LEVES, ...(MUDANCAS_R18[nome] ?? [])));
+      const h = render();
+      expect(contratoDaTela(h)).toEqual(aplicarMudancas(CONTRATO[nome], ...r5Menu(CONTRATO[nome]), ...menuTenantSemAssinaturas(h), TELAS_LEVES, ...(MUDANCAS_R18[nome] ?? [])));
     });
   }
 });

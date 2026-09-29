@@ -8,6 +8,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { contratoDaTela, aplicarMudancas } from './helpers/contrato-tela.js';
+import { menuTenantSemAssinaturas } from './fixtures/mudancas-telas-leves.js';
 import { CASOS_OPERACAO2 } from './fixtures/casos-operacao2.js';
 import { MUDANCAS_R22, r5Menu } from './fixtures/mudancas-onda4.js';
 
@@ -16,7 +17,9 @@ const CONTRATO = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures'
 describe('Operação II — contrato das telas não muda', () => {
   for (const [nome, render] of Object.entries(CASOS_OPERACAO2)) {
     it(`contrato: ${nome}`, () => {
-      expect(contratoDaTela(render())).toEqual(aplicarMudancas(CONTRATO[nome], ...r5Menu(CONTRATO[nome]), ...(MUDANCAS_R22[nome] ?? [])));
+      const h = render();
+      // Cobrança recorrente (#339): Assinaturas some do menu do tenant.
+      expect(contratoDaTela(h)).toEqual(aplicarMudancas(CONTRATO[nome], ...menuTenantSemAssinaturas(h), ...r5Menu(CONTRATO[nome]), ...(MUDANCAS_R22[nome] ?? [])));
     });
   }
 });
