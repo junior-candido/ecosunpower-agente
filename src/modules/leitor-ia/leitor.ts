@@ -29,8 +29,8 @@ export class ErroLeitura extends Error {
 export function modelosDoAmbiente(env: Record<string, string | undefined> = process.env): { 1: string; 2: string } {
   const ok = (s: string | undefined) => (s && /^claude-[a-z0-9.-]{3,60}$/.test(s) ? s : null);
   return {
-    1: ok(env.LEITOR_IA_MODELO_RAPIDO) ?? 'claude-haiku-4-5-20251001',
-    2: ok(env.LEITOR_IA_MODELO_FORTE) ?? 'claude-sonnet-5',
+    1: ok(env.LEITOR_IA_MODELO_RAPIDO) ?? 'claude-sonnet-5',
+    2: ok(env.LEITOR_IA_MODELO_FORTE) ?? 'claude-opus-5-5',
   };
 }
 

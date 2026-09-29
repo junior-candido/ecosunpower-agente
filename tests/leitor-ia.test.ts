@@ -321,8 +321,8 @@ describe('peças', () => {
   });
 
   it('configuração pelo ambiente (modelos e limites), com padrão seguro', () => {
-    expect(modelosDoAmbiente({})).toEqual({ 1: 'claude-haiku-4-5-20251001', 2: 'claude-sonnet-5' });
-    expect(modelosDoAmbiente({ LEITOR_IA_MODELO_RAPIDO: 'claude-sonnet-5', LEITOR_IA_MODELO_FORTE: 'rm -rf' })).toEqual({ 1: 'claude-sonnet-5', 2: 'claude-sonnet-5' });
+    expect(modelosDoAmbiente({})).toEqual({ 1: 'claude-sonnet-5', 2: 'claude-opus-5-5' });
+    expect(modelosDoAmbiente({ LEITOR_IA_MODELO_RAPIDO: 'claude-sonnet-5', LEITOR_IA_MODELO_FORTE: 'rm -rf' })).toEqual({ 1: 'claude-sonnet-5', 2: 'claude-opus-5-5' });
     expect(limitesDoAmbiente({ LEITOR_IA_LIMITE_LICENCA_DIA: '20', LEITOR_IA_LIMITE_IP_HORA: 'x' })).toMatchObject({ porLicencaDia: 20, porIpHora: LIMITES_PADRAO.porIpHora });
   });
 });

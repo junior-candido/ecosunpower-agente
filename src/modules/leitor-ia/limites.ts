@@ -25,7 +25,7 @@ export interface ConfigLimites {
 
 export const LIMITES_PADRAO: ConfigLimites = {
   porLicencaDia: 80,
-  porAvaliacaoDia: 12,
+  porAvaliacaoDia: 6,
   avaliacaoTotalDia: 150,
   porIpHora: 60,
   totalDia: 1500,
