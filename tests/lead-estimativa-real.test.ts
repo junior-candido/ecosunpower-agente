@@ -42,15 +42,29 @@ describe('carga futura entra no dimensionamento', () => {
 });
 
 describe('preço não pode fingir que 2 kWp custa o mesmo que 3 kWp', () => {
+  // 30/09/2026: o preço é da tabela DA CONQUISTA (empresa_config.tabela_preco_wp).
+  // Antes este teste passava com a tabela da EcoSun — era o vazamento de preço.
+  const conquistaComTabela = normalizarEmpresaRow({
+    company_id: 'c1a2b3c4-0000-0000-0000-00000000aaaa',
+    nome_fantasia: 'Conquista Solar', cidade: 'Vitória da Conquista', uf: 'BA',
+    hsp_padrao: 5.4, tarifa_kwh_padrao: 1.25,
+    tabela_preco_wp: [[3, 3.5], [10, 2.6]],
+  });
+
   it('abaixo da menor faixa da tabela, avisa que está fora da tabela', () => {
-    const e = estimarLead({ contaRs: 297.57, consumoKwh: 238, cfg: conquista });
+    const e = estimarLead({ contaRs: 297.57, consumoKwh: 238, cfg: conquistaComTabela });
     expect(e.kWp).toBeLessThan(3);
     expect(e.precoForaDaTabela).toBe(true);
   });
 
   it('dentro da tabela não levanta a bandeira', () => {
-    const e = estimarLead({ contaRs: 600, consumoKwh: 417, cfg: conquista });
+    const e = estimarLead({ contaRs: 600, consumoKwh: 417, cfg: conquistaComTabela });
     expect(e.precoForaDaTabela).toBe(false);
+  });
+
+  it('sem tabela cadastrada, a Conquista fica SEM preço (nunca o da EcoSun)', () => {
+    const e = estimarLead({ contaRs: 600, consumoKwh: 417, cfg: conquista });
+    expect(e.precoRs).toBeNull();
   });
 });
 

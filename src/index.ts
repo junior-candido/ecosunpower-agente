@@ -6165,9 +6165,14 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
               });
               const fmt = (n: number) => 'R$ ' + n.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
               const origem = e.consumoOrigem === 'informado' ? 'informado' : 'estimado pela conta';
-              estimativaMsg = `\n\n📐 Estimativa (calculadora · conta ${fmt(contaMensal)} · ${e.consumoKwh} kWh ${origem}): ~${e.paineis} painéis · ${e.kWp.toFixed(1)} kWp · ${fmt(e.precoRs)} · economia ~${fmt(e.economiaMensalRs)}/mês (fatura fica ~${fmt(e.contaResidualRs)})\n_(base sua pra fechar o valor exato)_`;
-              if (e.precoForaDaTabela) {
-                estimativaMsg += `\n⚠️ Sistema menor que a menor faixa da tabela (3 kWp) — o preço acima é o do piso da tabela, NÃO o desse sistema. Confirme o valor antes de passar pro cliente.`;
+              // Preço é da EMPRESA que atende (30/09/2026). Sem tabela cadastrada
+              // o aviso sai sem preço — nunca com o preço de outra empresa.
+              const precoTxt = e.precoRs != null ? `${fmt(e.precoRs)} · ` : '';
+              estimativaMsg = `\n\n📐 Estimativa (calculadora · conta ${fmt(contaMensal)} · ${e.consumoKwh} kWh ${origem}): ~${e.paineis} painéis · ${e.kWp.toFixed(1)} kWp · ${precoTxt}economia ~${fmt(e.economiaMensalRs)}/mês (fatura fica ~${fmt(e.contaResidualRs)})\n_(base sua pra fechar o valor exato)_`;
+              if (e.precoRs == null) {
+                estimativaMsg += `\nℹ️ Sem tabela de preço cadastrada para a empresa — a estimativa saiu sem valor.`;
+              } else if (e.precoForaDaTabela) {
+                estimativaMsg += `\n⚠️ Sistema menor que a menor faixa da tabela de preço — o preço acima é o do piso da tabela, NÃO o desse sistema. Confirme o valor antes de passar pro cliente.`;
               }
               // O cliente falou em carga nova mas não deu o kWh: a estimativa
               // NÃO tem como somar isso. Melhor avisar do que mandar sistema

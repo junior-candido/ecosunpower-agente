@@ -1,15 +1,17 @@
 // Calculadora determinística pra ESTIMATIVA DE LEAD (conversa da assistente).
 // Todos os números saem de tabelas vetadas pelo Junior — a assistente NUNCA
 // calcula de cabeça. Para a proposta final/precisa, usar calculator.ts.
-import { empresa, type EmpresaConfig } from '../empresa-config.js';
+import { empresa, ehEcosun, type EmpresaConfig } from '../empresa-config.js';
 import {
   FATOR_PERDA_CONSERVADOR, PERCENTUAL_GERACAO_INJETADA, CUSTO_ILUMINACAO_PUBLICA,
   percentualFioBVigente, hspPorConcessionaria, tarifaPorConcessionaria, tusdFioBPorConcessionaria,
 } from '../solar-params.js';
 import { calcularContaMensalDetalhada } from './calculator.js';
 
-// Tabela de PREÇO do Junior (vetada 18/06). [kWp, R$/Wp].
-const TABELA_PRECO: ReadonlyArray<readonly [number, number]> = [
+// Tabela de PREÇO do Junior (vetada 18/06). [kWp, R$/Wp]. É da ECOSUN: outra
+// empresa usa a própria (empresa_config.tabela_preco_wp) ou fica sem preço.
+type TabelaPreco = ReadonlyArray<readonly [number, number]>;
+const TABELA_PRECO: TabelaPreco = [
   [3, 3.20], [4, 2.90], [5, 2.71], [6, 2.61], [8, 2.46], [10, 2.36],
   [12, 2.30], [15, 2.20], [20, 2.20], [30, 2.20], [50, 2.20], [75, 2.20],
 ];
@@ -30,8 +32,15 @@ const WP_POR_PAINEL = 670;
 // e ela foi usada num lead da Bahia. Agora sai da fonte única (solar-params),
 // com o HSP de quem está atendendo. Confere pra Brasília: 0,67 × 5,40 × 0,78 ×
 // 30 = 84,7 ≈ os 85 de antes, então o tamanho dos sistemas do DF não muda.
-function kwhPorPainelMes(hsp: number): number {
-  return (WP_POR_PAINEL / 1000) * hsp * FATOR_PERDA_CONSERVADOR * 30;
+function kwhPorPainelMes(hsp: number, wp: number = WP_POR_PAINEL): number {
+  return (wp / 1000) * hsp * FATOR_PERDA_CONSERVADOR * 30;
+}
+
+/** Tabela de preço de quem atende: a da empresa; sem ela, só a EcoSun tem a de
+ *  código. Tenant sem tabela → null (estimativa sai sem preço). */
+function tabelaDaEmpresa(cfg: EmpresaConfig): TabelaPreco | null {
+  if (cfg.tabelaPrecoWp && cfg.tabelaPrecoWp.length > 0) return cfg.tabelaPrecoWp;
+  return ehEcosun(cfg) ? TABELA_PRECO : null;
 }
 
 function lerp(x: number, x0: number, y0: number, x1: number, y1: number): number {
@@ -40,14 +49,14 @@ function lerp(x: number, x0: number, y0: number, x1: number, y1: number): number
 }
 
 // Preço total (R$) pra um dado kWp, interpolando a TABELA_PRECO. Clampa nos extremos.
-export function precoParaKwp(kWp: number): number {
-  const first = TABELA_PRECO[0];
-  const last = TABELA_PRECO[TABELA_PRECO.length - 1];
+export function precoParaKwp(kWp: number, tabela: TabelaPreco = TABELA_PRECO): number {
+  const first = tabela[0];
+  const last = tabela[tabela.length - 1];
   if (kWp <= first[0]) return Math.round(first[0] * 1000 * first[1]);
   if (kWp >= last[0]) return Math.round(last[0] * 1000 * last[1]);
-  for (let i = 0; i < TABELA_PRECO.length - 1; i++) {
-    const [k0, rs0] = TABELA_PRECO[i];
-    const [k1, rs1] = TABELA_PRECO[i + 1];
+  for (let i = 0; i < tabela.length - 1; i++) {
+    const [k0, rs0] = tabela[i];
+    const [k1, rs1] = tabela[i + 1];
     if (kWp >= k0 && kWp <= k1) {
       const rsWp = lerp(kWp, k0, rs0, k1, rs1);
       return Math.round(kWp * 1000 * rsWp);
@@ -69,7 +78,9 @@ export interface EstimativaLead {
   consumoOrigem: 'informado' | 'estimado';
   paineis: number;
   kWp: number;
-  precoRs: number;
+  /** null = a empresa que atende não tem tabela de preço cadastrada (nunca
+   *  cai no preço de outra empresa). */
+  precoRs: number | null;
   /** true quando o sistema é MENOR que a menor faixa da tabela (3 kWp): o preço
    *  devolvido é o do piso da tabela, não o do sistema. Quem for falar com o
    *  cliente precisa saber disso antes de dar o número. */
@@ -117,11 +128,13 @@ export function estimarLead(entrada: EntradaEstimativa): EstimativaLead {
   // sistema do tamanho do consumo de hoje.
   const consumoKwh = Math.max(base, futuro ?? 0);
 
-  const porPainel = kwhPorPainelMes(hsp);
+  const wp = cfg.wpPorPainel ?? WP_POR_PAINEL;
+  const porPainel = kwhPorPainelMes(hsp, wp);
   const paineis = Math.max(1, Math.round(consumoKwh / porPainel));
-  const kWp = Math.round(paineis * WP_POR_PAINEL / 10) / 100;
-  const precoRs = precoParaKwp(kWp);
-  const precoForaDaTabela = kWp < TABELA_PRECO[0][0];
+  const kWp = Math.round(paineis * wp / 10) / 100;
+  const tabela = tabelaDaEmpresa(cfg);
+  const precoRs = tabela ? precoParaKwp(kWp, tabela) : null;
+  const precoForaDaTabela = tabela ? kWp < tabela[0][0] : false;
 
   const conta = calcularContaMensalDetalhada({
     consumoKwh,

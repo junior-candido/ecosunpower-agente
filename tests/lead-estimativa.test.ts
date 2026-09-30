@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { estimarPorConta, precoParaKwp } from '../src/modules/proposal/lead-estimativa.js';
+import { estimarPorConta, estimarLead, precoParaKwp } from '../src/modules/proposal/lead-estimativa.js';
+import { EMPRESA_DEFAULTS, type EmpresaConfig } from '../src/modules/empresa-config.js';
 
 describe('estimarPorConta — números vêm das tabelas vetadas, nunca de cabeça', () => {
   it('conta R$600 (caso Vilma) dá sistema pequeno, NÃO R$25k', () => {
@@ -36,5 +37,39 @@ describe('estimarPorConta — números vêm das tabelas vetadas, nunca de cabeç
     const e = estimarPorConta(250);
     expect(e.kWp).toBeGreaterThan(0);
     expect(e.precoRs).toBeGreaterThan(0);
+  });
+});
+
+// 30/09/2026 — tabela de preço POR EMPRESA (caso Conquista Solar).
+// Antes a TABELA_PRECO fixa era a da EcoSun e ia no aviso de handoff de QUALQUER
+// empresa: a vendedora da Conquista recebia a estimativa com o preço do Junior.
+describe('preço da estimativa é da EMPRESA que atende', () => {
+  const TENANT = { ...EMPRESA_DEFAULTS, companyId: '11111111-1111-1111-1111-111111111111', tabelaPrecoWp: null, wpPorPainel: null } as EmpresaConfig;
+
+  it('empresa sem tabela cadastrada NÃO recebe o preço da EcoSun', () => {
+    const e = estimarLead({ contaRs: 900, cfg: TENANT });
+    expect(e.precoRs).toBeNull();
+    expect(e.precoForaDaTabela).toBe(false);
+    expect(e.kWp).toBeGreaterThan(0); // dimensionamento continua saindo
+  });
+
+  it('empresa com tabela própria usa a dela (interpolando)', () => {
+    const cfg = { ...TENANT, tabelaPrecoWp: [[3, 4.0], [10, 3.0]] } as EmpresaConfig;
+    expect(precoParaKwp(3, cfg.tabelaPrecoWp!)).toBe(12000);
+    expect(precoParaKwp(10, cfg.tabelaPrecoWp!)).toBe(30000);
+    const e = estimarLead({ contaRs: 900, cfg });
+    expect(e.precoRs).toBe(precoParaKwp(e.kWp, cfg.tabelaPrecoWp!));
+  });
+
+  it('potência do painel da empresa define o kWp', () => {
+    const cfg = { ...TENANT, wpPorPainel: 700 } as EmpresaConfig;
+    const e = estimarLead({ contaRs: 900, cfg });
+    expect(e.kWp).toBeCloseTo(e.paineis * 0.7, 2);
+  });
+
+  it('EcoSun sem coluna preenchida continua com a tabela de sempre', () => {
+    const e = estimarLead({ contaRs: 600, cfg: EMPRESA_DEFAULTS });
+    expect(e.precoRs).toBe(precoParaKwp(e.kWp));
+    expect(e.kWp).toBeCloseTo(e.paineis * 0.67, 2);
   });
 });
