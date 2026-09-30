@@ -70,6 +70,10 @@ export interface AdapterFetchResult {
   // frente (o service prefixa): ex. "3 de 30 micros não responderam".
   // Com ele preenchido o sync NÃO conta como sucesso (vira ultimo_erro).
   falhaParcial?: string;
+  // Limite de consultas do fabricante (30/09, GoodWe HTTP 429): parte dos dias
+  // ficou pra depois. NÃO é erro de integração — o que veio é gravado, o painel
+  // não mostra falha e o sync tenta o resto na próxima rodada.
+  adiadoPorLimite?: boolean;
 }
 
 export interface AdapterFetchError {

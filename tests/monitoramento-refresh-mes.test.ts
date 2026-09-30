@@ -155,3 +155,38 @@ describe('syncAll — refresh do mês 1×/dia', () => {
     ]);
   });
 });
+
+// 30/09/2026 — limite de consultas do fabricante (GoodWe 429): o refresh do mês
+// interrompido NÃO fica marcado como feito (tenta de novo na próxima rodada) e
+// nada vira "erro de integração".
+describe('syncAll — adiado por limite do fabricante', () => {
+  it('refresh do mês adiado tenta de novo na rodada seguinte', async () => {
+    adapters.goodwe = { fetchGeneration: vi.fn().mockResolvedValue({ ok: true, geracoes: [], adiadoPorLimite: true }) };
+    const svc = new MonitoringService(fakeSupabase({ sistemas: [sis('g1', 'goodwe')], upserts: [], updates: [] }));
+    vi.setSystemTime(new Date('2026-09-29T08:05:00Z'));
+    await svc.syncAll();
+    vi.setSystemTime(new Date('2026-09-29T08:20:00Z'));
+    await svc.syncAll();
+    expect(janelas(adapters.goodwe.fetchGeneration)).toEqual(['2026-08-01..2026-09-29', '2026-08-01..2026-09-29']);
+  });
+
+  it('adiado sem nenhum dia: não grava erro nem conta como falha', async () => {
+    adapters.goodwe = { fetchGeneration: vi.fn().mockResolvedValue({ ok: true, geracoes: [], adiadoPorLimite: true }) };
+    const e: Estado = { sistemas: [sis('g1', 'goodwe')], upserts: [], updates: [] };
+    vi.setSystemTime(new Date('2026-09-29T08:05:00Z'));
+    const r = await new MonitoringService(fakeSupabase(e)).syncAll();
+    expect(r.falhas).toBe(0);
+    expect(e.updates.filter((u) => u.id === 'g1').some((u) => u.fields.ultimo_erro)).toBe(false);
+  });
+
+  it('adiado com parte dos dias: grava o que veio e fica OK (sem erro)', async () => {
+    adapters.goodwe = { fetchGeneration: vi.fn().mockResolvedValue({ ok: true, geracoes: [{ data: '2026-09-29', geracao_kwh: 30 }], adiadoPorLimite: true }) };
+    const e: Estado = { sistemas: [sis('g1', 'goodwe')], upserts: [], updates: [] };
+    vi.setSystemTime(new Date('2026-09-29T15:00:00Z'));
+    const r = await new MonitoringService(fakeSupabase(e)).syncAll();
+    expect(r.falhas).toBe(0);
+    expect(e.upserts.map((x) => x.data)).toEqual(['2026-09-29']);
+    const ups = e.updates.filter((u) => u.id === 'g1');
+    expect(ups.some((u) => u.fields.ultimo_erro)).toBe(false);
+  });
+});

@@ -239,6 +239,18 @@ export class MonitoringService {
           continue;
         }
 
+        // Limite de consultas do fabricante (GoodWe 429, 30/09/2026): o que não
+        // veio fica pra próxima rodada — o refresh do mês interrompido NÃO conta
+        // como feito, e sem nenhum dia não há o que avaliar (nada vira "erro de
+        // integração": a conta só pediu pra esperar).
+        if (result.adiadoPorLimite) {
+          if (fazRefreshMes) this.refreshMesFeito.delete(sistema.id);
+          if (result.geracoes.length === 0) {
+            pulados++;
+            continue;
+          }
+        }
+
         const av = await this.aplicarResultado(sistema, result, dataFim);
         if (av.ok) {
           sucessos++;

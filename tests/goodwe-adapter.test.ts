@@ -567,3 +567,62 @@ describe('goodweAdapter.listSites (descoberta)', () => {
 
   it('marca é goodwe', () => expect(goodweAdapter.marca).toBe('goodwe'));
 });
+
+// 30/09/2026 — GoodWe respondeu "HTTP 429 / GY0429 operation_too_frequent" o dia
+// inteiro: o refresh diário de 61 dias × 12 usinas na MESMA conta estourava o
+// limite, e cada dia recusado virava "X de 61 dias não responderam" = "erro de
+// integração" no painel. Limite não é erro: a conta pausa e o resto fica pra depois.
+describe('goodweAdapter — limite de consultas da GoodWe (429)', () => {
+  const lim429 = () => resJson(429, { code: 'GY0429', translationCode: 'operation_too_frequent_try_later', errorMsg: 'You have reached the requested limit, please exercise caution!' });
+
+  it('429 num dia: pausa a conta, não repete na hora, e NÃO vira falha parcial', async () => {
+    let producoes = 0;
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (String(url).includes('/auth/cross-login')) return loginOk();
+      if (String(url).includes('stationPage')) return resJson(200, fixture('station-page.json'));
+      producoes++;
+      return producoes === 1 ? prod(5) : lim429();
+    }));
+    const r = await goodweAdapter.fetchGeneration(CREDS, '2026-09-11', '2026-09-20');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.adiadoPorLimite).toBe(true);
+    expect(r.falhaParcial).toBeUndefined();
+    expect(r.geracoes.length).toBeGreaterThanOrEqual(1);
+    // não martela: depois do 1º 429 os outros dias nem são pedidos (máx. os que já estavam em voo)
+    expect(producoes).toBeLessThanOrEqual(4);
+  });
+
+  it('conta pausada: outra usina da MESMA conta não faz nenhuma consulta e sai sem erro', async () => {
+    let producoes = 0;
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (String(url).includes('/auth/cross-login')) return loginOk();
+      if (String(url).includes('stationPage')) return resJson(200, fixture('station-page.json'));
+      producoes++;
+      return lim429();
+    }));
+    await goodweAdapter.fetchGeneration(CREDS, '2026-09-18', '2026-09-20');
+    const antes = producoes;
+    const r = await goodweAdapter.fetchGeneration({ ...CREDS, site_id: '00000000-0000-4000-8000-000000000002' }, '2026-09-18', '2026-09-20');
+    expect(producoes).toBe(antes);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.adiadoPorLimite).toBe(true);
+    expect(r.geracoes).toEqual([]);
+  });
+
+  it('erro de verdade (não é limite) continua virando falha parcial', async () => {
+    let producoes = 0;
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (String(url).includes('/auth/cross-login')) return loginOk();
+      if (String(url).includes('stationPage')) return resJson(200, fixture('station-page.json'));
+      producoes++;
+      return producoes === 1 ? prod(5) : resJson(200, { code: 'B0999', description: 'station not found' });
+    }));
+    const r = await goodweAdapter.fetchGeneration(CREDS, '2026-09-19', '2026-09-20');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.adiadoPorLimite).toBeFalsy();
+    expect(r.falhaParcial).toMatch(/1 de 2 dias/);
+  });
+});
