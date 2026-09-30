@@ -2,11 +2,13 @@
 // Seção "Do aceite à usina ligada": a jornada do cliente em formato de trilha de
 // raios, com o processo em PARALELO (projeto+homologação ‖ compra de material).
 // Conteúdo 100% estático — o processo é sempre o mesmo. Sem dados da proposta.
-import { empresa } from '../empresa-config.js';
+import { empresa, ehEcosun } from '../empresa-config.js';
 import { escapeHtml } from './format.js';
 
 export function renderComoFuncionaSection(): string {
   const marca = escapeHtml(empresa().nomeFantasia);
+  // Distribuidoras e prazo são da EcoSun (DF/GO). Outra empresa: texto neutro (30/09/2026).
+  const casa = ehEcosun();
   return `<section class="journey-section">
   <div class="container">
     <span class="section-tag">Sua jornada solar</span>
@@ -24,7 +26,7 @@ export function renderComoFuncionaSection(): string {
           <span class="jr-ic">📐</span>
           <div>
             <div class="jr-pt">Projeto + Homologação</div>
-            <div class="jr-pd">Responsável Técnico CREA/CFT elabora o projeto e protocola o pedido de acesso; a concessionária (Neoenergia-DF / Equatorial-GO) analisa e aprova — por lei até 15 dias (inversor ≤ 75 kW).</div>
+            <div class="jr-pd">Responsável Técnico CREA/CFT elabora o projeto e protocola o pedido de acesso; a concessionária${casa ? ' (Neoenergia-DF / Equatorial-GO)' : ''} analisa e aprova — por lei até 15 dias (inversor ≤ 75 kW).</div>
           </div>
         </div>
         <div class="jr-prow">
@@ -51,7 +53,7 @@ export function renderComoFuncionaSection(): string {
         <div class="jr-pz">economia ✅</div>
       </div>
     </div>
-    <div class="jr-total">Prazo total estimado: <b>cerca de 45 dias</b> — prazo de segurança, frequentemente antecipado, acompanhado de ponta a ponta pela ${marca}.</div>
+    <div class="jr-total">${casa ? `Prazo total estimado: <b>cerca de 45 dias</b> — prazo de segurança, frequentemente antecipado, acompanhado de ponta a ponta pela ${marca}.` : `Cada etapa acompanhada de ponta a ponta pela ${marca}.`}</div>
   </div>
 </section>`;
 }

@@ -80,6 +80,17 @@ export interface EmpresaConfig {
    *  compensado × tarifa. O demonstrativo não traz R$ e a Lei 14.300 cobra
    *  parte do Fio B, por isso é "estimada" e configurável por empresa. */
   gdTarifaRsKwh: number;
+  /** 148: tabela de preço da EMPRESA pra estimativa do lead: pares [kWp, R$/Wp]
+   *  em ordem crescente de kWp (interpola entre eles). null = sem tabela: a
+   *  EcoSun usa a de código (vetada 18/06); tenant fica SEM preço na estimativa
+   *  — nunca herda o preço da EcoSun (caso Conquista, 30/09/2026). */
+  tabelaPrecoWp: ReadonlyArray<readonly [number, number]> | null;
+  /** 148: potência (Wp) do módulo que a empresa vende. null = 670 (o de sempre). */
+  wpPorPainel: number | null;
+  /** 149: e-mails DA EMPRESA cadastrados na distribuidora (recebem o
+   *  demonstrativo de GD). O encaminhamento preserva o To original — é por ele
+   *  que o demonstrativo acha a empresa dona. Vazio = não recebe demonstrativo. */
+  gdEmailsOrigem: readonly string[];
 }
 
 export const EMPRESA_DEFAULTS: EmpresaConfig = {
@@ -119,6 +130,8 @@ export const EMPRESA_DEFAULTS: EmpresaConfig = {
   hspPadrao: null, tarifaPadrao: null, concessionariaPadrao: null,
   reguaAtencaoPct: 70,
   gdTarifaRsKwh: 0.99,
+  tabelaPrecoWp: null, wpPorPainel: null,
+  gdEmailsOrigem: [],
 };
 // Congelado: dezenas de call sites vão ler isto — mutação acidental corromperia a config global.
 Object.freeze(EMPRESA_DEFAULTS);
@@ -226,10 +239,40 @@ export function normalizarEmpresaRow(row: Record<string, unknown>): Readonly<Emp
       return row.gd_tarifa_rs_kwh !== null && row.gd_tarifa_rs_kwh !== undefined && Number.isFinite(v) && v > 0 && v < 10
         ? v : D.gdTarifaRsKwh;
     })(),
+    tabelaPrecoWp: normalizarTabelaPreco(row.tabela_preco_wp),
+    wpPorPainel: (() => {
+      const v = Number(row.wp_por_painel);
+      return row.wp_por_painel != null && Number.isFinite(v) && v >= 100 && v <= 1500 ? Math.round(v) : null;
+    })(),
+    gdEmailsOrigem: Object.freeze(
+      (Array.isArray(row.gd_emails_origem) ? row.gd_emails_origem : [])
+        .map((x) => (typeof x === 'string' ? x.trim().toLowerCase() : ''))
+        .filter((x) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x)),
+    ),
   };
   Object.freeze(result.marcasPermitidas);
   Object.freeze(result.marcasBloqueadas);
   return Object.freeze(result);
+}
+
+/**
+ * Tabela de preço vinda do banco (jsonb) → pares [kWp, R$/Wp] válidos e em
+ * ordem de kWp. Qualquer coisa estranha (texto, negativo, R$/Wp absurdo) faz a
+ * tabela inteira virar null: preço errado pro cliente é pior que sem preço.
+ */
+export function normalizarTabelaPreco(v: unknown): ReadonlyArray<readonly [number, number]> | null {
+  if (!Array.isArray(v) || v.length === 0 || v.length > 40) return null;
+  const pares: Array<readonly [number, number]> = [];
+  for (const item of v) {
+    if (!Array.isArray(item) || item.length !== 2) return null;
+    const kwp = Number(item[0]);
+    const rsWp = Number(item[1]);
+    if (!Number.isFinite(kwp) || !Number.isFinite(rsWp) || kwp <= 0 || rsWp < 0.5 || rsWp > 20) return null;
+    pares.push(Object.freeze([kwp, rsWp] as const));
+  }
+  pares.sort((a, b) => a[0] - b[0]);
+  for (let i = 1; i < pares.length; i++) if (pares[i][0] === pares[i - 1][0]) return null;
+  return Object.freeze(pares);
 }
 
 // Placeholders de empresa pra prompts/textos. Mantém desconhecidos intactos.

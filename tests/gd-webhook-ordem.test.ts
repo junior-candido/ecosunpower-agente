@@ -19,14 +19,31 @@ describe('rota /webhooks/resend', () => {
     expect(g).toBeGreaterThan(a);
     expect(r).toBeGreaterThan(g);
   });
-  it('processa o demonstrativo DENTRO do contexto da EcoSun (RLS estrito) e com a empresa no repo', () => {
+  it('processa o demonstrativo DENTRO do contexto da empresa DONA (RLS estrito) e com ela no repo', () => {
     const g = rota.indexOf('classificarEmailGd(req.body)');
     const r = rota.indexOf('processarRespostaEmail(');
     const bloco = rota.slice(g, r);
-    expect(bloco).toMatch(/rodarNaEmpresa: \(fn\) => comEmpresaDe\(ECOSUN_COMPANY_ID, fn\)/);
+    // 30/09/2026: a dona sai do To original × gd_emails_origem; sem cadastro
+    // que case, continua a EcoSun (empresaDoEmailGd, testado à parte).
+    expect(bloco).toMatch(/const donaGd = gd\.tipo === 'demonstrativo'\s*\?\s*empresaDoEmailGd\(gd\.para, todasEmpresasConhecidas\(\), ECOSUN_COMPANY_ID\)\s*:\s*ECOSUN_COMPANY_ID/);
+    expect(bloco).toMatch(/rodarNaEmpresa: \(fn\) => comEmpresaDe\(donaGd, fn\)/);
     // o client nasce em montarDeps, que o processador chama DENTRO do contexto
     // (comportamento coberto em gd-demonstrativo-webhook.test.ts)
-    expect(bloco).toMatch(/montarDeps: \(\) => \{[\s\S]*criarRepoDemonstrativo\(supabase\.getClient\(\), ECOSUN_COMPANY_ID\)/);
+    expect(bloco).toMatch(/montarDeps: \(\) => \{[\s\S]*criarRepoDemonstrativo\(supabase\.getClient\(\), donaGd\)/);
+  });
+  it('aviso do demonstrativo vai pela rota segura DA EMPRESA (nunca fixo no dono da EcoSun)', () => {
+    const g = rota.indexOf('classificarEmailGd(req.body)');
+    const r = rota.indexOf('processarRespostaEmail(');
+    const bloco = rota.slice(g, r);
+    expect(bloco).toMatch(/rotasAutomaticas\.avisoAdmin\(donaGd,/);
+    expect(bloco).not.toMatch(/config\.engineerPhone/);
+  });
+  it('ambíguo não grava; empresa cliente exige origem verificada', () => {
+    const g = rota.indexOf('classificarEmailGd(req.body)');
+    const r = rota.indexOf('processarRespostaEmail(');
+    const bloco = rota.slice(g, r);
+    expect(bloco).toMatch(/if \(!donaGd\) return;/);
+    expect(bloco).toMatch(/exigirOrigemVerificada: !gdDaCasa/);
   });
   it('responde 200 ANTES de processar (retry da Resend nao duplica)', () => {
     const g = rota.indexOf('classificarEmailGd(req.body)');

@@ -1935,13 +1935,16 @@ export class SupabaseService {
     numeroProposta?: string;
     clienteNome?: string;
     tipo?: 'basica' | 'personalizada';
+    /** Empresa dona (30/09/2026): quem re-renderiza pedaço da página (marca
+     *  d'água do vídeo) roda na empresa dela, nunca como EcoSun. */
+    companyId?: string | null;
   }> {
     // .maybeSingle() retorna data=null sem error pra "no rows".
     // Erro aqui = falha real de DB (conexao, schema, RLS) — propaga pro endpoint
     // retornar 500 em vez de 404 silencioso.
     const { data, error } = await this.client
       .from('propostas_publicas')
-      .select('html_content, numero_proposta, cliente_nome, expires_at, revoked, tipo')
+      .select('html_content, numero_proposta, cliente_nome, expires_at, revoked, tipo, company_id')
       .eq('slug', slug)
       .maybeSingle();
 
@@ -1956,6 +1959,7 @@ export class SupabaseService {
       numeroProposta: data.numero_proposta,
       clienteNome: data.cliente_nome,
       tipo: data.tipo ?? 'basica',
+      companyId: (data as { company_id?: string | null }).company_id ?? null,
     };
   }
 

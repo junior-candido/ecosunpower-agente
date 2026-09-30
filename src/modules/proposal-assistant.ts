@@ -31,7 +31,7 @@ import {
 import { renderProposalHTML, type ProposalData } from './proposal/template.js';
 import { temBateria } from './proposal/bateria.js';
 import { parcelaCartaoBelenus, parcelaCartaoSolFacil, parcelasMaxCartaoSolar, type TabelaCartao } from './proposal/cartao-solar.js';
-import { obterLogoBase64, LOGO_ECOSUNPOWER_BRANCO_BASE64 } from './proposal/assets/logo-base64.js';
+import { obterLogoBase64, LOGO_ECOSUNPOWER_BRANCO_BASE64, LOGO_VAZIA } from './proposal/assets/logo-base64.js';
 import { somaServicosExtras, renderServiceOnlyHTML, type ServicoItem, type ServiceOnlyData } from './proposal/service-render.js';
 import { montarDadosInputCompleto } from './proposal/dados-input.js';
 import { construirSeedReopen, construirSeedClone } from './proposal/reopen-seed.js';
@@ -48,7 +48,7 @@ import { downloadWabaMedia } from './proposal/attachments/whatsapp-media-downloa
 import type { MetaWhatsAppService } from './meta-whatsapp.js';
 import { enviarPropostaParaCliente } from './eva-sender.js';
 import { CasesFetcher, type Case } from './cases-fetcher.js';
-import { empresa, interpolarEmpresa, comEmpresaDe } from './empresa-config.js';
+import { empresa, interpolarEmpresa, comEmpresaDe, ehEcosun } from './empresa-config.js';
 import { renderSocialProofPage } from './proposal/social-proof-page.js';
 import { resumirRascunho } from './proposal/rascunho.js';
 import { medirIa } from './custos/ia-metering.js';
@@ -780,7 +780,8 @@ export class ProposalAssistant {
   // embutido, cache por path dentro de obterLogoBase64). Sem supabaseService
   // (modo offline/teste) usa direto a logo EcoSun embutida.
   private async logoProposta(): Promise<string> {
-    if (!this.supabaseService) return LOGO_ECOSUNPOWER_BRANCO_BASE64;
+    // Sem banco: só a EcoSun tem logo embutida; tenant fica sem (nunca a da casa).
+    if (!this.supabaseService) return ehEcosun() ? LOGO_ECOSUNPOWER_BRANCO_BASE64 : LOGO_VAZIA;
     return obterLogoBase64(this.supabaseService.getClient());
   }
 
@@ -800,6 +801,9 @@ export class ProposalAssistant {
   // de prova social (6 obras em grade 3×2) que vai antes do CTA "fechar" no
   // PDF/web. Retorna '' se algo falhar — proposta segue sem prova social.
   private async buildSocialProofHtml(tipoCliente: string | undefined): Promise<string> {
+    // As obras e a nota do Google são da EcoSun (site dela). Outra empresa não
+    // pode mostrar obra alheia como sua — sai sem prova social (30/09/2026).
+    if (!ehEcosun()) return '';
     try {
       const tipo = this.tipoToCaseTipo(tipoCliente);
       // 6 obras na grade 3×2 (pedido Junior 21/07) — o fetcher completa com
@@ -1327,8 +1331,8 @@ export class ProposalAssistant {
           empresa: this.companyDefaults,
           criarPagamentoPadrao: (t) => servicePaymentOptions(t),
         });
-        // hero/rodapé da proposta só-serviço usam a logo DARK fixa; não busca logo no Storage à toa.
-        pdfBuffer = await htmlToPdf(renderServiceOnlyHTML(serviceData), { waitForChartMs: 0 });
+        // hero/rodapé: EcoSun = logo prata fixa; empresa cliente = a logo DELA.
+        pdfBuffer = await htmlToPdf(renderServiceOnlyHTML(serviceData, await this.logoProposta()), { waitForChartMs: 0 });
       } else {
         const calcInput = this.dataToCalculatorInput(last.data);
         const calculations = calcular(calcInput);
@@ -1647,8 +1651,8 @@ export class ProposalAssistant {
       criarPagamentoPadrao: (total) => servicePaymentOptions(total),
     });
 
-    // hero/rodapé da proposta só-serviço usam a logo DARK fixa; não busca logo no Storage à toa.
-    const html = renderServiceOnlyHTML(serviceData);
+    // hero/rodapé: EcoSun = logo prata fixa; empresa cliente = a logo DELA.
+    const html = renderServiceOnlyHTML(serviceData, await this.logoProposta());
     const pdfBuffer = await htmlToPdf(html, { waitForChartMs: 0 });
 
     const drivePromise = this.driveUploader

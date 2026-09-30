@@ -356,3 +356,16 @@ describe('gdTarifaRsKwh (tarifa da economia estimada do relatorio GD)', () => {
     expect(normalizarEmpresaRow({ gd_tarifa_rs_kwh: 0 }).gdTarifaRsKwh).toBe(0.99);
   });
 });
+
+describe('gd_emails_origem (30/09/2026)', () => {
+  it('normaliza pra minúsculo, tira espaço e descarta o que não é e-mail', () => {
+    const e = normalizarEmpresaRow({
+      company_id: 'c1a2b3c4-0000-0000-0000-00000000aaaa',
+      gd_emails_origem: [' Projetos@ConquistaSolar.com.br ', 'lixo', '', null],
+    });
+    expect(e.gdEmailsOrigem).toEqual(['projetos@conquistasolar.com.br']);
+  });
+  it('sem a coluna → lista vazia (inclusive a EcoSun)', () => {
+    expect(normalizarEmpresaRow({}).gdEmailsOrigem).toEqual([]);
+  });
+});

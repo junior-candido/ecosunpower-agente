@@ -14,7 +14,12 @@ export interface DadosAssunto {
 }
 
 export type EmailGd =
-  | { tipo: 'demonstrativo'; emailId: string | null; assunto: DadosAssunto | null }
+  | {
+      tipo: 'demonstrativo'; emailId: string | null; assunto: DadosAssunto | null;
+      /** To ORIGINAL (o encaminhamento do Gmail preserva): o e-mail que a empresa
+       *  cadastrou na distribuidora. É por ele que se acha a empresa dona. */
+      para: string[];
+    }
   | { tipo: 'confirmacao_gmail'; emailId: string | null; codigo: string | null };
 
 const RE_DEMONSTRATIVO = /Demonstrativo do Faturamento/i;
@@ -74,9 +79,39 @@ export function classificarEmailGd(body: unknown): EmailGd | null {
   // "To: faturas@" so abria porta pra e-mail forjado.) O From ainda pode ser
   // forjado: a prova de verdade e o DKIM no e-mail bruto, conferido na ingestao.
   if (RE_DEMONSTRATIVO.test(assunto) && de.endsWith('@neoenergia.com')) {
-    return { tipo: 'demonstrativo', emailId, assunto: dadosDoAssunto(assunto) };
+    return { tipo: 'demonstrativo', emailId, assunto: dadosDoAssunto(assunto), para: enderecos(d.to) };
   }
   return null;
+}
+
+/**
+ * De qual EMPRESA é este demonstrativo (30/09/2026, caso Conquista Solar).
+ *
+ * Cada empresa cadastra os e-mails dela que recebem o demonstrativo da
+ * distribuidora (empresa_config.gd_emails_origem). O To original casou com o
+ * cadastro de UMA empresa → é dela. Ninguém cadastrou → fica com a `padrao`
+ * (a casa), exatamente como era antes desta mudança: nada muda pra quem já
+ * recebia. Duas empresas cadastraram o mesmo e-mail → null: o dado é de ALGUMA
+ * empresa cliente e não se sabe qual — não vai pra ninguém (nem pra casa).
+ */
+export function empresaDoEmailGd(
+  para: readonly string[],
+  empresas: ReadonlyArray<{ companyId: string; gdEmailsOrigem: readonly string[] }>,
+  padrao: string,
+): string | null {
+  const alvos = new Set(para.map((e) => e.trim().toLowerCase()).filter(Boolean));
+  if (alvos.size === 0) return padrao;
+  const donas = new Set<string>();
+  for (const emp of empresas) {
+    if (emp.companyId === padrao) continue;
+    if (emp.gdEmailsOrigem.some((e) => alvos.has(e.trim().toLowerCase()))) donas.add(emp.companyId);
+  }
+  if (donas.size === 1) return [...donas][0];
+  if (donas.size > 1) {
+    console.error(`[gd] e-mail de demonstrativo cadastrado em ${donas.size} empresas (${[...alvos].join(', ')}) — ambíguo, NÃO gravei em ninguém. Corrija gd_emails_origem.`);
+    return null;
+  }
+  return padrao;
 }
 
 export type ResultadoDkim = 'pass' | 'fail' | 'desconhecido';

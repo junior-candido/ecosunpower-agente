@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classificarEmailGd, dadosDoAssunto, interpretarDkim, dominioNeoenergia } from '../src/modules/gd/demonstrativo-email.js';
+import { classificarEmailGd, dadosDoAssunto, interpretarDkim, dominioNeoenergia, empresaDoEmailGd } from '../src/modules/gd/demonstrativo-email.js';
 
 // Assunto REAL (formato), com nome e codigos ficticios.
 const ASSUNTO =
@@ -119,5 +119,50 @@ describe('interpretarDkim (resultado do mailauth no e-mail bruto)', () => {
     expect(dominioNeoenergia('NEOENERGIA.COM.')).toBe(true);
     expect(dominioNeoenergia('xneoenergia.com')).toBe(false);
     expect(dominioNeoenergia('neoenergia.com.br.golpe.io')).toBe(false);
+  });
+});
+
+// 30/09/2026 — demonstrativo POR EMPRESA (caso Conquista Solar).
+// O encaminhamento do Gmail preserva o To ORIGINAL: é o e-mail que a empresa
+// cadastrou na distribuidora. É por ele que o demonstrativo acha a empresa dona.
+describe('destinatário original e empresa dona do demonstrativo', () => {
+  it('classificador guarda o To original (minúsculo, sem nome)', () => {
+    const r = classificarEmailGd(payload({
+      from: 'r2d2.frms@neoenergia.com',
+      to: ['Projetos Conquista <PROJETOS@conquistasolar.com.br>'],
+      subject: ASSUNTO,
+    }));
+    expect(r?.tipo).toBe('demonstrativo');
+    if (r?.tipo !== 'demonstrativo') return;
+    expect(r.para).toEqual(['projetos@conquistasolar.com.br']);
+  });
+
+  const ECOSUN = '00000000-0000-0000-0000-000000000001';
+  const CONQUISTA = 'c1a2b3c4-0000-0000-0000-00000000aaaa';
+  const OUTRA = 'd1d2d3d4-0000-0000-0000-00000000bbbb';
+  const empresas = [
+    { companyId: ECOSUN, gdEmailsOrigem: [] },
+    { companyId: CONQUISTA, gdEmailsOrigem: ['projetos@conquistasolar.com.br'] },
+    { companyId: OUTRA, gdEmailsOrigem: ['gd@outra.com'] },
+  ];
+
+  it('To cadastrado por uma empresa → aquela empresa', () => {
+    expect(empresaDoEmailGd(['projetos@conquistasolar.com.br'], empresas, ECOSUN)).toBe(CONQUISTA);
+    expect(empresaDoEmailGd(['GD@Outra.com'], empresas, ECOSUN)).toBe(OUTRA);
+  });
+
+  it('To que ninguém cadastrou → EcoSun, exatamente como era antes', () => {
+    expect(empresaDoEmailGd(['ecosunpower2032@gmail.com'], empresas, ECOSUN)).toBe(ECOSUN);
+    expect(empresaDoEmailGd([], empresas, ECOSUN)).toBe(ECOSUN);
+  });
+
+  it('mesmo e-mail cadastrado por duas empresas → ninguém (null), nem a casa', () => {
+    const dup = [...empresas, { companyId: 'e1e2e3e4-0000-0000-0000-00000000cccc', gdEmailsOrigem: ['projetos@conquistasolar.com.br'] }];
+    expect(empresaDoEmailGd(['projetos@conquistasolar.com.br'], dup, ECOSUN)).toBeNull();
+  });
+
+  it('e-mail que a casa também listou não rouba o do tenant', () => {
+    const comCasa = [{ companyId: ECOSUN, gdEmailsOrigem: ['projetos@conquistasolar.com.br'] }, ...empresas.slice(1)];
+    expect(empresaDoEmailGd(['projetos@conquistasolar.com.br'], comCasa, ECOSUN)).toBe(CONQUISTA);
   });
 });

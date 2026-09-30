@@ -393,3 +393,30 @@ describe('assinaturaDemonstrativo', () => {
     expect(assinaturaDemonstrativo(invertido)).toBe(assinaturaDemonstrativo(r0.dados));
   });
 });
+
+// 30/09/2026 — demonstrativo de OUTRA empresa (tenant) só entra com a assinatura
+// da Neoenergia CONFIRMADA: o To agora decide a empresa, então um e-mail forjado
+// com o endereço dela no To empurraria dado falso pra conta dela.
+describe('ingerirDemonstrativo — empresa que exige origem verificada', () => {
+  it('sem prova (desconhecido): recusa sem baixar nada', async () => {
+    const d = deps({ verificarOrigem: vi.fn(async () => 'desconhecido' as const), exigirOrigemVerificada: true });
+    const r = await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
+    expect(r.status).toBe('recusado');
+    expect(d.listarAnexos).not.toHaveBeenCalled();
+    expect(d.salvos).toHaveLength(0);
+  });
+
+  it('erro ao conferir o DKIM também recusa (falha fechada)', async () => {
+    const d = deps({ verificarOrigem: vi.fn(async () => { throw new Error('dns timeout'); }), exigirOrigemVerificada: true });
+    const r = await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
+    expect(r.status).toBe('recusado');
+    expect(d.salvos).toHaveLength(0);
+  });
+
+  it('assinatura confirmada: grava normalmente', async () => {
+    const d = deps({ exigirOrigemVerificada: true });
+    const r = await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
+    expect(r.status).toBe('gravado');
+    expect(d.salvos[0].origem_verificada).toBe(true);
+  });
+});

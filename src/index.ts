@@ -150,7 +150,7 @@ import { PastaService } from './modules/relatorios/pasta/service.js';
 import { normalizarSlugPublico } from './modules/relatorios/slug.js';
 import { renderPastaHtml } from './modules/relatorios/pasta/template.js';
 import { buildCtwaPatch, shouldAttributeCtwa, resolveCampaignIdFromAd } from './modules/marketing/ctwa-attribution.js';
-import { carregarEmpresaConfig, carregarKits, empresa, empresaDe, comEmpresaDe, listaMarcasTexto, ehEcosun } from './modules/empresa-config.js';
+import { carregarEmpresaConfig, carregarKits, empresa, empresaDe, comEmpresaDe, listaMarcasTexto, ehEcosun, todasEmpresasConhecidas } from './modules/empresa-config.js';
 import { agendaDaEmpresa, destinoAdminDaEmpresa, envioProibido } from './modules/tenant-admin-guard.js';
 import { validarModoRls, modoRls } from './modules/tenant-db.js';
 import { variantesTelefone } from './modules/phone.js';
@@ -6165,9 +6165,14 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
               });
               const fmt = (n: number) => 'R$ ' + n.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
               const origem = e.consumoOrigem === 'informado' ? 'informado' : 'estimado pela conta';
-              estimativaMsg = `\n\n📐 Estimativa (calculadora · conta ${fmt(contaMensal)} · ${e.consumoKwh} kWh ${origem}): ~${e.paineis} painéis · ${e.kWp.toFixed(1)} kWp · ${fmt(e.precoRs)} · economia ~${fmt(e.economiaMensalRs)}/mês (fatura fica ~${fmt(e.contaResidualRs)})\n_(base sua pra fechar o valor exato)_`;
-              if (e.precoForaDaTabela) {
-                estimativaMsg += `\n⚠️ Sistema menor que a menor faixa da tabela (3 kWp) — o preço acima é o do piso da tabela, NÃO o desse sistema. Confirme o valor antes de passar pro cliente.`;
+              // Preço é da EMPRESA que atende (30/09/2026). Sem tabela cadastrada
+              // o aviso sai sem preço — nunca com o preço de outra empresa.
+              const precoTxt = e.precoRs != null ? `${fmt(e.precoRs)} · ` : '';
+              estimativaMsg = `\n\n📐 Estimativa (calculadora · conta ${fmt(contaMensal)} · ${e.consumoKwh} kWh ${origem}): ~${e.paineis} painéis · ${e.kWp.toFixed(1)} kWp · ${precoTxt}economia ~${fmt(e.economiaMensalRs)}/mês (fatura fica ~${fmt(e.contaResidualRs)})\n_(base sua pra fechar o valor exato)_`;
+              if (e.precoRs == null) {
+                estimativaMsg += `\nℹ️ Sem tabela de preço cadastrada para a empresa — a estimativa saiu sem valor.`;
+              } else if (e.precoForaDaTabela) {
+                estimativaMsg += `\n⚠️ Sistema menor que a menor faixa da tabela de preço — o preço acima é o do piso da tabela, NÃO o desse sistema. Confirme o valor antes de passar pro cliente.`;
               }
               // O cliente falou em carga nova mas não deu o kWh: a estimativa
               // NÃO tem como somar isso. Melhor avisar do que mandar sistema
@@ -9957,14 +9962,20 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
                 ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] ?? c));
               // [ECOSOF] Logo do watermark resolvida em runtime (Storage com
               // fallback embutido EcoSun) pra adicionar sobre o video.
-              const { obterLogoBase64 } = await import('./modules/proposal/assets/logo-base64.js');
-              const logoWatermark = await obterLogoBase64(supabase.getClient());
+              // 30/09/2026: roda na EMPRESA dona da proposta — sem isso a página
+              // pública (fora de contexto) punha a logo da EcoSun no vídeo de
+              // proposta de tenant. Tenant sem logo → sem marca d'água.
+              const { obterLogoBase64, LOGO_VAZIA } = await import('./modules/proposal/assets/logo-base64.js');
+              const { logoWatermark, nomeWatermark } = await comEmpresaDe(result.companyId ?? null, async () => ({
+                logoWatermark: await obterLogoBase64(supabase.getClient()),
+                nomeWatermark: empresa().nomeFantasia,
+              }));
               const videoTag = `<div style="position:relative">
   <video controls autoplay muted loop playsinline style="width:100%;border-radius:12px;display:block;background:#000">
     <source src="${signed.signedUrl}" type="video/mp4">
     Seu navegador não suporta vídeo HTML5.
   </video>
-  <img src="${logoWatermark}" alt="${escapeHtml(empresa().nomeFantasia)}" style="position:absolute;bottom:50px;right:8px;max-width:14%;max-height:32px;opacity:0.85;filter:drop-shadow(0 1px 4px rgba(0,0,0,0.4));pointer-events:none">
+  ${logoWatermark === LOGO_VAZIA ? '' : `<img src="${logoWatermark}" alt="${escapeHtml(nomeWatermark)}" style="position:absolute;bottom:50px;right:8px;max-width:14%;max-height:32px;opacity:0.85;filter:drop-shadow(0 1px 4px rgba(0,0,0,0.4));pointer-events:none">`}
 </div>
 <p style="text-align:center;font-size:13px;color:#555;font-style:italic;margin-top:10px">🎥 ${escLegenda}</p>`;
 
@@ -10309,26 +10320,45 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
         // Responde JA: o processamento (baixar PDF, ler, banco, zap) pode passar
         // do tempo da Resend, e ela reenviaria — virando aviso duplicado.
         res.status(200).json({ ok: true, gd: gd.tipo });
+        // 30/09/2026 — POR EMPRESA (caso Conquista Solar): o To original (que o
+        // encaminhamento do Gmail preserva) diz de quem é o demonstrativo, pelo
+        // cadastro empresa_config.gd_emails_origem. Sem cadastro que case, fica
+        // com a EcoSun, como sempre foi. Cadastrado em DUAS empresas (ambíguo)
+        // → não grava em ninguém. A confirmação do Gmail (código) segue pra
+        // casa: vai pro nosso endereço, não diz a empresa e não tem dado de
+        // cliente. O contexto da empresa faz o getClient() usar o crachá certo
+        // com RLS_ESTRITO=on (sem ele, NINGUEM).
+        const { empresaDoEmailGd } = await import('./modules/gd/demonstrativo-email.js');
+        const donaGd = gd.tipo === 'demonstrativo'
+          ? empresaDoEmailGd(gd.para, todasEmpresasConhecidas(), ECOSUN_COMPANY_ID)
+          : ECOSUN_COMPANY_ID;
+        if (!donaGd) return; // ambíguo: já logado em empresaDoEmailGd, nada gravado nem avisado
+        const gdDaCasa = ehCasa(donaGd);
+        // Aviso pela rota segura (canal-automatico): casa → dono pelo canal de
+        // sempre; tenant → admin DELE, só pela instância própria, com a
+        // assistente contratada e sem pausa. Sem isso não manda (fica no painel).
+        // Botões só pra casa: o handler de botão só aceita admin da casa.
         const avisarGd = async (texto: string, leadId: string | null) => {
           const { sendAdminWithButtons } = await import('./modules/eva-admin-buttons.js');
-          await sendAdminWithButtons(
+          await rotasAutomaticas.avisoAdmin(donaGd, (destino) => sendAdminWithButtons(
             { metaWaba: metaWaba ?? null, sendText },
-            config.engineerPhone,
+            destino,
             texto,
-            leadId ? [{ id: `evabt:lead-view:${leadId}`, title: 'Ver no painel' }] : [],
-          );
+            gdDaCasa && leadId ? [{ id: `evabt:lead-view:${leadId}`, title: 'Ver no painel' }] : [],
+          ));
         };
-        // So a EcoSun encaminha demonstrativos hoje. O contexto da empresa faz o
-        // getClient() usar o cracha certo com RLS_ESTRITO=on (sem ele, NINGUEM).
         void processarEmailGd(
           {
-            rodarNaEmpresa: (fn) => comEmpresaDe(ECOSUN_COMPANY_ID, fn),
+            rodarNaEmpresa: (fn) => comEmpresaDe(donaGd, fn),
             montarDeps: () => {
               const apiKey = process.env.RESEND_API_KEY;
               if (!apiKey) return null;
               return {
-                ...criarRepoDemonstrativo(supabase.getClient(), ECOSUN_COMPANY_ID),
-                companyId: ECOSUN_COMPANY_ID,
+                ...criarRepoDemonstrativo(supabase.getClient(), donaGd),
+                companyId: donaGd,
+                // Empresa cliente: só com a assinatura da distribuidora confirmada
+                // (o To decide a empresa — e-mail forjado não pode jogar dado nela).
+                exigirOrigemVerificada: !gdDaCasa,
                 // Nada vai ao cliente nesta fase: o resumo so chega pro Junior.
                 modoTeste: true,
                 listarAnexos: (id) => listarAnexosResend(apiKey, id),
@@ -11674,6 +11704,13 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
         sendAdminWithButtons({ metaWaba, sendText }, to, body, buttons, footer),
       adminPhone: config.engineerPhone,
       dryRun: proactiveDryRun,
+      // POR EMPRESA (30/09/2026, caso Conquista Solar): usina da casa segue o
+      // fluxo de sempre; usina de TENANT vira aviso admin DELE pela rota segura
+      // (canal-automatico: só pela instância própria, com a assistente
+      // contratada e sem pausa por cobrança; destino = telefone_admin dele).
+      // Sem isso → não manda, fica no painel. Nunca pelo número da casa.
+      ehCasa: (companyId) => ehCasa(companyId),
+      avisoAdminDaEmpresa: (companyId, enviar) => rotasAutomaticas.avisoAdmin(companyId, enviar),
       // Resumo diário: em treino, queda/milestone não viram msg individual.
       autonomiaOn: async (tipo: 'queda' | 'parabens') => {
         const { getConfig } = await import('./modules/monitoring/abordagem/abordagens-repo.js');
