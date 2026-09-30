@@ -11679,6 +11679,15 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
         sendAdminWithButtons({ metaWaba, sendText }, to, body, buttons, footer),
       adminPhone: config.engineerPhone,
       dryRun: proactiveDryRun,
+      // POR EMPRESA (30/09/2026, caso Conquista Solar): cada alerta roda no
+      // contexto da empresa DONA da usina — canal de WhatsApp, travas LGPD e
+      // destino passam a ser os dela. EcoSun → dono, como sempre; tenant com
+      // telefone_admin → ele, pela instância dele; tenant sem → só no painel.
+      // Tenant não tem abordagem automática ao cliente (sai pelo WABA da casa)
+      // nem o resumo diário (é da casa): o alerta vira aviso admin dele.
+      rodarNaEmpresa: (companyId, fn) => comEmpresaDe(companyId, fn),
+      destinoAdmin: () => destinoAdminDaEmpresa(config.engineerPhone),
+      somenteAvisoAdmin: () => !ehEcosun(),
       // Resumo diário: em treino, queda/milestone não viram msg individual.
       autonomiaOn: async (tipo: 'queda' | 'parabens') => {
         const { getConfig } = await import('./modules/monitoring/abordagem/abordagens-repo.js');

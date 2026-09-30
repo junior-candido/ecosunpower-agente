@@ -205,3 +205,76 @@ describe('runDispatchCycle', () => {
     expect(r.enviados).toBe(1);
   });
 });
+
+// 30/09/2026 — alerta é da EMPRESA dona da usina (caso Conquista Solar).
+// O cron roda sem empresa no contexto: sem isto, TODO alerta (de qualquer
+// empresa) saía pro zap do dono da EcoSun, pelo WhatsApp oficial da EcoSun.
+describe('runDispatchCycle — por empresa', () => {
+  const TENANT = '11111111-1111-1111-1111-111111111111';
+  const sistemaTenant = {
+    id: 'sid-1', apelido: 'Usina BA', potencia_kwp: 8, marca_inversor: 'sungrow',
+    lead_id: 'lid-1', etapa_obra: 'pos_venda', company_id: TENANT,
+  };
+
+  it('processa o alerta dentro do contexto da empresa dona da usina', async () => {
+    const rodarNaEmpresa = vi.fn(async (_cid: string | null, fn: () => Promise<unknown>) => fn());
+    const ctx = fakeCtx({
+      supabase: {
+        getAlertasParaDespachar: vi.fn().mockResolvedValue([alerta()]),
+        getSistemaById: vi.fn().mockResolvedValue(sistemaTenant),
+      },
+      rodarNaEmpresa,
+      destinoAdmin: () => '5577988887777',
+      somenteAvisoAdmin: () => true,
+    });
+    await runDispatchCycle(horaJanela, ctx as any);
+    expect(rodarNaEmpresa).toHaveBeenCalledWith(TENANT, expect.any(Function));
+  });
+
+  it('empresa com telefone de admin: avisa ELA, sem abordagem automática nem resumo da casa', async () => {
+    const proporAbordagem = vi.fn().mockResolvedValue('enviada');
+    const autonomiaOn = vi.fn().mockResolvedValue(false);
+    const ctx = fakeCtx({
+      supabase: {
+        getAlertasParaDespachar: vi.fn().mockResolvedValue([alerta({ tipo: 'queda_geracao' })]),
+        getSistemaById: vi.fn().mockResolvedValue(sistemaTenant),
+      },
+      rodarNaEmpresa: async (_c: string | null, fn: () => Promise<unknown>) => fn(),
+      destinoAdmin: () => '5577988887777',
+      somenteAvisoAdmin: () => true,
+      proporAbordagem, autonomiaOn,
+    });
+    const r = await runDispatchCycle(horaJanela, ctx as any);
+    expect(r.enviados).toBe(1);
+    expect(ctx.sendAdminWithButtons).toHaveBeenCalledOnce();
+    expect(ctx.sendAdminWithButtons.mock.calls[0][0]).toBe('5577988887777');
+    expect(proporAbordagem).not.toHaveBeenCalled();
+    expect(autonomiaOn).not.toHaveBeenCalled();
+    expect(ctx.supabase.marcarAlertaAbsorvidoPorResumo).not.toHaveBeenCalled();
+  });
+
+  it('empresa SEM telefone de admin: não manda pra ninguém (nunca pro dono da EcoSun), fica no painel', async () => {
+    const ctx = fakeCtx({
+      supabase: {
+        getAlertasParaDespachar: vi.fn().mockResolvedValue([alerta()]),
+        getSistemaById: vi.fn().mockResolvedValue(sistemaTenant),
+      },
+      rodarNaEmpresa: async (_c: string | null, fn: () => Promise<unknown>) => fn(),
+      destinoAdmin: () => null,
+      somenteAvisoAdmin: () => true,
+    });
+    const r = await runDispatchCycle(horaJanela, ctx as any);
+    expect(ctx.sendAdminWithButtons).not.toHaveBeenCalled();
+    expect(r.enviados).toBe(0);
+    expect(r.soNoPainel).toBe(1);
+    // Não fica voltando pra fila a cada ciclo: mesma trava de 3 dias do envio.
+    expect(ctx.supabase.marcarAlertaEnviado).toHaveBeenCalledOnce();
+  });
+
+  it('sem os ganchos novos (EcoSun / compat): continua mandando pro adminPhone de sempre', async () => {
+    const ctx = fakeCtx({ supabase: { getAlertasParaDespachar: vi.fn().mockResolvedValue([alerta()]) } });
+    const r = await runDispatchCycle(horaJanela, ctx as any);
+    expect(r.enviados).toBe(1);
+    expect(ctx.sendAdminWithButtons.mock.calls[0][0]).toBe('5561987654321');
+  });
+});
