@@ -9962,14 +9962,20 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
                 ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] ?? c));
               // [ECOSOF] Logo do watermark resolvida em runtime (Storage com
               // fallback embutido EcoSun) pra adicionar sobre o video.
-              const { obterLogoBase64 } = await import('./modules/proposal/assets/logo-base64.js');
-              const logoWatermark = await obterLogoBase64(supabase.getClient());
+              // 30/09/2026: roda na EMPRESA dona da proposta — sem isso a página
+              // pública (fora de contexto) punha a logo da EcoSun no vídeo de
+              // proposta de tenant. Tenant sem logo → sem marca d'água.
+              const { obterLogoBase64, LOGO_VAZIA } = await import('./modules/proposal/assets/logo-base64.js');
+              const { logoWatermark, nomeWatermark } = await comEmpresaDe(result.companyId ?? null, async () => ({
+                logoWatermark: await obterLogoBase64(supabase.getClient()),
+                nomeWatermark: empresa().nomeFantasia,
+              }));
               const videoTag = `<div style="position:relative">
   <video controls autoplay muted loop playsinline style="width:100%;border-radius:12px;display:block;background:#000">
     <source src="${signed.signedUrl}" type="video/mp4">
     Seu navegador não suporta vídeo HTML5.
   </video>
-  <img src="${logoWatermark}" alt="${escapeHtml(empresa().nomeFantasia)}" style="position:absolute;bottom:50px;right:8px;max-width:14%;max-height:32px;opacity:0.85;filter:drop-shadow(0 1px 4px rgba(0,0,0,0.4));pointer-events:none">
+  ${logoWatermark === LOGO_VAZIA ? '' : `<img src="${logoWatermark}" alt="${escapeHtml(nomeWatermark)}" style="position:absolute;bottom:50px;right:8px;max-width:14%;max-height:32px;opacity:0.85;filter:drop-shadow(0 1px 4px rgba(0,0,0,0.4));pointer-events:none">`}
 </div>
 <p style="text-align:center;font-size:13px;color:#555;font-style:italic;margin-top:10px">🎥 ${escLegenda}</p>`;
 

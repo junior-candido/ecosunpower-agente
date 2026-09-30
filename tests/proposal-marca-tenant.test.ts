@@ -112,3 +112,55 @@ describe('proposta de SERVIÇO de empresa cliente — nada da EcoSun', () => {
     expect(html).toContain('Garantia Conquista Solar');
   });
 });
+
+describe('proposta da EcoSun continua a de sempre (fora de contexto de empresa)', () => {
+  it('solar: logo prata, Junior, 45 dias, DF/GO e marcas da casa', () => {
+    const d = dadosTenant();
+    d.empresa = { nome: 'EcoSunPower', cnpj: '33.020.459/0001-06', cidade: 'Brasília-DF', telefone: '(61) 99697-8781', site: 'ecosunpower.eng.br' };
+    const html = renderProposalHTML(d, baseCalc());
+    expect(html).toContain(LOGO_ECOSUNPOWER_DARK_BASE64);
+    expect(html).toContain('Junior Candido');
+    expect(html).toContain('Em cerca de 45 dias seu sistema está gerando.');
+    expect(html).toContain('Trina, JA Solar, Jinko, LONGi, Risen, DAH');
+    expect(renderComoFuncionaSection()).toContain('Neoenergia-DF / Equatorial-GO');
+  });
+
+  it('serviço: logo prata e Garantia EcoSunPower 12 meses', async () => {
+    const { renderServiceOnlyHTML } = await import('../src/modules/proposal/service-render.js');
+    const html = renderServiceOnlyHTML({
+      numeroProposta: 'S-1', dataProposta: '30/09/2026', validadeDias: 5, nomeCliente: 'Cliente DF',
+      servicos: [{ descricao: 'Limpeza de módulos', valorRs: 500 } as never], totalRs: 500,
+      formasPagamento: [{ tipo: 'À Vista', titulo: 'PIX', valorPrincipal: 'R$ 500', valorSecundario: 'único', bullets: [] }],
+      empresa: { nome: 'EcoSunPower', cnpj: '33.020.459/0001-06', cidade: 'Brasília-DF', telefone: '(61) 99697-8781', site: 'ecosunpower.eng.br' },
+    });
+    expect(html).toContain(LOGO_ECOSUNPOWER_DARK_BASE64);
+    expect(html).toContain('Garantia EcoSunPower 12 meses');
+  });
+});
+
+describe('logo de empresa cliente em falha', () => {
+  const clienteQueFalha = { storage: { from: () => ({ download: async () => { throw new Error('rede'); } }) } };
+
+  it('download que falha → LOGO_VAZIA (nunca a da EcoSun)', async () => {
+    const TENANT2 = 'c1a2b3c4-0000-0000-0000-00000000bbbb';
+    const rows = [{ company_id: TENANT2, nome_fantasia: 'Outra Solar', logo_storage_path: 'outra/logo.png' }];
+    const client = { from: () => ({ select: async () => ({ data: rows, error: null }) }) } as unknown as Parameters<typeof carregarEmpresaConfig>[0];
+    await carregarEmpresaConfig(client);
+    const logo = await comEmpresaDe(TENANT2, () => obterLogoBase64(clienteQueFalha as never));
+    expect(logo).toBe(LOGO_VAZIA);
+  });
+
+  it('marcaDoRelatorio com LOGO_VAZIA escreve o nome (logoSrc null)', async () => {
+    const { marcaDoRelatorio } = await import('../src/modules/gd/relatorio-marca.js');
+    const { normalizarEmpresaRow } = await import('../src/modules/empresa-config.js');
+    const e = normalizarEmpresaRow({ company_id: TENANT, nome_fantasia: 'Conquista Solar', logo_storage_path: 'conquista/logo.png' });
+    const m = await marcaDoRelatorio(e, { baixarLogo: async () => LOGO_VAZIA });
+    expect(m.logoSrc).toBeNull();
+  });
+
+  it('src que não é imagem embutida vira nome escrito', () => {
+    const html = comEmpresaDe(TENANT, () => renderProposalHTML(dadosTenant(), baseCalc(), '', 'javascript:alert(1)'));
+    expect(html).not.toContain('javascript:alert(1)');
+    expect(html).toMatch(/class="brand-name[^"]*"[^>]*>Conquista Solar</);
+  });
+});
