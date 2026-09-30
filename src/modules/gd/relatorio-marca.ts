@@ -4,7 +4,7 @@
 
 import type { EmpresaConfig } from '../empresa-config.js';
 import { ehEcosun } from '../empresa-config.js';
-import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from '../proposal/assets/logo-base64.js';
+import { LOGO_ECOSUNPOWER_BRANCO_BASE64, LOGO_VAZIA } from '../proposal/assets/logo-base64.js';
 import { LOGO_PASTA_BASE64 } from '../relatorios/pasta/logo-pasta.js';
 
 export interface MarcaRelatorio {
@@ -45,7 +45,8 @@ export async function marcaDoRelatorio(
     const baixada = await deps.baixarLogo(caminho);
     // obterLogoBase64 devolve logo da EcoSun (antiga ou nova) quando falha: num tenant isso é vazamento.
     const ehLogoDaCasa = baixada === LOGO_ECOSUNPOWER_BRANCO_BASE64 || baixada === LOGO_PASTA_BASE64;
-    logoSrc = baixada && (casa || !ehLogoDaCasa) ? baixada : null;
+    // LOGO_VAZIA = tenant sem logo (falha no download): escreve o nome no lugar.
+    logoSrc = baixada && baixada !== LOGO_VAZIA && (casa || !ehLogoDaCasa) ? baixada : null;
   } else if (!caminho && casa) {
     logoSrc = LOGO_PASTA_BASE64;
   }

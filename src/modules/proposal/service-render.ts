@@ -4,9 +4,10 @@
 //  - renderServiceOnlyHTML: proposta só-serviço elegante (sem solar, sem gráfico/payback).
 
 import { fmtRs, escapeHtml } from './format.js';
-import { LOGO_ECOSUNPOWER_BRANCO_BASE64, LOGO_ECOSUNPOWER_DARK_BASE64 } from './assets/logo-base64.js';
+import { LOGO_ECOSUNPOWER_BRANCO_BASE64, LOGO_VAZIA } from './assets/logo-base64.js';
+import { marcaFundoEscuro } from './marca-fundo-escuro.js';
 // [ECOSOF] empresa() lida em runtime (alt da logo = nome fantasia).
-import { empresa } from '../empresa-config.js';
+import { empresa, ehEcosun } from '../empresa-config.js';
 import { logoMeioPagamento } from './payment-logos.js';
 
 export interface ServicoItem {
@@ -110,6 +111,10 @@ export interface ServiceOnlyData {
 // [ECOSOF] TODO: quando houver logo "dark" por tenant, usar `logoBase64` no lugar
 // da constante fixa no hero/rodapé (mesma pendência do template principal).
 export function renderServiceOnlyHTML(data: ServiceOnlyData, logoBase64: string = LOGO_ECOSUNPOWER_BRANCO_BASE64): string {
+  // Empresa cliente: nunca a logo nem o nome da EcoSun (30/09/2026).
+  if (!ehEcosun() && logoBase64 === LOGO_ECOSUNPOWER_BRANCO_BASE64) logoBase64 = LOGO_VAZIA;
+  const casa = ehEcosun();
+  const nomeEmp = escapeHtml(empresa().nomeFantasia);
   if (!data.nomeCliente || !data.servicos?.length) {
     throw new Error('renderServiceOnlyHTML: precisa de nomeCliente e ao menos 1 serviço');
   }
@@ -145,7 +150,7 @@ export function renderServiceOnlyHTML(data: ServiceOnlyData, logoBase64: string 
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Proposta EcoSunPower — ${escapeHtml(data.nomeCliente)}</title>
+<title>Proposta ${casa ? 'EcoSunPower' : nomeEmp} — ${escapeHtml(data.nomeCliente)}</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -168,7 +173,7 @@ img{max-width:100%}
 <header style="background:linear-gradient(160deg,#0B2A45 0%,#0B5A87 55%,#0E7CB8 100%);color:#fff;padding:48px 24px">
   <div style="max-width:900px;margin:0 auto">
     <div class="svc-nav">
-      <img class="brand-logo" src="${LOGO_ECOSUNPOWER_DARK_BASE64}" alt="${escapeHtml(empresa().nomeFantasia)}">
+      ${marcaFundoEscuro('', logoBase64, empresa().nomeFantasia)}
       <div class="meta" style="font-size:12px;opacity:0.85;text-align:right">Proposta #${escapeHtml(data.numeroProposta)}<br>${escapeHtml(data.dataProposta)} · Válida ${data.validadeDias} dias</div>
     </div>
     <div style="display:inline-block;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);padding:6px 16px;border-radius:100px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:16px">⚡ Proposta de Serviço</div>
@@ -206,13 +211,13 @@ ${(data.observacoes && data.observacoes.length > 0) ? `<section style="padding:2
     </div>
     <div style="background:#fff;border:1px solid #E2E8F0;border-radius:16px;padding:24px">
       <div style="font-size:24px;margin-bottom:8px">🛡️</div>
-      <h3 style="font-size:17px;margin-bottom:8px">Garantia EcoSunPower 12 meses</h3>
-      <p style="font-size:14px;color:#64748B">Cobrimos a mão de obra e a execução do serviço por 12 meses. Acionamento direto pelo WhatsApp.</p>
+      <h3 style="font-size:17px;margin-bottom:8px">${casa ? 'Garantia EcoSunPower 12 meses' : `Garantia ${nomeEmp} ${empresa().garantiaInstalacaoMeses} meses`}</h3>
+      <p style="font-size:14px;color:#64748B">Cobrimos a mão de obra e a execução do serviço por ${casa ? 12 : empresa().garantiaInstalacaoMeses} meses. Acionamento direto pelo WhatsApp.</p>
     </div>
     <div style="background:#fff;border:1px solid #E2E8F0;border-radius:16px;padding:24px">
       <div style="font-size:24px;margin-bottom:8px">🤝</div>
       <h3 style="font-size:17px;margin-bottom:8px">Responsável Técnico que atende direto</h3>
-      <p style="font-size:14px;color:#64748B">Você fala direto com o Responsável Técnico CREA/CFT da EcoSunPower, do orçamento ao pós-serviço.</p>
+      <p style="font-size:14px;color:#64748B">${casa ? 'Você fala direto com o Responsável Técnico CREA/CFT da EcoSunPower, do orçamento ao pós-serviço.' : `Você fala direto com o responsável técnico da ${nomeEmp}, do orçamento ao pós-serviço.`}</p>
     </div>
   </div>
 </section>
@@ -223,7 +228,7 @@ ${(data.observacoes && data.observacoes.length > 0) ? `<section style="padding:2
 </section>
 
 <footer style="background:#0F172A;color:rgba(255,255,255,0.7);padding:32px 24px;text-align:center;font-size:13px">
-  <img class="brand-logo foot" src="${LOGO_ECOSUNPOWER_DARK_BASE64}" alt="${escapeHtml(data.empresa.nome)}">
+  ${marcaFundoEscuro(' foot', logoBase64, data.empresa.nome)}
   <strong style="color:#fff">${escapeHtml(data.empresa.nome)}</strong><br>
   CNPJ ${escapeHtml(data.empresa.cnpj)} · ${escapeHtml(data.empresa.cidade)} · ${escapeHtml(data.empresa.telefone)}<br>
   <span style="opacity:0.6;font-size:11px">Proposta #${escapeHtml(data.numeroProposta)} · ${escapeHtml(data.empresa.site)}</span>

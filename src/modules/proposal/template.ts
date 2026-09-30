@@ -7,17 +7,18 @@ import { temCarregadorNosServicos, type ProposalCalculations } from './calculato
 // [ECOSOF] TODO: hero/CTA/rodapé usam essa constante fixa (não o logoBase64 injetável);
 // quando houver logo "dark" por tenant, trocar pra usar logoBase64 nesses 3 pontos.
 // A marca d'água do estudo (renderEstudoPersonalizado) JÁ usa o logoBase64 injetável.
-import { LOGO_ECOSUNPOWER_BRANCO_BASE64, LOGO_ECOSUNPOWER_DARK_BASE64 } from './assets/logo-base64.js';
+import { LOGO_ECOSUNPOWER_BRANCO_BASE64, LOGO_VAZIA } from './assets/logo-base64.js';
 import { fmtRs, fmtNum, fmtPct, fmtCurto, escapeHtml } from './format.js';
 import { renderServicosAdicionaisSection, type ServicoItem } from './service-render.js';
 import { renderComoFuncionaSection } from './como-funciona-render.js';
+import { marcaFundoEscuro } from './marca-fundo-escuro.js';
 import { renderEconomiaFuncionaSection } from './economia-funciona-render.js';
 import { getBrandFicha } from './brand-fichas.js';
 import { logoMeioPagamento } from './payment-logos.js';
 import { temBateria, capacidadeTotalKwh, autonomiaBackupHoras, type Bateria } from './bateria.js';
 // [ECOSOF] empresa() é lida DENTRO das funções de render (runtime) — nunca
 // capturada em const de módulo. Com o seed EcoSun a saída é idêntica.
-import { empresa } from '../empresa-config.js';
+import { empresa, ehEcosun } from '../empresa-config.js';
 
 export interface ProposalData {
   // Identificacao
@@ -160,6 +161,9 @@ function renderEstudoPersonalizado(estudo: NonNullable<ProposalData['estudoPerso
 // obterLogoBase64 (Storage com fallback); default = logo EcoSun embutida,
 // mantendo todos os call sites/testes antigos byte-idênticos.
 export function renderProposalHTML(data: ProposalData, calc: ProposalCalculations, socialProofHtml = '', logoBase64: string = LOGO_ECOSUNPOWER_BRANCO_BASE64): string {
+  // Tenant: a logo padrão do parâmetro é a da EcoSun — nunca vale pra outra empresa.
+  if (!ehEcosun() && logoBase64 === LOGO_ECOSUNPOWER_BRANCO_BASE64) logoBase64 = LOGO_VAZIA;
+  const casa = ehEcosun();
   // Guards contra dados invalidos que estouram o render
   if (!data.nomeCliente || !data.potenciaKwp || data.potenciaKwp <= 0) {
     throw new Error('renderProposalHTML: dados incompletos (nomeCliente ou potenciaKwp)');
@@ -362,7 +366,7 @@ footer strong{color:#fff;font-weight:600}
 <header class="hero">
   <div class="container hero-inner">
     <div class="hero-nav">
-      <img class="brand-logo" src="${LOGO_ECOSUNPOWER_DARK_BASE64}" alt="${escapeHtml(empresa().nomeFantasia)}">
+      ${marcaFundoEscuro('', logoBase64, empresa().nomeFantasia)}
       <div class="hero-meta">
         <strong>Proposta #${escapeHtml(data.numeroProposta)}</strong>
         ${escapeHtml(data.dataProposta)} · Válida ${data.validadeDias} dias
@@ -611,25 +615,25 @@ ${(!data.modoComparacao && temBateria(data.bateria)) ? `
       <div style="background:linear-gradient(180deg,var(--surface-alt) 0%,#fff 100%);border:1px solid var(--border);border-radius:20px;padding:32px">
         <div style="width:48px;height:48px;border-radius:12px;background:var(--primary-50);color:var(--primary-600);display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:16px">⚡</div>
         <h3 style="font-size:20px;margin-bottom:12px">Marcas Tier 1 INMETRO</h3>
-        <p style="color:var(--muted);font-size:15px;line-height:1.6">Trabalhamos só com fabricantes Tier 1 homologados pelo INMETRO — <strong>Módulos:</strong> Trina, JA Solar, Jinko, LONGi, Risen, DAH. <strong>Inversores:</strong> Sungrow, Solis, Deye, Huawei, GoodWe, SolarEdge, Hoymiles, NEP. Não economizamos na qualidade: sua geração é a nossa reputação.</p>
+        <p style="color:var(--muted);font-size:15px;line-height:1.6">${casa ? `Trabalhamos só com fabricantes Tier 1 homologados pelo INMETRO — <strong>Módulos:</strong> Trina, JA Solar, Jinko, LONGi, Risen, DAH. <strong>Inversores:</strong> Sungrow, Solis, Deye, Huawei, GoodWe, SolarEdge, Hoymiles, NEP. Não economizamos na qualidade: sua geração é a nossa reputação.` : 'Trabalhamos só com fabricantes Tier 1 homologados pelo INMETRO. Não economizamos na qualidade: sua geração é a nossa reputação.'}</p>
       </div>
 
       <div style="background:linear-gradient(180deg,var(--surface-alt) 0%,#fff 100%);border:1px solid var(--border);border-radius:20px;padding:32px">
         <div style="width:48px;height:48px;border-radius:12px;background:#FFF8E1;color:var(--accent-600);display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:16px">📊</div>
         <h3 style="font-size:20px;margin-bottom:12px">Monitoramento incluído</h3>
-        <p style="color:var(--muted);font-size:15px;line-height:1.6">12 meses de monitoramento remoto sem custo adicional. Detectamos quedas de geração antes de você sentir na conta. Suporte direto comigo (Junior, Responsável Técnico) pelo WhatsApp.</p>
+        <p style="color:var(--muted);font-size:15px;line-height:1.6">${casa ? `12 meses de monitoramento remoto sem custo adicional. Detectamos quedas de geração antes de você sentir na conta. Suporte direto comigo (Junior, Responsável Técnico) pelo WhatsApp.` : 'Acompanhamento remoto da geração da sua usina: detectamos quedas antes de você sentir na conta. Suporte direto pelo WhatsApp.'}</p>
       </div>
 
       <div style="background:linear-gradient(180deg,var(--surface-alt) 0%,#fff 100%);border:1px solid var(--border);border-radius:20px;padding:32px">
         <div style="width:48px;height:48px;border-radius:12px;background:var(--primary-50);color:var(--primary-600);display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:16px">🤝</div>
         <h3 style="font-size:20px;margin-bottom:12px">Responsável Técnico que atende direto</h3>
-        <p style="color:var(--muted);font-size:15px;line-height:1.6">Junior Candido — <strong>Responsável Técnico CREA/CFT da ${escapeHtml(empresa().nomeFantasia)}</strong> — assina a ART/TRT do seu projeto e fica como ponto único de contato pelo WhatsApp. Do orçamento ao pós-venda, você fala com quem entende e decide. Instalação executada por equipe certificada sob supervisão técnica ${escapeHtml(empresa().nomeFantasia)}.</p>
+        <p style="color:var(--muted);font-size:15px;line-height:1.6">${casa ? `Junior Candido — <strong>Responsável Técnico CREA/CFT da ${escapeHtml(empresa().nomeFantasia)}</strong> — assina a ART/TRT do seu projeto e fica como ponto único de contato pelo WhatsApp.` : `<strong>Responsável técnico da ${escapeHtml(empresa().nomeFantasia)}</strong> — assina a ART/TRT do seu projeto e acompanha você pelo WhatsApp.`} Do orçamento ao pós-venda, você fala com quem entende e decide. Instalação executada por equipe certificada sob supervisão técnica ${escapeHtml(empresa().nomeFantasia)}.</p>
       </div>
 
       <div style="background:linear-gradient(180deg,var(--surface-alt) 0%,#fff 100%);border:1px solid var(--border);border-radius:20px;padding:32px">
         <div style="width:48px;height:48px;border-radius:12px;background:#FFF8E1;color:var(--accent-600);display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:16px">🌐</div>
         <h3 style="font-size:20px;margin-bottom:12px">${escapeHtml(empresa().nomeAtendente)}, sua consultora ${escapeHtml(empresa().nomeFantasia)}</h3>
-        <p style="color:var(--muted);font-size:15px;line-height:1.6">Atendimento 24/7 via WhatsApp pra dúvidas, agendamento, status do projeto, garantia. ${escapeHtml(empresa().nomeAtendente)} responde rápido — Junior entra em casos complexos.</p>
+        <p style="color:var(--muted);font-size:15px;line-height:1.6">Atendimento 24/7 via WhatsApp pra dúvidas, agendamento, status do projeto, garantia. ${escapeHtml(empresa().nomeAtendente)} responde rápido — ${casa ? 'Junior entra' : 'nossa equipe entra'} em casos complexos.</p>
       </div>
     </div>
   </div>
@@ -743,16 +747,16 @@ ${renderComoFuncionaSection()}
 
 <section class="cta-section">
   <div class="container">
-    <img class="brand-logo cta" src="${LOGO_ECOSUNPOWER_DARK_BASE64}" alt="${escapeHtml(empresa().nomeFantasia)}">
+    ${marcaFundoEscuro(' cta', logoBase64, empresa().nomeFantasia)}
     <h2>Pronto pra economizar?</h2>
-    <p>Aceite a proposta agora e a gente já dá início no projeto. Em cerca de 45 dias seu sistema está gerando.</p>
+    <p>Aceite a proposta agora e a gente já dá início no projeto.${casa ? ' Em cerca de 45 dias seu sistema está gerando.' : ''}</p>
     <div class="cta-buttons">
       <a href="https://wa.me/55${data.empresa.telefone.replace(/\D/g, '')}?text=${encodeURIComponent('Aceito a proposta ' + data.numeroProposta)}" class="btn btn-primary">✓ Aceitar proposta</a>
       <a href="https://wa.me/55${data.empresa.telefone.replace(/\D/g, '')}" class="btn btn-secondary">💬 Tirar dúvidas no WhatsApp</a>
     </div>
     <div class="cta-badges">
-      <div>⚡ Ativação em ~45 dias</div>
-      <div>🛡️ Garantia 12 meses instalação</div>
+${casa ? `      <div>⚡ Ativação em ~45 dias</div>
+      <div>🛡️ Garantia 12 meses instalação</div>` : `      <div>🛡️ Garantia ${empresa().garantiaInstalacaoMeses} meses instalação</div>`}
       <div>📈 Economia em 25 anos: ${fmtCurto(calc.economiaVidaUtil)}</div>
       <div>🌱 ${fmtNum(calc.co2EvitadoToneladas, 0)} t de CO₂ evitadas</div>
     </div>
@@ -762,7 +766,7 @@ ${renderComoFuncionaSection()}
 <footer>
   <div class="container">
     <div>
-      <img class="brand-logo foot" src="${LOGO_ECOSUNPOWER_DARK_BASE64}" alt="${escapeHtml(data.empresa.nome)}">
+      ${marcaFundoEscuro(' foot', logoBase64, data.empresa.nome)}
       <strong>${escapeHtml(data.empresa.nome)}</strong>
       <div style="opacity:0.7;margin-top:4px">CNPJ ${escapeHtml(data.empresa.cnpj)} · ${escapeHtml(data.empresa.cidade)}</div>
     </div>
