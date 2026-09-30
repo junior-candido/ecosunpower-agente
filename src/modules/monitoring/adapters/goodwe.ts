@@ -48,8 +48,26 @@ const GATEWAY_PADRAO = 'https://us-gateway.semsportal.com';
 const LOGIN_TOKEN_HEADER = JSON.stringify({ uid: '', timestamp: 0, token: '', client: 'semsPlusWeb', version: '', language: 'en' });
 const CODIGOS_OK = new Set<unknown>(['00000', '0', 0]);
 const CODIGOS_SESSAO = new Set<string>(['C0602', 'C0607', '100002', 'A0301']);
-// Dias buscados em paralelo por usina (10 usinas × 8 dias ≈ 80 chamadas/rodada).
-const DIAS_EM_PARALELO = 4;
+// Dias buscados em paralelo por usina. Era 4: com o refresh diário de 61 dias
+// × 12 usinas na MESMA conta a GoodWe passou a responder 429 (30/09/2026).
+const DIAS_EM_PARALELO = 2;
+// Limite de consultas da GoodWe (HTTP 429 / GY0429 "operation_too_frequent"):
+// a CONTA inteira pausa esse tempo — repetir na hora só piora o bloqueio.
+const PAUSA_LIMITE_MS = 10 * 60 * 1000;
+const contaPausadaAte = new Map<string, number>();
+function ehLimiteGoodwe(reason: string): boolean {
+  return /HTTP 429|GY0429|too_frequent|requested limit/i.test(reason);
+}
+function contaPausada(creds: ParsedCreds): boolean {
+  const ate = contaPausadaAte.get(cacheKey(creds));
+  return ate != null && Date.now() < ate;
+}
+function pausarConta(creds: ParsedCreds): void {
+  contaPausadaAte.set(cacheKey(creds), Date.now() + PAUSA_LIMITE_MS);
+}
+// 429 não é "passageiro" pra repetir em segundos: é a GoodWe pedindo pra parar.
+const transienteSemLimite = (r: { ok: boolean; status?: number; reason?: string; invalidCredentials?: boolean }) =>
+  r.status !== 429 && !(r.reason && ehLimiteGoodwe(r.reason)) && isTransientFailure(r);
 // Status das usinas (lista da conta) fica 5 min em memória: 1 lista por rodada, não 1 por usina.
 const STATUS_TTL_MS = 5 * 60 * 1000;
 // Tipos de estação que a tela do SEMS+ separa (residencial e comercial).
@@ -260,7 +278,7 @@ async function semsPostAuth<T>(
     let api: string | undefined;
     try { api = (JSON.parse(authJson) as LoginData).api; } catch { /* padrão */ }
     const url = destino(basesDaApi(api));
-    return retryTransient(() => semsPostOnce<T>(url, body, authJson), isTransientFailure);
+    return retryTransient(() => semsPostOnce<T>(url, body, authJson), transienteSemLimite);
   };
 
   const a1 = await obterAuth(creds);
@@ -458,6 +476,7 @@ async function statusDaUsina(creds: ParsedCreds, siteId: string): Promise<'ok' |
 export function limparCachesGoodwe(): void {
   cacheStatus.clear();
   reloginEmAndamento.clear();
+  contaPausadaAte.clear();
 }
 
 // Roda `fn` em cada item com no máximo `limite` ao mesmo tempo (ordem preservada).
@@ -498,13 +517,19 @@ export const goodweAdapter: MonitoringAdapter = {
 
     const dias = diasParaBuscar(dataInicio, dataFim, hojeBrasilia());
     if (dias.length === 0) return { ok: true, geracoes: [] };
+    // Conta pausada por limite da GoodWe: nem tenta (fica pra próxima rodada, sem erro).
+    if (contaPausada(parsed)) return { ok: true, geracoes: [], adiadoPorLimite: true };
 
     // Loga UMA vez antes de abrir os dias em paralelo (senão cada dia logaria).
     const auth = await obterAuth(parsed);
     if (!auth.ok) return { ok: false, reason: auth.reason, invalidCredentials: auth.invalidCredentials };
 
-    type Dia = { dia: string; ok: true; kwh: number | null } | { dia: string; ok: false; reason: string; invalidCredentials?: boolean };
+    type Dia =
+      | { dia: string; ok: true; kwh: number | null }
+      | { dia: string; ok: false; reason: string; invalidCredentials?: boolean }
+      | { dia: string; ok: 'adiado' };
     const resultados = await comLimite(dias, DIAS_EM_PARALELO, async (dia): Promise<Dia> => {
+      if (contaPausada(parsed)) return { dia, ok: 'adiado' };
       const r = await semsPostAuth<{ proSystemTotalStats?: unknown }>(
         (b) => `${b.plant}/stations/production`,
         {
@@ -517,14 +542,20 @@ export const goodweAdapter: MonitoringAdapter = {
         },
         parsed,
       );
+      if (!r.ok && ehLimiteGoodwe(r.reason)) {
+        pausarConta(parsed);
+        console.warn(`[goodwe] limite de consultas da GoodWe (429) — conta pausada ${PAUSA_LIMITE_MS / 60000} min`);
+        return { dia, ok: 'adiado' };
+      }
       if (!r.ok) return { dia, ok: false, reason: r.reason, invalidCredentials: r.invalidCredentials };
       return { dia, ok: true, kwh: kwhDoDia(r.data) };
     });
+    const adiados = resultados.filter((x) => x.ok === 'adiado').length;
 
-    const credRuim = resultados.find((x) => !x.ok && x.invalidCredentials);
-    if (credRuim && !credRuim.ok) return { ok: false, reason: credRuim.reason, invalidCredentials: true };
+    const credRuim = resultados.find((x): x is Extract<Dia, { ok: false }> => x.ok === false && !!x.invalidCredentials);
+    if (credRuim) return { ok: false, reason: credRuim.reason, invalidCredentials: true };
 
-    const falhas = resultados.filter((x): x is Extract<Dia, { ok: false }> => !x.ok);
+    const falhas = resultados.filter((x): x is Extract<Dia, { ok: false }> => x.ok === false);
     if (falhas.length === dias.length) {
       // Nada respondeu: erro pro cron tentar de novo (não finge "sincronizou").
       return { ok: false, reason: falhas[falhas.length - 1].reason };
@@ -533,7 +564,7 @@ export const goodweAdapter: MonitoringAdapter = {
 
     const geracoes: GeracaoDiaria[] = [];
     for (const x of resultados) {
-      if (x.ok && x.kwh != null) geracoes.push({ data: x.dia, geracao_kwh: x.kwh });
+      if (x.ok === true && x.kwh != null) geracoes.push({ data: x.dia, geracao_kwh: x.kwh });
     }
 
     // Status REAL da usina pela lista da conta (cache 5 min). Best-effort:
@@ -546,7 +577,11 @@ export const goodweAdapter: MonitoringAdapter = {
       const lista = falhas.slice(0, 5).map((f) => dataCurtaBr(f.dia)).join(', ') + (falhas.length > 5 ? ', …' : '');
       falhaParcial = `${falhas.length} de ${dias.length} dias não ${falhas.length === 1 ? 'respondeu' : 'responderam'} (${lista})`;
     }
-    return { ok: true, geracoes, statusInversor, ...(falhaParcial ? { falhaParcial } : {}) };
+    return {
+      ok: true, geracoes, statusInversor,
+      ...(falhaParcial ? { falhaParcial } : {}),
+      ...(adiados > 0 ? { adiadoPorLimite: true } : {}),
+    };
   },
 
   // statisticsAndPreV2 → curva de potência (kW) do dia, em hora local da usina.
