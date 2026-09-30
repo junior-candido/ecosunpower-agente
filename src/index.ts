@@ -150,7 +150,7 @@ import { PastaService } from './modules/relatorios/pasta/service.js';
 import { normalizarSlugPublico } from './modules/relatorios/slug.js';
 import { renderPastaHtml } from './modules/relatorios/pasta/template.js';
 import { buildCtwaPatch, shouldAttributeCtwa, resolveCampaignIdFromAd } from './modules/marketing/ctwa-attribution.js';
-import { carregarEmpresaConfig, carregarKits, empresa, empresaDe, comEmpresaDe, listaMarcasTexto, ehEcosun } from './modules/empresa-config.js';
+import { carregarEmpresaConfig, carregarKits, empresa, empresaDe, comEmpresaDe, listaMarcasTexto, ehEcosun, todasEmpresasConhecidas } from './modules/empresa-config.js';
 import { agendaDaEmpresa, destinoAdminDaEmpresa, envioProibido } from './modules/tenant-admin-guard.js';
 import { validarModoRls, modoRls } from './modules/tenant-db.js';
 import { variantesTelefone } from './modules/phone.js';
@@ -10314,26 +10314,43 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
         // Responde JA: o processamento (baixar PDF, ler, banco, zap) pode passar
         // do tempo da Resend, e ela reenviaria — virando aviso duplicado.
         res.status(200).json({ ok: true, gd: gd.tipo });
+        // Aviso resolvido DENTRO do contexto da empresa (processarEmailGd roda
+        // tudo em rodarNaEmpresa): EcoSun → dono; tenant com telefone_admin →
+        // ele, pela instância dele; tenant sem → não manda (fica no painel).
         const avisarGd = async (texto: string, leadId: string | null) => {
+          const destino = destinoAdminDaEmpresa(config.engineerPhone);
+          if (!destino) {
+            console.log(`[gd] empresa "${empresa().nomeFantasia}" sem telefone_admin — aviso do demonstrativo fica só no painel`);
+            return;
+          }
           const { sendAdminWithButtons } = await import('./modules/eva-admin-buttons.js');
           await sendAdminWithButtons(
             { metaWaba: metaWaba ?? null, sendText },
-            config.engineerPhone,
+            destino,
             texto,
             leadId ? [{ id: `evabt:lead-view:${leadId}`, title: 'Ver no painel' }] : [],
           );
         };
-        // So a EcoSun encaminha demonstrativos hoje. O contexto da empresa faz o
-        // getClient() usar o cracha certo com RLS_ESTRITO=on (sem ele, NINGUEM).
+        // 30/09/2026 — POR EMPRESA (caso Conquista Solar): o To original (que o
+        // encaminhamento do Gmail preserva) diz de quem é o demonstrativo, pelo
+        // cadastro empresa_config.gd_emails_origem. Sem cadastro que case, fica
+        // com a EcoSun, como sempre foi. A confirmação do Gmail (código) segue
+        // pra casa: vai pro nosso endereço, não diz a empresa, e não tem dado
+        // de cliente. O contexto da empresa faz o getClient() usar o crachá
+        // certo com RLS_ESTRITO=on (sem ele, NINGUEM).
+        const { empresaDoEmailGd } = await import('./modules/gd/demonstrativo-email.js');
+        const donaGd = gd.tipo === 'demonstrativo'
+          ? empresaDoEmailGd(gd.para, todasEmpresasConhecidas(), ECOSUN_COMPANY_ID)
+          : ECOSUN_COMPANY_ID;
         void processarEmailGd(
           {
-            rodarNaEmpresa: (fn) => comEmpresaDe(ECOSUN_COMPANY_ID, fn),
+            rodarNaEmpresa: (fn) => comEmpresaDe(donaGd, fn),
             montarDeps: () => {
               const apiKey = process.env.RESEND_API_KEY;
               if (!apiKey) return null;
               return {
-                ...criarRepoDemonstrativo(supabase.getClient(), ECOSUN_COMPANY_ID),
-                companyId: ECOSUN_COMPANY_ID,
+                ...criarRepoDemonstrativo(supabase.getClient(), donaGd),
+                companyId: donaGd,
                 // Nada vai ao cliente nesta fase: o resumo so chega pro Junior.
                 modoTeste: true,
                 listarAnexos: (id) => listarAnexosResend(apiKey, id),

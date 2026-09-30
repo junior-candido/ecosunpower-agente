@@ -87,6 +87,10 @@ export interface EmpresaConfig {
   tabelaPrecoWp: ReadonlyArray<readonly [number, number]> | null;
   /** 148: potência (Wp) do módulo que a empresa vende. null = 670 (o de sempre). */
   wpPorPainel: number | null;
+  /** 149: e-mails DA EMPRESA cadastrados na distribuidora (recebem o
+   *  demonstrativo de GD). O encaminhamento preserva o To original — é por ele
+   *  que o demonstrativo acha a empresa dona. Vazio = não recebe demonstrativo. */
+  gdEmailsOrigem: readonly string[];
 }
 
 export const EMPRESA_DEFAULTS: EmpresaConfig = {
@@ -127,6 +131,7 @@ export const EMPRESA_DEFAULTS: EmpresaConfig = {
   reguaAtencaoPct: 70,
   gdTarifaRsKwh: 0.99,
   tabelaPrecoWp: null, wpPorPainel: null,
+  gdEmailsOrigem: [],
 };
 // Congelado: dezenas de call sites vão ler isto — mutação acidental corromperia a config global.
 Object.freeze(EMPRESA_DEFAULTS);
@@ -239,6 +244,11 @@ export function normalizarEmpresaRow(row: Record<string, unknown>): Readonly<Emp
       const v = Number(row.wp_por_painel);
       return row.wp_por_painel != null && Number.isFinite(v) && v >= 100 && v <= 1500 ? Math.round(v) : null;
     })(),
+    gdEmailsOrigem: Object.freeze(
+      (Array.isArray(row.gd_emails_origem) ? row.gd_emails_origem : [])
+        .map((x) => (typeof x === 'string' ? x.trim().toLowerCase() : ''))
+        .filter((x) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x)),
+    ),
   };
   Object.freeze(result.marcasPermitidas);
   Object.freeze(result.marcasBloqueadas);
