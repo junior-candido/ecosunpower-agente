@@ -10314,34 +10314,33 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
         // Responde JA: o processamento (baixar PDF, ler, banco, zap) pode passar
         // do tempo da Resend, e ela reenviaria — virando aviso duplicado.
         res.status(200).json({ ok: true, gd: gd.tipo });
-        // Aviso resolvido DENTRO do contexto da empresa (processarEmailGd roda
-        // tudo em rodarNaEmpresa): EcoSun → dono; tenant com telefone_admin →
-        // ele, pela instância dele; tenant sem → não manda (fica no painel).
-        const avisarGd = async (texto: string, leadId: string | null) => {
-          const destino = destinoAdminDaEmpresa(config.engineerPhone);
-          if (!destino) {
-            console.log(`[gd] empresa "${empresa().nomeFantasia}" sem telefone_admin — aviso do demonstrativo fica só no painel`);
-            return;
-          }
-          const { sendAdminWithButtons } = await import('./modules/eva-admin-buttons.js');
-          await sendAdminWithButtons(
-            { metaWaba: metaWaba ?? null, sendText },
-            destino,
-            texto,
-            leadId ? [{ id: `evabt:lead-view:${leadId}`, title: 'Ver no painel' }] : [],
-          );
-        };
         // 30/09/2026 — POR EMPRESA (caso Conquista Solar): o To original (que o
         // encaminhamento do Gmail preserva) diz de quem é o demonstrativo, pelo
         // cadastro empresa_config.gd_emails_origem. Sem cadastro que case, fica
-        // com a EcoSun, como sempre foi. A confirmação do Gmail (código) segue
-        // pra casa: vai pro nosso endereço, não diz a empresa, e não tem dado
-        // de cliente. O contexto da empresa faz o getClient() usar o crachá
-        // certo com RLS_ESTRITO=on (sem ele, NINGUEM).
+        // com a EcoSun, como sempre foi. Cadastrado em DUAS empresas (ambíguo)
+        // → não grava em ninguém. A confirmação do Gmail (código) segue pra
+        // casa: vai pro nosso endereço, não diz a empresa e não tem dado de
+        // cliente. O contexto da empresa faz o getClient() usar o crachá certo
+        // com RLS_ESTRITO=on (sem ele, NINGUEM).
         const { empresaDoEmailGd } = await import('./modules/gd/demonstrativo-email.js');
         const donaGd = gd.tipo === 'demonstrativo'
           ? empresaDoEmailGd(gd.para, todasEmpresasConhecidas(), ECOSUN_COMPANY_ID)
           : ECOSUN_COMPANY_ID;
+        if (!donaGd) return; // ambíguo: já logado em empresaDoEmailGd, nada gravado nem avisado
+        const gdDaCasa = ehCasa(donaGd);
+        // Aviso pela rota segura (canal-automatico): casa → dono pelo canal de
+        // sempre; tenant → admin DELE, só pela instância própria, com a
+        // assistente contratada e sem pausa. Sem isso não manda (fica no painel).
+        // Botões só pra casa: o handler de botão só aceita admin da casa.
+        const avisarGd = async (texto: string, leadId: string | null) => {
+          const { sendAdminWithButtons } = await import('./modules/eva-admin-buttons.js');
+          await rotasAutomaticas.avisoAdmin(donaGd, (destino) => sendAdminWithButtons(
+            { metaWaba: metaWaba ?? null, sendText },
+            destino,
+            texto,
+            gdDaCasa && leadId ? [{ id: `evabt:lead-view:${leadId}`, title: 'Ver no painel' }] : [],
+          ));
+        };
         void processarEmailGd(
           {
             rodarNaEmpresa: (fn) => comEmpresaDe(donaGd, fn),
@@ -10351,6 +10350,9 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
               return {
                 ...criarRepoDemonstrativo(supabase.getClient(), donaGd),
                 companyId: donaGd,
+                // Empresa cliente: só com a assinatura da distribuidora confirmada
+                // (o To decide a empresa — e-mail forjado não pode jogar dado nela).
+                exigirOrigemVerificada: !gdDaCasa,
                 // Nada vai ao cliente nesta fase: o resumo so chega pro Junior.
                 modoTeste: true,
                 listarAnexos: (id) => listarAnexosResend(apiKey, id),
@@ -11696,15 +11698,13 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
         sendAdminWithButtons({ metaWaba, sendText }, to, body, buttons, footer),
       adminPhone: config.engineerPhone,
       dryRun: proactiveDryRun,
-      // POR EMPRESA (30/09/2026, caso Conquista Solar): cada alerta roda no
-      // contexto da empresa DONA da usina — canal de WhatsApp, travas LGPD e
-      // destino passam a ser os dela. EcoSun → dono, como sempre; tenant com
-      // telefone_admin → ele, pela instância dele; tenant sem → só no painel.
-      // Tenant não tem abordagem automática ao cliente (sai pelo WABA da casa)
-      // nem o resumo diário (é da casa): o alerta vira aviso admin dele.
-      rodarNaEmpresa: (companyId, fn) => comEmpresaDe(companyId, fn),
-      destinoAdmin: () => destinoAdminDaEmpresa(config.engineerPhone),
-      somenteAvisoAdmin: () => !ehEcosun(),
+      // POR EMPRESA (30/09/2026, caso Conquista Solar): usina da casa segue o
+      // fluxo de sempre; usina de TENANT vira aviso admin DELE pela rota segura
+      // (canal-automatico: só pela instância própria, com a assistente
+      // contratada e sem pausa por cobrança; destino = telefone_admin dele).
+      // Sem isso → não manda, fica no painel. Nunca pelo número da casa.
+      ehCasa: (companyId) => ehCasa(companyId),
+      avisoAdminDaEmpresa: (companyId, enviar) => rotasAutomaticas.avisoAdmin(companyId, enviar),
       // Resumo diário: em treino, queda/milestone não viram msg individual.
       autonomiaOn: async (tipo: 'queda' | 'parabens') => {
         const { getConfig } = await import('./modules/monitoring/abordagem/abordagens-repo.js');

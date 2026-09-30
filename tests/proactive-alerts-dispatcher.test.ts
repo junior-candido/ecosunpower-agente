@@ -211,67 +211,101 @@ describe('runDispatchCycle', () => {
 // empresa) saía pro zap do dono da EcoSun, pelo WhatsApp oficial da EcoSun.
 describe('runDispatchCycle — por empresa', () => {
   const TENANT = '11111111-1111-1111-1111-111111111111';
+  const CASA = '00000000-0000-0000-0000-000000000001';
+  const ehCasa = (cid: string | null | undefined) => !cid || cid === CASA;
   const sistemaTenant = {
     id: 'sid-1', apelido: 'Usina BA', potencia_kwp: 8, marca_inversor: 'sungrow',
     lead_id: 'lid-1', etapa_obra: 'pos_venda', company_id: TENANT,
   };
 
-  it('processa o alerta dentro do contexto da empresa dona da usina', async () => {
-    const rodarNaEmpresa = vi.fn(async (_cid: string | null, fn: () => Promise<unknown>) => fn());
-    const ctx = fakeCtx({
-      supabase: {
-        getAlertasParaDespachar: vi.fn().mockResolvedValue([alerta()]),
-        getSistemaById: vi.fn().mockResolvedValue(sistemaTenant),
-      },
-      rodarNaEmpresa,
-      destinoAdmin: () => '5577988887777',
-      somenteAvisoAdmin: () => true,
-    });
-    await runDispatchCycle(horaJanela, ctx as any);
-    expect(rodarNaEmpresa).toHaveBeenCalledWith(TENANT, expect.any(Function));
-  });
-
-  it('empresa com telefone de admin: avisa ELA, sem abordagem automática nem resumo da casa', async () => {
+  it('tenant: aviso vai pela rota segura DA EMPRESA, sem botões, sem abordagem e sem resumo da casa', async () => {
     const proporAbordagem = vi.fn().mockResolvedValue('enviada');
     const autonomiaOn = vi.fn().mockResolvedValue(false);
+    const avisoAdminDaEmpresa = vi.fn(async (_cid: string | null | undefined, enviar: (d: string) => Promise<void>) => {
+      await enviar('5577988887777');
+      return 'enviado';
+    });
     const ctx = fakeCtx({
       supabase: {
         getAlertasParaDespachar: vi.fn().mockResolvedValue([alerta({ tipo: 'queda_geracao' })]),
         getSistemaById: vi.fn().mockResolvedValue(sistemaTenant),
       },
-      rodarNaEmpresa: async (_c: string | null, fn: () => Promise<unknown>) => fn(),
-      destinoAdmin: () => '5577988887777',
-      somenteAvisoAdmin: () => true,
-      proporAbordagem, autonomiaOn,
+      ehCasa, avisoAdminDaEmpresa, proporAbordagem, autonomiaOn,
     });
     const r = await runDispatchCycle(horaJanela, ctx as any);
     expect(r.enviados).toBe(1);
+    expect(avisoAdminDaEmpresa).toHaveBeenCalledWith(TENANT, expect.any(Function));
     expect(ctx.sendAdminWithButtons).toHaveBeenCalledOnce();
-    expect(ctx.sendAdminWithButtons.mock.calls[0][0]).toBe('5577988887777');
+    const [destino, , botoes] = ctx.sendAdminWithButtons.mock.calls[0];
+    expect(destino).toBe('5577988887777');
+    expect(destino).not.toBe(ctx.adminPhone);
+    expect(botoes).toEqual([]);
     expect(proporAbordagem).not.toHaveBeenCalled();
     expect(autonomiaOn).not.toHaveBeenCalled();
     expect(ctx.supabase.marcarAlertaAbsorvidoPorResumo).not.toHaveBeenCalled();
   });
 
-  it('empresa SEM telefone de admin: não manda pra ninguém (nunca pro dono da EcoSun), fica no painel', async () => {
+  it('tenant bloqueado (sem canal/admin/pausado): não manda nada e fica no painel com trava de 3 dias', async () => {
+    const avisoAdminDaEmpresa = vi.fn().mockResolvedValue('sem_canal_proprio');
     const ctx = fakeCtx({
       supabase: {
         getAlertasParaDespachar: vi.fn().mockResolvedValue([alerta()]),
         getSistemaById: vi.fn().mockResolvedValue(sistemaTenant),
       },
-      rodarNaEmpresa: async (_c: string | null, fn: () => Promise<unknown>) => fn(),
-      destinoAdmin: () => null,
-      somenteAvisoAdmin: () => true,
+      ehCasa, avisoAdminDaEmpresa,
     });
     const r = await runDispatchCycle(horaJanela, ctx as any);
     expect(ctx.sendAdminWithButtons).not.toHaveBeenCalled();
     expect(r.enviados).toBe(0);
     expect(r.soNoPainel).toBe(1);
-    // Não fica voltando pra fila a cada ciclo: mesma trava de 3 dias do envio.
-    expect(ctx.supabase.marcarAlertaEnviado).toHaveBeenCalledOnce();
+    const [, sentAt, nextSendAt] = ctx.supabase.marcarAlertaEnviado.mock.calls[0];
+    expect(new Date(nextSendAt).getTime() - new Date(sentAt).getTime()).toBe(3 * 24 * 60 * 60 * 1000);
   });
 
-  it('sem os ganchos novos (EcoSun / compat): continua mandando pro adminPhone de sempre', async () => {
+  it('tenant sem a rota ligada: falha fechada (nunca o adminPhone da casa)', async () => {
+    const ctx = fakeCtx({
+      supabase: {
+        getAlertasParaDespachar: vi.fn().mockResolvedValue([alerta()]),
+        getSistemaById: vi.fn().mockResolvedValue(sistemaTenant),
+      },
+      ehCasa,
+    });
+    const r = await runDispatchCycle(horaJanela, ctx as any);
+    expect(ctx.sendAdminWithButtons).not.toHaveBeenCalled();
+    expect(r.soNoPainel).toBe(1);
+  });
+
+  it('erro na rota do tenant destrava o alerta (volta pra fila)', async () => {
+    const avisoAdminDaEmpresa = vi.fn().mockRejectedValue(new Error('falhou'));
+    const ctx = fakeCtx({
+      supabase: {
+        getAlertasParaDespachar: vi.fn().mockResolvedValue([alerta()]),
+        getSistemaById: vi.fn().mockResolvedValue(sistemaTenant),
+      },
+      ehCasa, avisoAdminDaEmpresa,
+    });
+    await runDispatchCycle(horaJanela, ctx as any);
+    expect(ctx.supabase.unlockAlerta).toHaveBeenCalledWith('aid-1', '2026-05-22T12:00:00Z');
+  });
+
+  it('usina da casa (company_id null, legado) com os ganchos ligados: fluxo de sempre, com abordagem', async () => {
+    const proporAbordagem = vi.fn().mockResolvedValue('inelegivel');
+    const avisoAdminDaEmpresa = vi.fn();
+    const ctx = fakeCtx({
+      supabase: {
+        getAlertasParaDespachar: vi.fn().mockResolvedValue([alerta()]),
+        getSistemaById: vi.fn().mockResolvedValue({ ...sistemaTenant, company_id: null }),
+      },
+      ehCasa, avisoAdminDaEmpresa, proporAbordagem,
+    });
+    const r = await runDispatchCycle(horaJanela, ctx as any);
+    expect(proporAbordagem).toHaveBeenCalledOnce();
+    expect(avisoAdminDaEmpresa).not.toHaveBeenCalled();
+    expect(r.enviados).toBe(1);
+    expect(ctx.sendAdminWithButtons.mock.calls[0][0]).toBe('5561987654321');
+  });
+
+  it('sem os ganchos (compat): continua mandando pro adminPhone de sempre', async () => {
     const ctx = fakeCtx({ supabase: { getAlertasParaDespachar: vi.fn().mockResolvedValue([alerta()]) } });
     const r = await runDispatchCycle(horaJanela, ctx as any);
     expect(r.enviados).toBe(1);

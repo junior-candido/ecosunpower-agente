@@ -89,15 +89,16 @@ export function classificarEmailGd(body: unknown): EmailGd | null {
  *
  * Cada empresa cadastra os e-mails dela que recebem o demonstrativo da
  * distribuidora (empresa_config.gd_emails_origem). O To original casou com o
- * cadastro de UMA empresa → é dela. Ninguém cadastrou (ou dois cadastraram o
- * mesmo e-mail, ambíguo) → fica com a `padrao` (a casa), exatamente como era
- * antes desta mudança: nada muda pra quem já recebia.
+ * cadastro de UMA empresa → é dela. Ninguém cadastrou → fica com a `padrao`
+ * (a casa), exatamente como era antes desta mudança: nada muda pra quem já
+ * recebia. Duas empresas cadastraram o mesmo e-mail → null: o dado é de ALGUMA
+ * empresa cliente e não se sabe qual — não vai pra ninguém (nem pra casa).
  */
 export function empresaDoEmailGd(
   para: readonly string[],
   empresas: ReadonlyArray<{ companyId: string; gdEmailsOrigem: readonly string[] }>,
   padrao: string,
-): string {
+): string | null {
   const alvos = new Set(para.map((e) => e.trim().toLowerCase()).filter(Boolean));
   if (alvos.size === 0) return padrao;
   const donas = new Set<string>();
@@ -107,7 +108,8 @@ export function empresaDoEmailGd(
   }
   if (donas.size === 1) return [...donas][0];
   if (donas.size > 1) {
-    console.error(`[gd] e-mail de demonstrativo cadastrado em ${donas.size} empresas (${[...alvos].join(', ')}) — ambíguo, fica com a casa. Corrija gd_emails_origem.`);
+    console.error(`[gd] e-mail de demonstrativo cadastrado em ${donas.size} empresas (${[...alvos].join(', ')}) — ambíguo, NÃO gravei em ninguém. Corrija gd_emails_origem.`);
+    return null;
   }
   return padrao;
 }

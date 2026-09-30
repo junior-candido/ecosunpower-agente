@@ -31,12 +31,19 @@ describe('rota /webhooks/resend', () => {
     // (comportamento coberto em gd-demonstrativo-webhook.test.ts)
     expect(bloco).toMatch(/montarDeps: \(\) => \{[\s\S]*criarRepoDemonstrativo\(supabase\.getClient\(\), donaGd\)/);
   });
-  it('aviso do demonstrativo vai pro admin DA EMPRESA (nunca fixo no dono da EcoSun)', () => {
+  it('aviso do demonstrativo vai pela rota segura DA EMPRESA (nunca fixo no dono da EcoSun)', () => {
     const g = rota.indexOf('classificarEmailGd(req.body)');
     const r = rota.indexOf('processarRespostaEmail(');
     const bloco = rota.slice(g, r);
-    expect(bloco).toMatch(/const destino = destinoAdminDaEmpresa\(config\.engineerPhone\)/);
-    expect(bloco).not.toMatch(/sendAdminWithButtons\([\s\S]{0,80}config\.engineerPhone,/);
+    expect(bloco).toMatch(/rotasAutomaticas\.avisoAdmin\(donaGd,/);
+    expect(bloco).not.toMatch(/config\.engineerPhone/);
+  });
+  it('ambíguo não grava; empresa cliente exige origem verificada', () => {
+    const g = rota.indexOf('classificarEmailGd(req.body)');
+    const r = rota.indexOf('processarRespostaEmail(');
+    const bloco = rota.slice(g, r);
+    expect(bloco).toMatch(/if \(!donaGd\) return;/);
+    expect(bloco).toMatch(/exigirOrigemVerificada: !gdDaCasa/);
   });
   it('responde 200 ANTES de processar (retry da Resend nao duplica)', () => {
     const g = rota.indexOf('classificarEmailGd(req.body)');

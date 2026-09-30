@@ -67,8 +67,12 @@ export interface RegistroDemonstrativo {
 
 export interface DepsIngestao {
   modoTeste: boolean;
-  /** Empresa dona da caixa que recebeu (hoje so a EcoSun encaminha). */
+  /** Empresa dona do demonstrativo (pelo To original × gd_emails_origem). */
   companyId: string;
+  /** true = só grava com a assinatura da distribuidora CONFIRMADA (DKIM pass).
+   *  Ligado pra empresa cliente (30/09/2026): como o To decide a empresa, um
+   *  e-mail forjado com o endereço dela no To empurraria dado falso pra ela. */
+  exigirOrigemVerificada?: boolean;
   jaProcessado(emailId: string): Promise<boolean>;
   listarAnexos(emailId: string): Promise<AnexoMeta[]>;
   baixarAnexo(emailId: string, anexo: AnexoMeta): Promise<Uint8Array>;
@@ -206,6 +210,14 @@ export async function ingerirDemonstrativo(
         null,
       );
       return { status: 'recusado', motivo: 'dkim nao confere' };
+    }
+    if (deps.exigirOrigemVerificada && dkim !== 'pass') {
+      await avisoSeguro(
+        deps,
+        `🚫 Não gravei um demonstrativo de ${quem(assunto)}: não deu pra confirmar a assinatura da distribuidora no e-mail. Se for de verdade, mande o PDF pelo painel.`,
+        null,
+      );
+      return { status: 'recusado', motivo: 'origem nao verificada' };
     }
 
     etapa = 'baixar anexo';

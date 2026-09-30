@@ -156,8 +156,13 @@ describe('destinatário original e empresa dona do demonstrativo', () => {
     expect(empresaDoEmailGd([], empresas, ECOSUN)).toBe(ECOSUN);
   });
 
-  it('mesmo e-mail cadastrado por duas empresas → não escolhe nenhuma (vai pra casa)', () => {
+  it('mesmo e-mail cadastrado por duas empresas → ninguém (null), nem a casa', () => {
     const dup = [...empresas, { companyId: 'e1e2e3e4-0000-0000-0000-00000000cccc', gdEmailsOrigem: ['projetos@conquistasolar.com.br'] }];
-    expect(empresaDoEmailGd(['projetos@conquistasolar.com.br'], dup, ECOSUN)).toBe(ECOSUN);
+    expect(empresaDoEmailGd(['projetos@conquistasolar.com.br'], dup, ECOSUN)).toBeNull();
+  });
+
+  it('e-mail que a casa também listou não rouba o do tenant', () => {
+    const comCasa = [{ companyId: ECOSUN, gdEmailsOrigem: ['projetos@conquistasolar.com.br'] }, ...empresas.slice(1)];
+    expect(empresaDoEmailGd(['projetos@conquistasolar.com.br'], comCasa, ECOSUN)).toBe(CONQUISTA);
   });
 });
