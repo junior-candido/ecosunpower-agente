@@ -215,8 +215,13 @@ async function processarAlertaDeTenant(
   const resultado = ctx.avisoAdminDaEmpresa
     ? await ctx.avisoAdminDaEmpresa(companyId, (destino) => ctx.sendAdminWithButtons(destino, texto, [], footer))
     : 'sem_rota';
-  await ctx.supabase.marcarAlertaEnviado(alerta.id, hoje.toISOString(), addDays(hoje, 3).toISOString());
-  if (resultado === 'enviado') return 'enviado';
+  if (resultado === 'enviado') {
+    await ctx.supabase.marcarAlertaEnviado(alerta.id, hoje.toISOString(), addDays(hoje, 3).toISOString());
+    return 'enviado';
+  }
+  // Não foi pra ninguém: só reagenda (+3d) — sem last_sent_at, senão o painel
+  // contaria como "enviado" um aviso que ninguém recebeu.
+  await ctx.supabase.unlockAlerta(alerta.id, addDays(hoje, 3).toISOString());
   console.log(`[proactive-alerts] dispatch: alerta=${alerta.id} da empresa ${companyId} NAO avisado (${resultado}) — fica só no painel`);
   return 'painel';
 }

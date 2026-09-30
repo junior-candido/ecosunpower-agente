@@ -258,8 +258,11 @@ describe('runDispatchCycle — por empresa', () => {
     expect(ctx.sendAdminWithButtons).not.toHaveBeenCalled();
     expect(r.enviados).toBe(0);
     expect(r.soNoPainel).toBe(1);
-    const [, sentAt, nextSendAt] = ctx.supabase.marcarAlertaEnviado.mock.calls[0];
-    expect(new Date(nextSendAt).getTime() - new Date(sentAt).getTime()).toBe(3 * 24 * 60 * 60 * 1000);
+    // Ninguém recebeu: NÃO marca como enviado (o painel contaria), só reagenda +3d.
+    expect(ctx.supabase.marcarAlertaEnviado).not.toHaveBeenCalled();
+    const [id, proxima] = ctx.supabase.unlockAlerta.mock.calls[0];
+    expect(id).toBe('aid-1');
+    expect(new Date(proxima).getTime() - horaJanela.getTime()).toBe(3 * 24 * 60 * 60 * 1000);
   });
 
   it('tenant sem a rota ligada: falha fechada (nunca o adminPhone da casa)', async () => {
