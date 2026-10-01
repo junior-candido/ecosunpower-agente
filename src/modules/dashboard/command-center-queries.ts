@@ -28,6 +28,7 @@ import { empresaDe } from '../empresa-config.js';
 import { tarifaPorConcessionaria } from '../solar-params.js';
 import { competenciaAtual } from '../financeiro/repo.js';
 import { lerModulosAtivos } from './modulos-contratados.js';
+import { resumirPrevistoFrota, type ResumoPrevistoFrota, type PrevistoLinhaDb } from './previsto-frota.js';
 import type { ContaAberta } from '../financeiro/alertas-vencimento.js';
 
 /** Lead "esperando resposta": a Eva está ativa, o lead não saiu, está no começo
@@ -112,6 +113,8 @@ export interface DadosCommandCenter {
   frota: ResumoFrota | null;
   /** Algum lote da telemetria bateu o limite: "Geração agora" pode estar incompleta. */
   telemetriaCortada: boolean;
+  /** Previsto × Real de ONTEM (null = módulo não contratado / sem cálculo / falhou). */
+  previstoOntem: ResumoPrevistoFrota | null;
   /** Contagens do mês (cada campo null se falhou ou sem acesso). */
   kpisMes: CommandCenterKpis;
   /** Desde ontem neste horário (últimas 24 h). */
@@ -272,10 +275,23 @@ export async function carregarCommandCenter(
       return { linhas: lotes.flat(), cortada };
     }), () => null);
 
-    const [usinas, geracoes, telemetria] = await Promise.all([usinasP, geracoesP, telemetriaP]);
+    // Previsto × Real de ontem — bônus: sem cálculo (módulo não contratado) ou erro → sem o bloco.
+    const ontem = somarDias(j.hoje, -1);
+    const previstosP = tentar('previsto ontem', () => lerUma<PrevistoLinhaDb>(db.from('geracao_esperada')
+      .select('sistema_id, kwh_previsto, clima').eq('company_id', companyId).eq('data', ontem)
+      .limit(5000) as unknown as Consulta<PrevistoLinhaDb>, 'geracao_esperada'));
+
+    const [usinas, geracoes, telemetria, previstos] = await Promise.all([usinasP, geracoesP, telemetriaP, previstosP]);
+    const reaisOntem = new Map<string, number>();
+    for (const g of geracoes) {
+      if (g.data !== ontem) continue;
+      const v = numOuNull(g.geracao_kwh);
+      if (v !== null) reaisOntem.set(g.sistema_id, (reaisOntem.get(g.sistema_id) ?? 0) + v);
+    }
     return {
       resumo: resumirFrota(usinas, geracoes, telemetria?.linhas ?? [], { agora, corteAtencao: cfg.reguaAtencaoPct / 100 }),
       telemetriaCortada: telemetria?.cortada ?? false,
+      previsto: previstos?.length ? resumirPrevistoFrota(usinas, previstos, reaisOntem, ontem) : null,
     };
   }) : Promise.resolve(null);
 
@@ -466,6 +482,7 @@ export async function carregarCommandCenter(
     contratados: C,
     frota,
     telemetriaCortada: frotaR?.telemetriaCortada ?? false,
+    previstoOntem: frotaR?.previsto ?? null,
     // Contagem de área sem acesso não sai daqui.
     kpisMes: {
       leads: P.leads || P.marketing ? k.leads : null,

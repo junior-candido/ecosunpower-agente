@@ -13,7 +13,7 @@
 import { renderLayout, escapeHtml } from './views.js';
 import type { DashUser } from './permissions.js';
 import {
-  faixaKpis, kpiCard, cartaoSecao, estadoVazio, cabecalhoPagina, icone, tabela,
+  faixaKpis, kpiCard, cartaoSecao, estadoVazio, cabecalhoPagina, icone, tabela, pilulaStatus,
   TONS, type KpiInput, type Tom, type TomSelo,
 } from './ui/componentes.js';
 import { fmtNumero, fmtCompacto, temNumero, hrefSeguro, SEM_DADO } from './ui/html.js';
@@ -30,6 +30,7 @@ import {
   type DadosCommandCenter, type FonteAviso, type PermissoesCC, type IdFonte,
 } from './command-center-queries.js';
 import { MODULOS } from './conhecer-views.js';
+import { ROTULO_SITUACAO } from '../monitoring/previsto/situacao.js';
 import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
 import { can, ehPapelTv } from './permissions.js';
 import { blocoMapaUsinas } from './mapa-usinas-views.js';
@@ -580,6 +581,47 @@ function usinasAgora(d: CommandCenterDados, tv = false): string {
 }
 
 // ---------------------------------------------------------------------------
+// Previsto × Real de ontem (Energy Studio, Marco 1): quem gerou MENOS do que
+// devia com o sol que fez. Só aparece quando há cálculo (módulo previsto_real).
+// ---------------------------------------------------------------------------
+
+const TOM_SITUACAO: Record<import('../monitoring/previsto/situacao.js').Situacao, import('./ui/componentes.js').Tom> = {
+  muito_abaixo: 'critico', abaixo: 'atencao', sem_comunicacao: 'sem_dado', dia_fraco: 'info', normal: 'normal', sem_previsto: 'sem_dado',
+};
+
+function previstoOntem(d: CommandCenterDados): string {
+  const p = d.dados?.previstoOntem ?? null;
+  if (!p) return '';
+  const dataBr = `${p.data.slice(8, 10)}/${p.data.slice(5, 7)}`;
+  const mostrar = p.linhas.filter((l) => l.situacao !== 'normal' && l.situacao !== 'dia_fraco').slice(0, 8);
+  const resumo = `<div class="cc-prev-sum">
+      <div><span class="cc-lbl-s">Frota ontem</span><b>${p.frotaPct === null ? SEM_DADO : `${escapeHtml(fmtNumero(p.frotaPct, 1))}%`}</b><span class="cc-faint">do previsto</span></div>
+      <div><span class="cc-lbl-s">Muito abaixo</span><b>${escapeHtml(fmtNumero(p.porSituacao.muito_abaixo))}</b></div>
+      <div><span class="cc-lbl-s">Abaixo</span><b>${escapeHtml(fmtNumero(p.porSituacao.abaixo))}</b></div>
+      <div><span class="cc-lbl-s">Sem comunicação</span><b>${escapeHtml(fmtNumero(p.porSituacao.sem_comunicacao))}</b></div>
+      <div><span class="cc-lbl-s">Normais</span><b>${escapeHtml(fmtNumero(p.porSituacao.normal + p.porSituacao.dia_fraco))}</b></div>
+    </div>`;
+  const tab = mostrar.length === 0
+    ? estadoVazio({ tipo: 'vazio', titulo: 'Todas as usinas geraram o previsto ontem 👍' })
+    : tabela({
+      colunas: [{ titulo: 'Usina' }, { titulo: 'Previsto (kWh)', alinhar: 'dir', num: true, casas: 1 }, { titulo: 'Real (kWh)', alinhar: 'dir', num: true, casas: 1 }, { titulo: 'Diferença', alinhar: 'dir' }, { titulo: 'Situação' }],
+      linhas: mostrar.map((l) => [
+        l.apelido, l.previsto, l.real,
+        l.dif === null ? null : `${l.dif > 0 ? '+' : ''}${fmtNumero(l.dif, 1)}%`,
+        { html: pilulaStatus(TOM_SITUACAO[l.situacao], ROTULO_SITUACAO[l.situacao]) },
+      ]),
+      hrefs: mostrar.map((l) => `/dashboard/monitoramento/${encodeURIComponent(l.id)}/previsto`),
+      mobile: 'cartoes',
+    });
+  return cartaoSecao({
+    titulo: `Previsto × Real — ${dataBr}`,
+    dica: 'quem gerou menos do que devia com o sol que fez',
+    classe: 'cc-a-prev',
+    corpoHtml: resumo + tab,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Central de Atenção (topo da Home)
 // ---------------------------------------------------------------------------
 
@@ -742,6 +784,7 @@ export function renderCommandCenterPage(d: CommandCenterDados, user?: DashUser):
       ${quadroUsinas}
       ${centralAtencao(d)}
     </div>
+    ${c.usinas ? previstoOntem(d) : ''}
     ${mapa}
     ${departamentos(d)}
     <div class="cc-foot">${casa ? `${icone('tv', 'sm')}Modo TV: a tela do escritório vai girar entre visão geral, usinas e comercial. ` : ''}<span class="cc-sp"></span>Todo número é clicável e leva ao detalhe.</div>

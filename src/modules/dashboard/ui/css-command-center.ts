@@ -59,6 +59,10 @@ export const CSS_COMMAND_CENTER = `
 .cc-cc .cc-sev b{font-family:var(--cc-f-num);color:var(--cc-text)}
 
 .cc-cc .cc-a-mapa{margin-top:18px}
+.cc-cc .cc-a-prev{margin-top:18px}
+.cc-cc .cc-prev-sum{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:14px}
+.cc-cc .cc-prev-sum>div{display:flex;flex-direction:column;gap:2px}.cc-cc .cc-prev-sum b{font-size:22px}
+@media(max-width:700px){.cc-cc .cc-prev-sum{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .cc-cc .cc-depts{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;margin-top:18px}
 .cc-cc .cc-dept{padding:16px 16px 12px;border-radius:14px;background:var(--cc-surface);border:1px solid var(--cc-line);display:flex;flex-direction:column;transition:border-color .15s,transform .15s}
 .cc-cc .cc-dept:hover{border-color:rgba(251,191,36,.35);transform:translateY(-1px)}
