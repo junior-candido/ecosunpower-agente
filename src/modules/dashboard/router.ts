@@ -5932,7 +5932,7 @@ export function createDashboardRouter(
       if (!sis || !usinaPertenceAoOperador((sis as { company_id?: string | null }).company_id ?? null, user?.companyId)) {
         return res.status(404).send('<h2>Sistema nao encontrado</h2><a href="/dashboard/monitoramento">← voltar</a>');
       }
-      const desde = new Date(Date.now() - 33 * 86400_000).toISOString().slice(0, 10);
+      const desde = new Date(Date.now() - 3 * 3600_000 - 33 * 86400_000).toISOString().slice(0, 10); // dia de Brasília
       const [{ data: prev, error: e2 }, { data: reais, error: e3 }] = await Promise.all([
         db.from('geracao_esperada')
           .select('data, kwh_previsto, kwh_hora, irradiacao_kwh_m2, indice_ceu, clima, premissas')
@@ -5951,7 +5951,8 @@ export function createDashboardRouter(
         premissas: (p.premissas ?? {}) as Record<string, never>,
       }));
       const diaQ = typeof req.query.dia === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.dia) ? req.query.dia : undefined;
-      const diaFoco = diaQ ?? previstos[previstos.length - 1]?.data;
+      // Só um dia que TEM previsto (senão a curva real seria de outro dia do que o mostrado).
+      const diaFoco = (diaQ && previstos.some((p) => p.data === diaQ)) ? diaQ : previstos[previstos.length - 1]?.data;
       // Curva real hora a hora do dia em foco (se o inversor dá) — nunca derruba a tela.
       let realHora: number[] | null = null;
       const sx = sis as Record<string, unknown>;

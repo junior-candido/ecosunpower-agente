@@ -11577,28 +11577,37 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     // Depois: 1x/dia após 21h BRT refaz ontem (clima consolidado) + hoje.
     const motorPrevisto = configMotorDoAmbiente();
     if (motorPrevisto) {
+      // Flag do dia só é gravada DEPOIS de uma rodada boa (resumo.ok): motor fora,
+      // senha errada ou limite do clima → tenta de novo na próxima hora.
+      let previstoRodando = false;
       const rodarPrevisto = async () => {
-        const db = supabase.getClient();
-        const ler = async (key: string) =>
-          (await db.from('app_flags').select('value').eq('key', key).maybeSingle()).data?.value as string | undefined;
-        const marcar = async (key: string, value: string) =>
-          !(await db.from('app_flags').upsert({ key, value }, { onConflict: 'key' })).error;
-        const hoje = ultimosDias(1)[0];
-        let datas: string[];
-        if (!(await ler('previsto_carga_inicial'))) {
-          if (!(await marcar('previsto_carga_inicial', hoje))) return;
-          datas = ultimosDias(30);
-        } else {
-          const brtHour = (new Date().getUTCHours() - 3 + 24) % 24;
-          if (brtHour < 21 || (await ler('previsto_last_run')) === hoje) return;
-          if (!(await marcar('previsto_last_run', hoje))) return;
-          datas = ultimosDias(2);
+        if (previstoRodando) return;
+        previstoRodando = true;
+        try {
+          const db = supabase.getClient();
+          const ler = async (key: string) =>
+            (await db.from('app_flags').select('value').eq('key', key).maybeSingle()).data?.value as string | undefined;
+          const marcar = async (key: string, value: string) =>
+            !(await db.from('app_flags').upsert({ key, value }, { onConflict: 'key' })).error;
+          const hoje = ultimosDias(1)[0];
+          const cargaInicial = !(await ler('previsto_carga_inicial'));
+          if (!cargaInicial) {
+            const brtHour = (new Date().getUTCHours() - 3 + 24) % 24;
+            if (brtHour < 21 || (await ler('previsto_last_run')) === hoje) return;
+          }
+          const datas = cargaInicial ? ultimosDias(30) : ultimosDias(2);
+          const r = await calcularPrevistos(db, datas, {
+            motor: motorPrevisto,
+            empresaTemModulo: async (cid) => (await lerModulosAtivos(db, cid)).has('previsto_real'),
+          });
+          await marcar('previsto_ultimo_resumo', JSON.stringify({ em: new Date().toISOString(), ...r }));
+          if (r.ok) {
+            await marcar(cargaInicial ? 'previsto_carga_inicial' : 'previsto_last_run', hoje);
+            if (cargaInicial) await marcar('previsto_last_run', hoje);
+          }
+        } finally {
+          previstoRodando = false;
         }
-        const r = await calcularPrevistos(db, datas, {
-          motor: motorPrevisto,
-          empresaTemModulo: async (cid) => (await lerModulosAtivos(db, cid)).has('previsto_real'),
-        });
-        await marcar('previsto_ultimo_resumo', JSON.stringify({ em: new Date().toISOString(), ...r }));
       };
       const seguro = () => rodarPrevisto().catch((err) => console.error('[previsto] erro:', (err as Error).message));
       setInterval(seguro, 60 * 60 * 1000);

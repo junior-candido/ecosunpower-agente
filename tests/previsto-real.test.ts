@@ -93,7 +93,7 @@ describe('rotina diária', () => {
     const gravados: Record<string, unknown>[] = [];
     const db = {
       from: (t: string) => t === 'sistemas_clientes'
-        ? { select: () => ({ eq: async () => ({ data: usinas, error: null }) }) }
+        ? { select: () => ({ eq: () => ({ order: () => ({ range: async (a: number, b: number) => ({ data: usinas.slice(a, b + 1), error: null }) }) }) }) }
         : { upsert: async (row: Record<string, unknown>) => { gravados.push(row); return { error: null }; } },
     };
     return { db: db as never, gravados };
@@ -130,6 +130,29 @@ describe('rotina diária', () => {
     expect(r.falhas).toBe(1);
     expect(r.calculados).toBe(1);
     expect(r.primeiraFalha).toMatch(/502/);
+  });
+
+  it('motor fora do ar: disjuntor abre, rodada NÃO fica ok (repete depois)', async () => {
+    const muitas = Array.from({ length: 30 }, (_, k) => ({ ...USINA, id: `s${k}` }));
+    const { db } = bancoFalso(muitas);
+    const f = vi.fn().mockResolvedValue(new Response('token do motor inválido', { status: 401 }));
+    const r = await calcularPrevistos(db, ['2026-09-30'], {
+      motor: { url: 'http://m', fetchImpl: f }, empresaTemModulo: async () => true, concorrencia: 1, log: () => {},
+    });
+    expect(r.falhas).toBe(15);
+    expect(r.puladas).toBe(15);
+    expect(r.ok).toBe(false);
+    expect(f).toHaveBeenCalledTimes(15);
+  });
+
+  it('rodada boa fica ok; usina sem empresa é da casa', async () => {
+    const { db, gravados } = bancoFalso([{ ...USINA, company_id: null }]);
+    const r = await calcularPrevistos(db, ['2026-09-30'], {
+      motor: { url: 'http://m', fetchImpl: motorOk },
+      empresaTemModulo: async (cid) => cid === '00000000-0000-0000-0000-000000000001', log: () => {},
+    });
+    expect(r.ok).toBe(true);
+    expect(gravados[0].company_id).toBe('00000000-0000-0000-0000-000000000001');
   });
 
   it('ultimosDias em horário de Brasília (23h UTC-3 ainda é o mesmo dia)', () => {
