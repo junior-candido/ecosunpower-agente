@@ -50,3 +50,44 @@ export async function previstoDoDia(cfg: ConfigMotor, p: Premissas, data: string
     clearTimeout(t);
   }
 }
+
+export interface ResultadoCalibracao {
+  azimute: number;
+  inclinacao: number;
+  fator: number;
+  erro_forma: number;
+  erro_referencia: number;
+  confianca: 'alta' | 'media' | 'baixa';
+  dias_usados: number;
+  horas_usadas: number;
+  mapa: { azimute: number; inclinacao: number; erro: number }[];
+  versao_modelo: string;
+}
+
+/** Curvas reais de dias limpos → orientação/inclinação (motor /calibrar). */
+export async function calibrarNoMotor(
+  cfg: ConfigMotor,
+  p: { lat: number; lon: number; kwp: number; tipo_instalacao: string; refAzimute: number; refInclinacao: number },
+  dias: { data: string; real_hora: number[] }[],
+): Promise<ResultadoCalibracao> {
+  const f = cfg.fetchImpl ?? fetch;
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), cfg.timeoutMs ?? 120_000);
+  try {
+    const r = await f(`${cfg.url}/calibrar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(cfg.token ? { Authorization: `Bearer ${cfg.token}` } : {}) },
+      body: JSON.stringify({
+        lat: p.lat, lon: p.lon, kwp: p.kwp, tipo_instalacao: p.tipo_instalacao,
+        ref_azimute: p.refAzimute, ref_inclinacao: p.refInclinacao, dias,
+      }),
+      signal: ctl.signal,
+    });
+    if (!r.ok) throw new Error(`motor HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
+    const j = (await r.json()) as ResultadoCalibracao;
+    if (typeof j?.azimute !== 'number') throw new Error('motor: resposta sem azimute');
+    return j;
+  } finally {
+    clearTimeout(t);
+  }
+}

@@ -42,25 +42,48 @@ export interface Premissas {
   sombreamento: number;
   /** O que não veio do cadastro (a tela avisa "estimado"). */
   estimados: string[];
+  /** O que veio da calibração automática (forma da curva real). */
+  calibrados?: string[];
+  /** Cadastro diz uma orientação e a curva real indica outra (confiança alta, > 45°). */
+  divergencia?: { cadastro: number; curva: number };
 }
+
+/** Calibração automática da usina (tabela previsto_calibracao, status ok). */
+export interface CalibracaoUsina {
+  azimute: number;
+  inclinacao: number;
+  confianca: 'alta' | 'media' | 'baixa';
+}
+
+const distAngulo = (a: number, b: number) => { const d = Math.abs(a - b) % 360; return Math.min(d, 360 - d); };
 
 export type MotivoSemPremissa = 'sem_posicao' | 'sem_kwp';
 
-export function montarPremissas(s: SistemaCadastro): Premissas | { erro: MotivoSemPremissa } {
+export function montarPremissas(s: SistemaCadastro, calib?: CalibracaoUsina | null): Premissas | { erro: MotivoSemPremissa } {
   const kwp = Number(s.potencia_kwp);
   if (!Number.isFinite(kwp) || kwp <= 0) return { erro: 'sem_kwp' };
   if (s.lat == null || s.lng == null || !Number.isFinite(s.lat) || !Number.isFinite(s.lng)) return { erro: 'sem_posicao' };
   const estimados: string[] = [];
-  let azimute = azimuteDeOrientacao(s.telhado_orientacao);
-  if (azimute == null) { azimute = 0; estimados.push('orientação (Norte)'); }
+  const calibrados: string[] = [];
+  // Calibração só substitui o que FALTA no cadastro, e só com confiança alta.
+  const usarCalib = calib && calib.confianca === 'alta' ? calib : null;
+  const cadAz = azimuteDeOrientacao(s.telhado_orientacao);
+  let azimute: number;
+  let divergencia: Premissas['divergencia'];
+  if (cadAz != null) {
+    azimute = cadAz;
+    if (usarCalib && distAngulo(cadAz, usarCalib.azimute) > 45) divergencia = { cadastro: cadAz, curva: usarCalib.azimute };
+  } else if (usarCalib) { azimute = usarCalib.azimute; calibrados.push('orientação'); } else { azimute = 0; estimados.push('orientação (Norte)'); }
   let inclinacao = Number(s.telhado_inclinacao_graus);
   if (s.telhado_inclinacao_graus == null || !Number.isFinite(inclinacao) || inclinacao < 0 || inclinacao > 90) {
-    inclinacao = 15; estimados.push('inclinação (15°)');
+    if (usarCalib) { inclinacao = usarCalib.inclinacao; calibrados.push('inclinação'); } else { inclinacao = 15; estimados.push('inclinação (15°)'); }
   }
   const sombra = Number(s.sombreamento_pct);
   const sombreamento = s.sombreamento_pct != null && Number.isFinite(sombra) && sombra >= 0 && sombra < 100 ? sombra / 100 : 0;
   return {
     lat: s.lat, lon: s.lng, kwp, inclinacao, azimute,
     tipo_instalacao: tipoInstalacao(s.telhado_tipo), sombreamento, estimados,
+    ...(calibrados.length ? { calibrados } : {}),
+    ...(divergencia ? { divergencia } : {}),
   };
 }

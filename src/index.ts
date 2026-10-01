@@ -146,6 +146,9 @@ import { criarRotasAutomaticas, ehCasa } from './modules/canal-automatico.js';
 import { lerModulosAtivos } from './modules/dashboard/modulos-contratados.js';
 import { calcularPrevistos, ultimosDias } from './modules/monitoring/previsto/rotina.js';
 import { configMotorDoAmbiente } from './modules/monitoring/previsto/motor-cliente.js';
+import { calibrarUsinas } from './modules/monitoring/previsto/rotina-calibracao.js';
+import { curvaPorHora } from './modules/monitoring/previsto/curva.js';
+import { getAdapter as getAdapterPrevisto } from './modules/monitoring/adapter-registry.js';
 import { PosInstalacaoService } from './modules/relatorios/pos-instalacao/service.js';
 import { renderPosInstalacaoHtml } from './modules/relatorios/pos-instalacao/template.js';
 import { PastaService } from './modules/relatorios/pasta/service.js';
@@ -11609,6 +11612,40 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
           previstoRodando = false;
         }
       };
+      // CALIBRAÇÃO AUTOMÁTICA: de madrugada (23h–5h BRT), poucas usinas por hora;
+      // descobre orientação/inclinação pela forma da curva real e refaz os 30 dias
+      // de previsto das que calibraram.
+      let calibrando = false;
+      const rodarCalibracao = async () => {
+        const h = (new Date().getUTCHours() - 3 + 24) % 24;
+        if (calibrando || previstoRodando || !(h >= 23 || h < 5)) return;
+        calibrando = true;
+        try {
+          const db = supabase.getClient();
+          const r = await calibrarUsinas(db, {
+            motor: motorPrevisto,
+            empresaTemModulo: async (cid) => (await lerModulosAtivos(db, cid)).has('previsto_real'),
+            buscarCurva: async (sistemaId, data) => {
+              const { data: row } = await db.from('sistemas_clientes').select('*').eq('id', sistemaId).maybeSingle();
+              if (!row) return null;
+              const adapter = getAdapterPrevisto((row as { marca_inversor: never }).marca_inversor);
+              if (!adapter?.fetchIntraday) return null;
+              const res = await adapter.fetchIntraday((row as { api_credentials: never }).api_credentials, data, monitoringService.buildAdapterContext(row as never));
+              return res.ok ? curvaPorHora(res.pontos) : null;
+            },
+          });
+          if (r.calibradas.length) {
+            await calcularPrevistos(db, ultimosDias(30), {
+              motor: motorPrevisto, apenas: new Set(r.calibradas),
+              empresaTemModulo: async (cid) => (await lerModulosAtivos(db, cid)).has('previsto_real'),
+            });
+          }
+        } finally {
+          calibrando = false;
+        }
+      };
+      setInterval(() => rodarCalibracao().catch((err) => console.error('[calibração] erro:', (err as Error).message)), 60 * 60 * 1000);
+
       const seguro = () => rodarPrevisto().catch((err) => console.error('[previsto] erro:', (err as Error).message));
       setInterval(seguro, 60 * 60 * 1000);
       setTimeout(seguro, 10 * 60 * 1000);

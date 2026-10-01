@@ -5933,11 +5933,13 @@ export function createDashboardRouter(
         return res.status(404).send('<h2>Sistema nao encontrado</h2><a href="/dashboard/monitoramento">← voltar</a>');
       }
       const desde = new Date(Date.now() - 3 * 3600_000 - 33 * 86400_000).toISOString().slice(0, 10); // dia de Brasília
-      const [{ data: prev, error: e2 }, { data: reais, error: e3 }] = await Promise.all([
+      const [{ data: prev, error: e2 }, { data: reais, error: e3 }, { data: calib }] = await Promise.all([
         db.from('geracao_esperada')
           .select('data, kwh_previsto, kwh_hora, irradiacao_kwh_m2, indice_ceu, clima, premissas')
           .eq('sistema_id', id).gte('data', desde).order('data', { ascending: true }),
         db.from('geracao_diaria').select('data, geracao_kwh').eq('sistema_id', id).gte('data', desde),
+        Promise.resolve(db.from('previsto_calibracao').select('azimute, inclinacao, fator, confianca, dias_usados, calculado_em, mapa')
+          .eq('sistema_id', id).eq('status', 'ok').maybeSingle()).catch(() => ({ data: null })),
       ]);
       if (e2) throw new Error(e2.message);
       if (e3) throw new Error(e3.message);
@@ -5968,6 +5970,14 @@ export function createDashboardRouter(
         kwp: sx.potencia_kwp == null ? null : Number(sx.potencia_kwp),
         local: [sx.cidade, sx.uf].filter(Boolean).join(' · '),
         previstos, reais: mapaReal, diaFoco, realHora,
+        calibracao: calib ? (() => {
+          const c = calib as Record<string, unknown>;
+          return {
+            azimute: Number(c.azimute), inclinacao: Number(c.inclinacao), fator: c.fator == null ? null : Number(c.fator),
+            confianca: c.confianca as 'alta' | 'media' | 'baixa', dias_usados: c.dias_usados == null ? null : Number(c.dias_usados),
+            calculado_em: String(c.calculado_em ?? ''), mapa: (c.mapa as never) ?? null,
+          };
+        })() : null,
       });
       res.send(renderPrevistoPage(body, user));
     } catch (err) {
