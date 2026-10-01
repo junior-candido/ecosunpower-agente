@@ -1291,6 +1291,7 @@ export function renderDetalheSistemaPage(
 
   const acoes = `<div class="cc-us-acoes">
       <form action="/dashboard/monitoramento/${sid}/sync" method="post">${botao({ rotulo: 'Atualizar agora', tipo: 'submit', tom: 'ouro', icone: 'zap' })}</form>
+      ${botao({ rotulo: 'Previsto × Real', href: `/dashboard/monitoramento/${s.id}/previsto`, icone: 'trend' })}
       ${botao({ rotulo: 'Relatório', href: `/dashboard/monitoramento/${s.id}/relatorio`, icone: 'file' })}
       ${botao({ rotulo: 'Editar', href: `/dashboard/monitoramento/${s.id}/editar`, icone: 'cog' })}
       ${menuAcoes({ alinhar: 'dir', itensHtml: `

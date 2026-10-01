@@ -73,6 +73,7 @@ import type { MarcaInversor } from '../monitoring/types.js';
 import type { ResultadoImport } from '../leads-import-meta-junho.js';
 import { classificarSistema, medianaEspecifica7d } from '../monitoring/classificacao.js';
 import { getAdapter } from '../monitoring/adapter-registry.js';
+import { renderPrevistoBody, renderPrevistoPage, curvaPorHora } from './previsto-views.js';
 import { garantiaInfo } from '../monitoring/garantia.js';
 import { filtrarOrdenarSistemas } from '../monitoring/filtro.js';
 import { hojeBrasilia } from '../monitoring/util/dia-brasilia.js';
@@ -147,7 +148,7 @@ import { rotaMapaJson, rotaLocalizarPagina, rotaLocalizarUma, rotaSalvarPosicao 
 import { rotaAtualizarSenha, blocoAtualizarSenha } from './monitoramento-credenciais.js';
 import { blocoMiniMapaUsina } from './mapa-usinas-views.js';
 import { montarRotasEnergia } from './energia-rotas.js';
-import { criarTravaDeModulo } from './modulos-contratados.js';
+import { criarTravaDeModulo, lerModulosAtivos } from './modulos-contratados.js';
 import { bancoDoOperador } from '../tenant-client.js';   // strangler RLS Fase B (flag RLS_TENANT_ROTAS)
 import { montarRotasCobrar } from './cobrar-rotas.js';
 import { vinculosDaNota } from './fiscal-vinculos.js';
@@ -5914,6 +5915,67 @@ export function createDashboardRouter(
 
   // Detalhe de UMA usina: KPIs (hoje/mes/ano/total), grafico 30 dias,
   // grafico mensal 12m, alertas. Auto-refresh 30s.
+  // PREVISTO × REAL (Energy Studio, Marco 1 — 01/10/2026). Módulo vendável
+  // `previsto_real` por cima do monitoramento: sem ele, abre a vitrine.
+  router.get('/monitoramento/:id/previsto', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!UUID_RE.test(id)) return res.status(400).send('UUID invalido');
+    const user = (req as AuthedRequest).dashUser;
+    try {
+      const modulos = await lerModulosAtivos(supabase, user?.companyId ?? '');
+      if (!modulos.has('previsto_real')) return res.redirect('/dashboard/conhecer/previsto_real');
+      const db = bancoDoOperador(req as AuthedRequest, supabase);
+      const { data: sis, error: e1 } = await db.from('sistemas_clientes')
+        .select('id, apelido, potencia_kwp, cidade, uf, company_id, marca_inversor, api_credentials, lead_id')
+        .eq('id', id).maybeSingle();
+      if (e1) throw new Error(e1.message);
+      if (!sis || !usinaPertenceAoOperador((sis as { company_id?: string | null }).company_id ?? null, user?.companyId)) {
+        return res.status(404).send('<h2>Sistema nao encontrado</h2><a href="/dashboard/monitoramento">← voltar</a>');
+      }
+      const desde = new Date(Date.now() - 3 * 3600_000 - 33 * 86400_000).toISOString().slice(0, 10); // dia de Brasília
+      const [{ data: prev, error: e2 }, { data: reais, error: e3 }] = await Promise.all([
+        db.from('geracao_esperada')
+          .select('data, kwh_previsto, kwh_hora, irradiacao_kwh_m2, indice_ceu, clima, premissas')
+          .eq('sistema_id', id).gte('data', desde).order('data', { ascending: true }),
+        db.from('geracao_diaria').select('data, geracao_kwh').eq('sistema_id', id).gte('data', desde),
+      ]);
+      if (e2) throw new Error(e2.message);
+      if (e3) throw new Error(e3.message);
+      const mapaReal: Record<string, number> = {};
+      for (const r of (reais ?? []) as { data: string; geracao_kwh: number | string }[]) mapaReal[r.data] = Number(r.geracao_kwh);
+      const previstos = ((prev ?? []) as Array<Record<string, unknown>>).map((p) => ({
+        data: String(p.data), kwh_previsto: Number(p.kwh_previsto), kwh_hora: (p.kwh_hora as number[]) ?? [],
+        irradiacao_kwh_m2: p.irradiacao_kwh_m2 == null ? null : Number(p.irradiacao_kwh_m2),
+        indice_ceu: p.indice_ceu == null ? null : Number(p.indice_ceu),
+        clima: p.clima as import('../monitoring/previsto/situacao.js').Clima,
+        premissas: (p.premissas ?? {}) as Record<string, never>,
+      }));
+      const diaQ = typeof req.query.dia === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.dia) ? req.query.dia : undefined;
+      // Só um dia que TEM previsto (senão a curva real seria de outro dia do que o mostrado).
+      const diaFoco = (diaQ && previstos.some((p) => p.data === diaQ)) ? diaQ : previstos[previstos.length - 1]?.data;
+      // Curva real hora a hora do dia em foco (se o inversor dá) — nunca derruba a tela.
+      let realHora: number[] | null = null;
+      const sx = sis as Record<string, unknown>;
+      const adapter = getAdapter(sx.marca_inversor as MarcaInversor);
+      if (diaFoco && adapter?.fetchIntraday) {
+        try {
+          const r = await adapter.fetchIntraday(sx.api_credentials as never, diaFoco, monitoringService.buildAdapterContext(sx as never));
+          if (r.ok) realHora = curvaPorHora(r.pontos);
+        } catch { realHora = null; }
+      }
+      const body = renderPrevistoBody({
+        sistemaId: id, nome: String(sx.apelido ?? 'Usina'),
+        kwp: sx.potencia_kwp == null ? null : Number(sx.potencia_kwp),
+        local: [sx.cidade, sx.uf].filter(Boolean).join(' · '),
+        previstos, reais: mapaReal, diaFoco, realHora,
+      });
+      res.send(renderPrevistoPage(body, user));
+    } catch (err) {
+      console.error('[previsto] tela:', (err as Error).message);
+      res.status(500).send('<h2>Não consegui abrir o Previsto × Real agora.</h2><a href="/dashboard/monitoramento">← voltar</a>');
+    }
+  });
+
   router.get('/monitoramento/:id', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
     if (!/^[0-9a-f-]{36}$/i.test(id)) {

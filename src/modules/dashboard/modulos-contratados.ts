@@ -21,7 +21,7 @@ import type { AuthedRequest } from './auth.js';
 
 /** Os módulos vendáveis (mesma lista do comentário da coluna empresa_modulos.modulo). */
 export const MODULOS = [
-  'eva', 'email', 'pasta_digital', 'monitoramento', 'financeiro', 'fiscal', 'rh', 'marketing', 'medicao',
+  'eva', 'email', 'pasta_digital', 'monitoramento', 'financeiro', 'fiscal', 'rh', 'marketing', 'medicao', 'previsto_real',
 ] as const;
 export type Modulo = (typeof MODULOS)[number];
 

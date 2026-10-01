@@ -14,6 +14,8 @@ export const TELAS_RENOVADAS: string[] = [
   'kanban-views.ts',
   // Atendimento (Leads › Conversas, 28/09) — nasceu no padrão cc-
   'atendimento-views.ts',
+  // Previsto × Real (Energy Studio Marco 1, 01/10/2026) — nasceu com CSS próprio
+  'previsto-views.ts',
   // Command Center, Central de Atenção e Modo TV — nasceram no padrão cc-
   'command-center-views.ts',
   // Mapa das Usinas (bloco do Command Center, mini-mapa, Localizar) — nasceu no padrão cc-

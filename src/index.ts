@@ -144,6 +144,8 @@ import { tickEnvioAutoPasta, criarEnvioAutoDb, proximoLembrete9h, empresaDaPasta
 import { tickDetectarMedidor, criarDetectarMedidorDb, criarAoMarcarMedidor } from './modules/monitoring/detectar-medidor.js';
 import { criarRotasAutomaticas, ehCasa } from './modules/canal-automatico.js';
 import { lerModulosAtivos } from './modules/dashboard/modulos-contratados.js';
+import { calcularPrevistos, ultimosDias } from './modules/monitoring/previsto/rotina.js';
+import { configMotorDoAmbiente } from './modules/monitoring/previsto/motor-cliente.js';
 import { PosInstalacaoService } from './modules/relatorios/pos-instalacao/service.js';
 import { renderPosInstalacaoHtml } from './modules/relatorios/pos-instalacao/template.js';
 import { PastaService } from './modules/relatorios/pasta/service.js';
@@ -11568,6 +11570,53 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     console.log('[telemetria] Cron de coleta started (a cada 15min)');
 
     // Telemetria — retenção: 1x/dia resume o que passou de 6 meses e apaga o fino.
+    // PREVISTO × REAL (Energy Studio, Marco 1 — 01/10/2026): quanto cada usina
+    // DEVERIA ter gerado com o sol real do dia (motor simulador-fv). Só para
+    // empresas com o módulo `previsto_real` (casa = sempre). Sem MOTOR_URL = desligado.
+    // 1ª vez (sem flag de carga inicial): últimos 30 dias, a qualquer hora.
+    // Depois: 1x/dia após 21h BRT refaz ontem (clima consolidado) + hoje.
+    const motorPrevisto = configMotorDoAmbiente();
+    if (motorPrevisto) {
+      // Flag do dia só é gravada DEPOIS de uma rodada boa (resumo.ok): motor fora,
+      // senha errada ou limite do clima → tenta de novo na próxima hora.
+      let previstoRodando = false;
+      const rodarPrevisto = async () => {
+        if (previstoRodando) return;
+        previstoRodando = true;
+        try {
+          const db = supabase.getClient();
+          const ler = async (key: string) =>
+            (await db.from('app_flags').select('value').eq('key', key).maybeSingle()).data?.value as string | undefined;
+          const marcar = async (key: string, value: string) =>
+            !(await db.from('app_flags').upsert({ key, value }, { onConflict: 'key' })).error;
+          const hoje = ultimosDias(1)[0];
+          const cargaInicial = !(await ler('previsto_carga_inicial'));
+          if (!cargaInicial) {
+            const brtHour = (new Date().getUTCHours() - 3 + 24) % 24;
+            if (brtHour < 21 || (await ler('previsto_last_run')) === hoje) return;
+          }
+          const datas = cargaInicial ? ultimosDias(30) : ultimosDias(2);
+          const r = await calcularPrevistos(db, datas, {
+            motor: motorPrevisto,
+            empresaTemModulo: async (cid) => (await lerModulosAtivos(db, cid)).has('previsto_real'),
+          });
+          await marcar('previsto_ultimo_resumo', JSON.stringify({ em: new Date().toISOString(), ...r }));
+          if (r.ok) {
+            await marcar(cargaInicial ? 'previsto_carga_inicial' : 'previsto_last_run', hoje);
+            if (cargaInicial) await marcar('previsto_last_run', hoje);
+          }
+        } finally {
+          previstoRodando = false;
+        }
+      };
+      const seguro = () => rodarPrevisto().catch((err) => console.error('[previsto] erro:', (err as Error).message));
+      setInterval(seguro, 60 * 60 * 1000);
+      setTimeout(seguro, 10 * 60 * 1000);
+      console.log('[previsto] Previsto × Real ligado (motor ' + motorPrevisto.url + ')');
+    } else {
+      console.log('[previsto] MOTOR_URL ausente — Previsto × Real desligado');
+    }
+
     const resumirTelemetria = async () => {
       try {
         const corte = new Date();

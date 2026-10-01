@@ -88,6 +88,16 @@ export const MODULOS: Record<string, ModuloVitrine> = {
       'Relatório mensal pro cliente, automático',
     ],
   },
+  previsto_real: {
+    titulo: '☀️ Previsto × Real',
+    resumo: 'Cada usina comparada, todo dia, com o que ela DEVERIA ter gerado com o sol que fez — calculado por satélite.',
+    ganhos: [
+      'Descobre a usina que está gerando menos antes do cliente reclamar',
+      'Dia nublado não vira alarme falso: o previsto também cai',
+      'Mostra o porquê: sol do dia, telhado, inclinação e perdas',
+      'Prova para o cliente (e para a garantia) que o sistema rende o projetado',
+    ],
+  },
   energia: {
     titulo: '⚡ Energia da casa',
     resumo: 'Um medidor no quadro do cliente mostra o que a casa compra, devolve e consome de verdade — junto com a usina.',

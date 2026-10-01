@@ -22,13 +22,19 @@ const RELATORIO_NO_DETALHE: MudancaContrato = {
   entra: { links: [`/dashboard/monitoramento/${SISTEMA.id}/relatorio`] },
 };
 
+/** Energy Studio Marco 1 (01/10/2026): botão "Previsto × Real" no cabeçalho da usina. */
+const PREVISTO_NO_DETALHE: MudancaContrato = {
+  motivo: 'Marco 1: cabeçalho da usina com Previsto × Real',
+  entra: { links: [`/dashboard/monitoramento/${SISTEMA.id}/previsto`] },
+};
+
 const CONTRATO = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contrato-usina.json'), 'utf-8'));
 
 describe('Usina — contrato das telas não muda', () => {
   for (const [nome, render] of Object.entries(CASOS_USINA)) {
     it(`contrato: ${nome}`, () => {
       const h = render();
-      expect(contratoDaTela(h)).toEqual(aplicarMudancas(CONTRATO[nome], ...r5Menu(CONTRATO[nome]), ...menuTenantSemAssinaturas(h), TELAS_LEVES, ...(nome.startsWith('detalhe') ? [RELATORIO_NO_DETALHE, TEMA_GRAFICOS, ...(nome === 'detalhe-mes' || nome === 'detalhe-tenant' ? [MINI_MAPA_DA_MAIN] : [])] : nome === 'dados' ? [TEMA_GRAFICOS] : [])));
+      expect(contratoDaTela(h)).toEqual(aplicarMudancas(CONTRATO[nome], ...r5Menu(CONTRATO[nome]), ...menuTenantSemAssinaturas(h), TELAS_LEVES, ...(nome.startsWith('detalhe') ? [RELATORIO_NO_DETALHE, PREVISTO_NO_DETALHE, TEMA_GRAFICOS, ...(nome === 'detalhe-mes' || nome === 'detalhe-tenant' ? [MINI_MAPA_DA_MAIN] : [])] : nome === 'dados' ? [TEMA_GRAFICOS] : [])));
     });
   }
 });
