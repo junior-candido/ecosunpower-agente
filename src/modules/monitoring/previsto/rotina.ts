@@ -3,7 +3,7 @@
 // cada data e grava em `geracao_esperada` (uma linha por usina e dia).
 // Idempotente (upsert por sistema_id+data) — pode rodar de novo sem duplicar.
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { montarPremissas, type SistemaCadastro, type MotivoSemPremissa } from './premissas.js';
+import { montarPremissas, type SistemaCadastro, type MotivoSemPremissa, type CalibracaoUsina } from './premissas.js';
 import { previstoDoDia, type ConfigMotor } from './motor-cliente.js';
 import { ECOSUN_COMPANY_ID } from '../../tenant-resolver.js';
 
@@ -16,6 +16,8 @@ export interface DepsRotina {
   empresaTemModulo: (companyId: string) => Promise<boolean>;
   concorrencia?: number;
   log?: (msg: string) => void;
+  /** Só estas usinas (ex.: recém-calibradas). */
+  apenas?: ReadonlySet<string>;
 }
 
 export interface ResumoRotina {
@@ -50,6 +52,19 @@ export async function calcularPrevistos(db: SupabaseClient, datas: string[], dep
     if (rows.length < 1000) break;
   }
 
+  // Calibração automática (orientação/inclinação pela curva real) — bônus: sem tabela/erro, segue sem.
+  const calibs = new Map<string, CalibracaoUsina>();
+  try {
+    for (let pag = 0; ; pag++) {
+      const { data: cs, error: ec } = await db.from('previsto_calibracao').select('sistema_id, azimute, inclinacao, confianca')
+        .eq('status', 'ok').order('sistema_id', { ascending: true }).range(pag * 1000, pag * 1000 + 999);
+      if (ec) break;
+      const rows = (cs ?? []) as Array<{ sistema_id: string; azimute: number | string; inclinacao: number | string; confianca: CalibracaoUsina['confianca'] }>;
+      for (const c of rows) calibs.set(c.sistema_id, { azimute: Number(c.azimute), inclinacao: Number(c.inclinacao), confianca: c.confianca });
+      if (rows.length < 1000) break;
+    }
+  } catch { /* sem calibração: usa cadastro/estimativa */ }
+
   // Módulo por empresa (1 consulta por empresa, não por usina).
   const contratou = new Map<string, boolean>();
   for (const cid of new Set(sistemas.map((s) => s.company_id))) {
@@ -59,9 +74,10 @@ export async function calcularPrevistos(db: SupabaseClient, datas: string[], dep
   const tarefas: Array<() => Promise<void>> = [];
   let seguidas = 0;
   for (const s of sistemas) {
+    if (deps.apenas && !deps.apenas.has(s.id)) continue;
     if (!contratou.get(s.company_id)) { resumo.semModulo++; continue; }
     resumo.usinas++;
-    const p = montarPremissas(s);
+    const p = montarPremissas(s, calibs.get(s.id));
     if ('erro' in p) { resumo.semPremissa[p.erro]++; continue; }
     for (const dataDia of datas) {
       tarefas.push(async () => {

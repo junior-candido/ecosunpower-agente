@@ -20,7 +20,18 @@ export interface DiaPrevisto {
   irradiacao_kwh_m2: number | null;
   indice_ceu: number | null;
   clima: Clima;
-  premissas: { kwp?: number; inclinacao?: number; azimute?: number; sombreamento?: number; estimados?: string[] };
+  premissas: { kwp?: number; inclinacao?: number; azimute?: number; sombreamento?: number; estimados?: string[]; calibrados?: string[]; divergencia?: { cadastro: number; curva: number } };
+}
+
+/** Linha de previsto_calibracao (status ok). */
+export interface CalibracaoTela {
+  azimute: number;
+  inclinacao: number;
+  fator: number | null;
+  confianca: 'alta' | 'media' | 'baixa';
+  dias_usados: number | null;
+  calculado_em: string;
+  mapa: { azimute: number; inclinacao: number; erro: number }[] | null;
 }
 
 export interface DadosTelaPrevisto {
@@ -34,6 +45,8 @@ export interface DadosTelaPrevisto {
   diaFoco?: string;
   /** Curva real hora a hora do dia em foco (kWh por hora 0..23), se o inversor der. */
   realHora?: number[] | null;
+  /** Calibração automática (orientação/inclinação pela curva real). */
+  calibracao?: CalibracaoTela | null;
 }
 
 const CLIMA_TXT: Record<Clima, string> = {
@@ -98,6 +111,37 @@ function graficoHora(prev: number[], real: number[] | null | undefined): string 
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Hora a hora: real e previsto">${s}</svg>`;
 }
 
+const ROSA_NOMES: Record<number, string> = { 0: 'N', 45: 'NE', 90: 'L', 135: 'SE', 180: 'S', 225: 'SO', 270: 'O', 315: 'NO' };
+
+/** Rosa dos ventos: quão bem cada orientação reproduz a curva real (na melhor inclinação). */
+export function rosaCalibracao(c: CalibracaoTela): string {
+  const pts = (c.mapa ?? []).filter((m) => Number(m.inclinacao) === Number(c.inclinacao) && Number.isFinite(m.erro));
+  if (pts.length < 8) return '';
+  const errs = pts.map((m) => m.erro);
+  const min = Math.min(...errs), max = Math.max(...errs);
+  const R = 80, cx = 100, cy = 100;
+  const raio = (e: number) => R * (0.15 + (0.85 * (max - e)) / Math.max(1e-9, max - min));
+  const xy = (az: number, r: number) => [cx + r * Math.sin((az * Math.PI) / 180), cy - r * Math.cos((az * Math.PI) / 180)];
+  const ord = [...pts].sort((a, b) => a.azimute - b.azimute);
+  const poly = ord.map((m) => xy(m.azimute, raio(m.erro)).map((v) => v.toFixed(1)).join(',')).join(' ');
+  let g = '';
+  for (const fr of [0.33, 0.66, 1]) g += `<circle cx="${cx}" cy="${cy}" r="${R * fr}" fill="none" stroke="#e2e8f0"/>`;
+  for (const [az, nome] of Object.entries(ROSA_NOMES)) {
+    const [x, y] = xy(Number(az), R + 12);
+    g += `<text x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="middle" font-size="11" fill="#64748b" font-weight="${nome === 'N' ? 700 : 400}">${nome}</text>`;
+  }
+  const [bx, by] = xy(c.azimute, R);
+  return `<svg viewBox="0 0 200 200" style="max-width:220px;margin:0 auto" role="img" aria-label="Orientação que melhor explica a curva real">${g}
+    <polygon points="${poly}" fill="#0f766e33" stroke="#0f766e" stroke-width="2"/>
+    <line x1="${cx}" y1="${cy}" x2="${bx.toFixed(1)}" y2="${by.toFixed(1)}" stroke="#d97706" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="${bx.toFixed(1)}" cy="${by.toFixed(1)}" r="5" fill="#d97706"/></svg>`;
+}
+
+const nomeOrient = (az: number): string => {
+  const k = (Math.round((((az % 360) + 360) % 360) / 45) * 45) % 360;
+  return ORIENT[k] ?? `${Math.round(az)}°`;
+};
+
 export const CSS_PREVISTO = `<style>
 .pv{color:#0f172a;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif}
 .pv h1{font-size:21px;margin:0;color:inherit}.pv .sub{color:#64748b;font-size:14px;margin:4px 0 14px}
@@ -149,10 +193,11 @@ export function renderPrevistoBody(d: DadosTelaPrevisto): string {
 
   const porque = `<ul class="por">
       <li>☀️ Sol que bateu no local: <b>${prevFoco.irradiacao_kwh_m2 != null ? num(Number(prevFoco.irradiacao_kwh_m2), 1) : '—'} kWh/m²</b> (satélite)</li>
-      <li>📐 Telhado <b>${esc(ORIENT[Number(prem.azimute)] ?? `${prem.azimute}°`)}</b>, inclinação <b>${esc(prem.inclinacao ?? '—')}°</b></li>
+      <li>📐 Telhado <b>${esc(nomeOrient(Number(prem.azimute)))}</b>, inclinação <b>${esc(prem.inclinacao ?? '—')}°</b>${prem.calibrados?.length ? ' <span class="tag calc">DESCOBERTO PELA CURVA</span>' : ''}</li>
       <li>⚡ Potência <b>${prem.kwp != null ? num(Number(prem.kwp), 2) : '—'} kWp</b></li>
       ${prem.sombreamento ? `<li>🌳 Sombra do cadastro: −${num(Number(prem.sombreamento) * 100, 0)}%</li>` : ''}
       <li>🔌 Calor, fios, inversor e sujeira: calculados hora a hora</li></ul>
+    ${prem.divergencia ? `<p class="nota">⚠ O cadastro diz telhado <b>${esc(nomeOrient(prem.divergencia.cadastro))}</b>, mas a curva real indica <b>${esc(nomeOrient(prem.divergencia.curva))}</b>. <a href="/dashboard/monitoramento/${esc(d.sistemaId)}/editar">Conferir cadastro</a></p>` : ''}
     ${estimados.length ? `<p class="nota">⚠ Estimado (falta no cadastro): ${esc(estimados.join(', '))}. <a href="/dashboard/monitoramento/${esc(d.sistemaId)}/editar">Corrigir cadastro</a></p>` : ''}
     <p class="nota">Calculado pelo nosso motor (o mesmo validado contra o PV*SOL).</p>`;
 
@@ -167,18 +212,28 @@ export function renderPrevistoBody(d: DadosTelaPrevisto): string {
   <div class="g2">
     <div class="box"><h2>Dias que chamaram atenção</h2>${tabela}<p class="nota">Pouca geração em dia de chuva <b>não</b> vira alerta: o previsto também cai.</p></div>
     <div class="box"><h2>Por que o previsto deu ${num(foco.previsto)} kWh?</h2>${porque}</div>
-  </div></div>`;
+  </div>${caixaCalibracao(d)}</div>`;
 }
 
-/** Pontos do inversor (kW em "HH:MM") → kWh por hora 0..23. */
-export function curvaPorHora(pontos: { hora: string; kw: number }[]): number[] | null {
-  if (!pontos.length) return null;
-  const somas = Array(24).fill(0), qtd = Array(24).fill(0);
-  for (const p of pontos) {
-    const h = Number(String(p.hora).slice(0, 2));
-    if (Number.isInteger(h) && h >= 0 && h < 24 && Number.isFinite(p.kw)) { somas[h] += p.kw; qtd[h]++; }
+export { curvaPorHora } from '../monitoring/previsto/curva.js';
+
+function caixaCalibracao(d: DadosTelaPrevisto): string {
+  const c = d.calibracao;
+  if (!c) {
+    return '<div class="box"><h2>🧭 Calibração automática</h2><p class="m">De madrugada o sistema compara a curva real de dias de céu limpo com 144 combinações de telhado e descobre sozinho a orientação e a inclinação. Esta usina ainda não foi calibrada.</p></div>';
   }
-  return somas.map((s, h) => (qtd[h] ? Math.round((s / qtd[h]) * 1000) / 1000 : 0));
+  const conf = { alta: '🟢 alta', media: '🟡 média', baixa: '🔴 baixa' }[c.confianca];
+  const quando = c.calculado_em ? `${c.calculado_em.slice(8, 10)}/${c.calculado_em.slice(5, 7)}` : '';
+  return `<div class="box"><h2>🧭 Calibração automática — o que a curva real revelou</h2>
+    <div class="g2" style="grid-template-columns:240px 1fr;align-items:center">
+      <div>${rosaCalibracao(c)}</div>
+      <div><ul class="por">
+        <li>Telhado virado para <b>${esc(nomeOrient(c.azimute))}</b> (${Math.round(c.azimute)}°), inclinação <b>${Math.round(c.inclinacao)}°</b></li>
+        ${c.fator != null ? `<li>Rende <b>${Math.round(Number(c.fator) * 100)}%</b> do que a física diz para esse telhado (sujeira, sombra e cabos entram aqui)</li>` : ''}
+        <li>Confiança: <b>${conf}</b> · ${c.dias_usados ?? '—'} dias de céu limpo · calibrado em ${esc(quando)}</li>
+      </ul>
+      <p class="nota">A área verde mostra o quanto cada direção explica a curva real; a seta laranja é a melhor. ${c.confianca === 'alta' ? 'Com confiança alta, o previsto passa a usar este telhado quando o cadastro não informa.' : 'Com confiança abaixo de alta, o previsto continua usando o cadastro.'}</p></div>
+    </div></div>`;
 }
 
 /** Página inteira (tela renovada: sem Tailwind do CDN — CSS próprio acima). */
