@@ -589,6 +589,8 @@ export const goodweAdapter: MonitoringAdapter = {
     const parsed = parseCreds(credenciais);
     if ('error' in parsed) return { ok: false, reason: parsed.error };
     if (!parsed.siteId) return { ok: false, reason: 'GoodWe fetchIntraday precisa de site_id' };
+    // Mesma pausa do sync diário: 429 em qualquer chamada pausa a conta inteira.
+    if (contaPausada(parsed)) return { ok: false, reason: 'limite de consultas da GoodWe (429) — conta pausada' };
     const r = await semsPostAuth<{ dataList?: CurvaItem[] }>(
       (b) => `${b.plant}/v1/hems/power/statisticsAndPreV2`,
       {
@@ -601,6 +603,10 @@ export const goodweAdapter: MonitoringAdapter = {
       },
       parsed,
     );
+    if (!r.ok && ehLimiteGoodwe(r.reason)) {
+      pausarConta(parsed);
+      return { ok: false, reason: 'limite de consultas da GoodWe (429) — conta pausada' };
+    }
     if (!r.ok) return { ok: false, reason: r.reason };
     return { ok: true, pontos: parseCurvaSemsPlus(r.data) };
   },

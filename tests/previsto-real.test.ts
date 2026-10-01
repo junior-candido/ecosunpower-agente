@@ -195,10 +195,14 @@ describe('tela Previsto × Real', async () => {
     p.premissas.estimados = ['inclinação (15°)'];
     expect(renderPrevistoBody({ ...base, previstos: [p] })).toContain('Corrigir cadastro');
   });
-  it('curva do inversor vira kWh por hora (média dos pontos de cada hora)', () => {
-    const c = curvaPorHora([{ hora: '10:00', kw: 5 }, { hora: '10:30', kw: 7 }, { hora: '11:15', kw: 6 }]);
-    expect(c?.[10]).toBe(6);
-    expect(c?.[11]).toBe(6);
+  it('curva do inversor vira kWh por hora (kW × tempo, trapézio)', () => {
+    const pts = Array.from({ length: 13 }, (_, k) => ({ hora: `10:${String(k * 5).padStart(2, '0')}`.replace('10:60', '11:00'), kw: 6 }));
+    const c = curvaPorHora(pts);
+    expect(c?.[10]).toBeCloseTo(6, 3); // 6 kW constantes por 1 h = 6 kWh
     expect(curvaPorHora([])).toBeNull();
+  });
+  it('buraco grande (portal omite zeros do nascer do sol) não infla a hora', () => {
+    const c = curvaPorHora([{ hora: '06:40', kw: 0.5 }, { hora: '06:45', kw: 0.7 }, { hora: '06:50', kw: 0.9 }]);
+    expect(c?.[6]).toBeCloseTo(((0.5 + 0.7) / 2 + (0.7 + 0.9) / 2) * (5 / 60), 2); // só os 10 min medidos
   });
 });

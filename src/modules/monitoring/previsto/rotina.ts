@@ -55,9 +55,13 @@ export async function calcularPrevistos(db: SupabaseClient, datas: string[], dep
   // Calibração automática (orientação/inclinação pela curva real) — bônus: sem tabela/erro, segue sem.
   const calibs = new Map<string, CalibracaoUsina>();
   try {
-    const { data: cs } = await db.from('previsto_calibracao').select('sistema_id, azimute, inclinacao, confianca').eq('status', 'ok');
-    for (const c of (cs ?? []) as Array<{ sistema_id: string; azimute: number | string; inclinacao: number | string; confianca: CalibracaoUsina['confianca'] }>) {
-      calibs.set(c.sistema_id, { azimute: Number(c.azimute), inclinacao: Number(c.inclinacao), confianca: c.confianca });
+    for (let pag = 0; ; pag++) {
+      const { data: cs, error: ec } = await db.from('previsto_calibracao').select('sistema_id, azimute, inclinacao, confianca')
+        .eq('status', 'ok').order('sistema_id', { ascending: true }).range(pag * 1000, pag * 1000 + 999);
+      if (ec) break;
+      const rows = (cs ?? []) as Array<{ sistema_id: string; azimute: number | string; inclinacao: number | string; confianca: CalibracaoUsina['confianca'] }>;
+      for (const c of rows) calibs.set(c.sistema_id, { azimute: Number(c.azimute), inclinacao: Number(c.inclinacao), confianca: c.confianca });
+      if (rows.length < 1000) break;
     }
   } catch { /* sem calibração: usa cadastro/estimativa */ }
 

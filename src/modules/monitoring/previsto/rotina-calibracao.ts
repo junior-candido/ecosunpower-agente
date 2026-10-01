@@ -49,9 +49,13 @@ export async function calibrarUsinas(db: SupabaseClient, deps: DepsCalibracao): 
 
   // Última calibração de cada uma (ok: vale `validade` dias; sem sucesso: tenta de novo em 7).
   const ultima = new Map<string, { status: string; em: number }>();
-  const { data: cs } = await db.from('previsto_calibracao').select('sistema_id, status, calculado_em');
-  for (const c of (cs ?? []) as Array<{ sistema_id: string; status: string; calculado_em: string }>) {
-    ultima.set(c.sistema_id, { status: c.status, em: Date.parse(c.calculado_em) });
+  for (let pag = 0; ; pag++) {
+    const { data: cs, error } = await db.from('previsto_calibracao').select('sistema_id, status, calculado_em')
+      .order('sistema_id', { ascending: true }).range(pag * 1000, pag * 1000 + 999);
+    if (error) throw new Error(`calibração: lendo calibrações: ${error.message}`);
+    const rows = (cs ?? []) as Array<{ sistema_id: string; status: string; calculado_em: string }>;
+    for (const c of rows) ultima.set(c.sistema_id, { status: c.status, em: Date.parse(c.calculado_em) });
+    if (rows.length < 1000) break;
   }
   const venceu = (id: string) => {
     const u = ultima.get(id);
@@ -76,8 +80,11 @@ export async function calibrarUsinas(db: SupabaseClient, deps: DepsCalibracao): 
   const desde = new Date(agora.getTime() - 3 * 3600_000 - 30 * 86400_000).toISOString().slice(0, 10);
   for (const s of fila.slice(0, deps.maxUsinas ?? 8)) {
     resumo.tentadas++;
-    const gravar = (linha: Record<string, unknown>) => db.from('previsto_calibracao').upsert(
-      { sistema_id: s.id, company_id: s.company_id, calculado_em: new Date().toISOString(), ...linha }, { onConflict: 'sistema_id' });
+    const gravar = async (linha: Record<string, unknown>) => {
+      const { error } = await db.from('previsto_calibracao').upsert(
+        { sistema_id: s.id, company_id: s.company_id, calculado_em: new Date().toISOString(), ...linha }, { onConflict: 'sistema_id' });
+      if (error) throw new Error(`gravando calibração: ${error.message}`);
+    };
     try {
       // Dias de céu limpo com geração real, mais recentes primeiro.
       const { data: dias } = await db.from('geracao_esperada').select('data, indice_ceu')
@@ -92,7 +99,7 @@ export async function calibrarUsinas(db: SupabaseClient, deps: DepsCalibracao): 
       const curvas: { data: string; real_hora: number[] }[] = [];
       for (const d of candidatos) {
         if (curvas.length >= 4) break;
-        const c = await deps.buscarCurva(s.id, d).catch(() => null);
+        const c = await deps.buscarCurva(s.id, d); // limite do portal LANÇA → status erro (tenta na noite seguinte)
         if (c && c.some((v) => v > 0)) curvas.push({ data: d, real_hora: c });
         await pausa(3000); // gentil com o portal do inversor
       }
@@ -108,16 +115,22 @@ export async function calibrarUsinas(db: SupabaseClient, deps: DepsCalibracao): 
         lat: p.lat, lon: p.lon, kwp: p.kwp, tipo_instalacao: p.tipo_instalacao,
         refAzimute: cadAz ?? 0, refInclinacao: p.inclinacao,
       }, curvas);
+      const fator = Number.isFinite(r.fator) && r.fator > 0 && r.fator < 10 ? r.fator : null; // kWp absurdo no cadastro não estoura a coluna
       await gravar({
-        status: 'ok', motivo: null, azimute: r.azimute, inclinacao: r.inclinacao, fator: r.fator,
+        status: 'ok', motivo: null, azimute: r.azimute, inclinacao: r.inclinacao, fator,
         erro_forma: r.erro_forma, erro_referencia: r.erro_referencia, confianca: r.confianca,
         dias_usados: r.dias_usados, datas: curvas.map((c) => c.data), mapa: r.mapa, versao_modelo: r.versao_modelo,
       });
       resumo.ok++;
-      resumo.calibradas.push(s.id);
+      // Só vale refazer o previsto se a calibração MUDA as premissas (alta + cadastro incompleto).
+      const faltaNoCadastro = cadAz == null || s.telhado_inclinacao_graus == null;
+      if (r.confianca === 'alta' && faltaNoCadastro) resumo.calibradas.push(s.id);
     } catch (err) {
-      resumo.erros++;
-      await gravar({ status: 'erro', motivo: String((err as Error).message).slice(0, 300) }).then(() => undefined, () => undefined);
+      const msg = String((err as Error).message);
+      // 422 do motor (curva curta/inválida) é permanente: espera 7 dias, não toda noite.
+      const permanente = /motor HTTP 422/.test(msg);
+      if (permanente) resumo.semCurva++; else resumo.erros++;
+      await gravar({ status: permanente ? 'sem_curva' : 'erro', motivo: msg.slice(0, 300) }).catch(() => undefined);
     }
   }
   log(`[calibração] ${resumo.tentadas} tentadas · ${resumo.ok} ok · sem dias limpos ${resumo.semDias} · sem curva ${resumo.semCurva} · erros ${resumo.erros} · fila ${fila.length}`);

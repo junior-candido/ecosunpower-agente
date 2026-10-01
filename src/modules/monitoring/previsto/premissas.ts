@@ -76,7 +76,8 @@ export function montarPremissas(s: SistemaCadastro, calib?: CalibracaoUsina | nu
   } else if (usarCalib) { azimute = usarCalib.azimute; calibrados.push('orientação'); } else { azimute = 0; estimados.push('orientação (Norte)'); }
   let inclinacao = Number(s.telhado_inclinacao_graus);
   if (s.telhado_inclinacao_graus == null || !Number.isFinite(inclinacao) || inclinacao < 0 || inclinacao > 90) {
-    if (usarCalib) { inclinacao = usarCalib.inclinacao; calibrados.push('inclinação'); } else { inclinacao = 15; estimados.push('inclinação (15°)'); }
+    // A inclinação do ajuste só vale junto com a orientação do MESMO ajuste.
+    if (usarCalib && cadAz == null) { inclinacao = usarCalib.inclinacao; calibrados.push('inclinação'); } else { inclinacao = 15; estimados.push('inclinação (15°)'); }
   }
   const sombra = Number(s.sombreamento_pct);
   const sombreamento = s.sombreamento_pct != null && Number.isFinite(sombra) && sombra >= 0 && sombra < 100 ? sombra / 100 : 0;

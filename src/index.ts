@@ -11583,8 +11583,9 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
       // Flag do dia só é gravada DEPOIS de uma rodada boa (resumo.ok): motor fora,
       // senha errada ou limite do clima → tenta de novo na próxima hora.
       let previstoRodando = false;
+      let calibrando = false;
       const rodarPrevisto = async () => {
-        if (previstoRodando) return;
+        if (previstoRodando || calibrando) return;
         previstoRodando = true;
         try {
           const db = supabase.getClient();
@@ -11615,7 +11616,6 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
       // CALIBRAÇÃO AUTOMÁTICA: de madrugada (23h–5h BRT), poucas usinas por hora;
       // descobre orientação/inclinação pela forma da curva real e refaz os 30 dias
       // de previsto das que calibraram.
-      let calibrando = false;
       const rodarCalibracao = async () => {
         const h = (new Date().getUTCHours() - 3 + 24) % 24;
         if (calibrando || previstoRodando || !(h >= 23 || h < 5)) return;
@@ -11631,6 +11631,7 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
               const adapter = getAdapterPrevisto((row as { marca_inversor: never }).marca_inversor);
               if (!adapter?.fetchIntraday) return null;
               const res = await adapter.fetchIntraday((row as { api_credentials: never }).api_credentials, data, monitoringService.buildAdapterContext(row as never));
+              if (!res.ok && /limite|429|pausad/i.test(res.reason)) throw new Error(res.reason);
               return res.ok ? curvaPorHora(res.pontos) : null;
             },
           });
