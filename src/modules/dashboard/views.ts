@@ -1293,6 +1293,7 @@ export function renderDetalheSistemaPage(
       <form action="/dashboard/monitoramento/${sid}/sync" method="post">${botao({ rotulo: 'Atualizar agora', tipo: 'submit', tom: 'ouro', icone: 'zap' })}</form>
       ${botao({ rotulo: 'Previsto × Real', href: `/dashboard/monitoramento/${s.id}/previsto`, icone: 'trend' })}
       ${botao({ rotulo: 'Rede', href: `/dashboard/monitoramento/${s.id}/rede`, icone: 'zap' })}
+      ${botao({ rotulo: 'Importar geração', href: `/dashboard/monitoramento/${s.id}/importar`, icone: 'file' })}
       ${botao({ rotulo: 'Relatório', href: `/dashboard/monitoramento/${s.id}/relatorio`, icone: 'file' })}
       ${botao({ rotulo: 'Editar', href: `/dashboard/monitoramento/${s.id}/editar`, icone: 'cog' })}
       ${menuAcoes({ alinhar: 'dir', itensHtml: `
