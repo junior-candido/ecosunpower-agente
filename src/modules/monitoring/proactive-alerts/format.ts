@@ -27,6 +27,7 @@ function header(tipo: MonitoringAlertRow['tipo']): string {
     case 'milestone_economia': return '🟢 BOMBANDO';
     case 'tensao_rede_alta': return '⚡ TENSÃO ALTA';
     case 'string_zerada': return '🔌 STRING ZERADA';
+    case 'abaixo_do_previsto': return '☀️ ABAIXO DO PREVISTO';
   }
 }
 
@@ -59,6 +60,7 @@ function botoesFor(tipo: MonitoringAlertRow['tipo'], sId: string): AlertButton[]
     // Fase 2B: problema TÉCNICO é do operador (não vira abordagem Eva ao cliente)
     case 'tensao_rede_alta':
     case 'string_zerada':
+    case 'abaixo_do_previsto':
       return [
         { id: `evabt:alert-ver:${sId}`, title: '🔍 Ver detalhe' },
         { id: `evabt:alert-snooze3d:${sId}`, title: '💤 Adiar 3d' },

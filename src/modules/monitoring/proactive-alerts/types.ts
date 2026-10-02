@@ -10,7 +10,9 @@ export type AlertTipo =
   // Fase 2B: vigias de telemetria (ciclo diário próprio; o detect de geração
   // NÃO cria nem resolve estes — ver FAMILIA_GERACAO no detect.ts)
   | 'tensao_rede_alta'
-  | 'string_zerada';
+  | 'string_zerada'
+  // Energy Studio Marco 1: 2 dias seguidos muito abaixo do previsto com o sol real
+  | 'abaixo_do_previsto';
 
 // Row em monitoring_alerts (linha 1:1 do DB)
 export interface MonitoringAlertRow {

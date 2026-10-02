@@ -9,6 +9,7 @@ import { buscarPaginado } from '../paginacao.js';
 import { getAdapter } from '../adapter-registry.js';
 import type { MarcaInversor } from '../types.js';
 import type { SistemaParaDetect, MonitoringAlertRow } from './types.js';
+import { avaliarAlertaPrevisto, type DiaParaAlerta } from '../previsto/alerta.js';
 
 interface SistemaListadoDashboard {
   id: string;
@@ -169,6 +170,51 @@ export class ProactiveAlertService {
       }
     }
     console.log(`[proactive-alerts] telemetria: ${sistemas.length} sistemas, ${novos} novos, ${resolvidos} resolvidos`);
+    return { novos, resolvidos };
+  }
+
+  // [Energy Studio Marco 1] ABAIXO DO PREVISTO — 1×/dia (22h BRT, depois da
+  // rotina do previsto). Só usinas com previsto calculado (módulo previsto_real).
+  // 2 dias seguidos "muito abaixo" → alerta técnico pro operador; volta ao
+  // normal → resolve sozinho.
+  async runPrevistoCycle(hoje: Date): Promise<{ novos: number; resolvidos: number }> {
+    const client = this.supabase.getClient();
+    const desde = new Date(hoje.getTime() - 3 * 3600_000 - 4 * 86400_000).toISOString().slice(0, 10);
+    const prev = await buscarPaginado(() => client.from('geracao_esperada')
+      .select('sistema_id, company_id, data, kwh_previsto, clima').gte('data', desde)
+      .order('sistema_id', { ascending: true }).order('data', { ascending: true })) as Array<{ sistema_id: string; company_id: string; data: string; kwh_previsto: number | string; clima: string }>;
+    if (prev.length === 0) return { novos: 0, resolvidos: 0 };
+    const reais = await buscarPaginado(() => client.from('geracao_diaria')
+      .select('sistema_id, data, geracao_kwh').gte('data', desde)
+      .order('sistema_id', { ascending: true }).order('data', { ascending: true })) as Array<{ sistema_id: string; data: string; geracao_kwh: number | string }>;
+    const real = new Map(reais.map((r) => [`${r.sistema_id}|${r.data}`, Number(r.geracao_kwh)]));
+
+    const porUsina = new Map<string, { company: string; dias: DiaParaAlerta[] }>();
+    for (const p of prev) {
+      const u = porUsina.get(p.sistema_id) ?? { company: p.company_id, dias: [] };
+      const r = real.get(`${p.sistema_id}|${p.data}`);
+      u.dias.push({ data: p.data, previsto: Number(p.kwh_previsto), real: r === undefined || !Number.isFinite(r) ? null : r, clima: p.clima as DiaParaAlerta['clima'] });
+      porUsina.set(p.sistema_id, u);
+    }
+    const abertos = (await this.supabase.getAlertasAbertosBySistemas([...porUsina.keys()]) as MonitoringAlertRow[])
+      .filter((a) => !a.resolved_at && a.tipo === 'abaixo_do_previsto');
+
+    let novos = 0, resolvidos = 0;
+    for (const [sid, u] of porUsina) {
+      const av = avaliarAlertaPrevisto(u.dias);
+      const aberto = abertos.find((a) => a.sistema_id === sid);
+      if (av.alertar && !aberto) {
+        await this.supabase.criarAlertaPendente({
+          sistema_id: sid, tipo: 'abaixo_do_previsto', severidade: 'aviso', texto: av.texto,
+          primeiro_visto_em: hoje.toISOString(), next_send_at: hoje.toISOString(), company_id: u.company,
+        });
+        novos++;
+      } else if (aberto && av.normalizou) {
+        await this.supabase.resolverAlerta(aberto.id, hoje.toISOString(), 'auto');
+        resolvidos++;
+      }
+    }
+    console.log(`[proactive-alerts] previsto: ${porUsina.size} usinas, ${novos} novos, ${resolvidos} resolvidos`);
     return { novos, resolvidos };
   }
 }

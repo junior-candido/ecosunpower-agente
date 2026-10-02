@@ -11957,6 +11957,16 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     setInterval(checkTelemetriaHour, 60 * 60 * 1000);
     setTimeout(checkTelemetriaHour, 9 * 60 * 1000);
 
+    // [Energy Studio Marco 1] Alerta ABAIXO DO PREVISTO — 1×/dia às 22h BRT
+    // (a rotina do previsto roda a partir das 21h).
+    const checkPrevistoAlertHour = () => {
+      const h = new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hour12: false });
+      if (Number(h) !== 22) return;
+      proactiveAlertService.runPrevistoCycle(new Date())
+        .catch((err) => console.error('[proactive-alerts] previsto cron falhou:', (err as Error).message));
+    };
+    setInterval(checkPrevistoAlertHour, 60 * 60 * 1000);
+
     console.log(
       `[proactive-alerts] crons started (detect 60min, dispatch 15min, anniversary 06h BRT, telemetria 18h BRT). DRY_RUN=${proactiveDryRun}`,
     );
