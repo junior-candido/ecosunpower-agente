@@ -651,6 +651,70 @@
         "enctype": "",
         "campos": [
           {
+            "name": "agua_inc_0",
+            "type": "number"
+          },
+          {
+            "name": "agua_inc_1",
+            "type": "number"
+          },
+          {
+            "name": "agua_inc_2",
+            "type": "number"
+          },
+          {
+            "name": "agua_inc_3",
+            "type": "number"
+          },
+          {
+            "name": "agua_kwp_0",
+            "type": "number"
+          },
+          {
+            "name": "agua_kwp_1",
+            "type": "number"
+          },
+          {
+            "name": "agua_kwp_2",
+            "type": "number"
+          },
+          {
+            "name": "agua_kwp_3",
+            "type": "number"
+          },
+          {
+            "name": "agua_nome_0",
+            "type": "text"
+          },
+          {
+            "name": "agua_nome_1",
+            "type": "text"
+          },
+          {
+            "name": "agua_nome_2",
+            "type": "text"
+          },
+          {
+            "name": "agua_nome_3",
+            "type": "text"
+          },
+          {
+            "name": "agua_ori_0",
+            "type": "select"
+          },
+          {
+            "name": "agua_ori_1",
+            "type": "select"
+          },
+          {
+            "name": "agua_ori_2",
+            "type": "select"
+          },
+          {
+            "name": "agua_ori_3",
+            "type": "select"
+          },
+          {
             "name": "apelido",
             "type": "text"
           },
@@ -811,6 +875,70 @@
         "action": "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222/editar",
         "enctype": "",
         "campos": [
+          {
+            "name": "agua_inc_0",
+            "type": "number"
+          },
+          {
+            "name": "agua_inc_1",
+            "type": "number"
+          },
+          {
+            "name": "agua_inc_2",
+            "type": "number"
+          },
+          {
+            "name": "agua_inc_3",
+            "type": "number"
+          },
+          {
+            "name": "agua_kwp_0",
+            "type": "number"
+          },
+          {
+            "name": "agua_kwp_1",
+            "type": "number"
+          },
+          {
+            "name": "agua_kwp_2",
+            "type": "number"
+          },
+          {
+            "name": "agua_kwp_3",
+            "type": "number"
+          },
+          {
+            "name": "agua_nome_0",
+            "type": "text"
+          },
+          {
+            "name": "agua_nome_1",
+            "type": "text"
+          },
+          {
+            "name": "agua_nome_2",
+            "type": "text"
+          },
+          {
+            "name": "agua_nome_3",
+            "type": "text"
+          },
+          {
+            "name": "agua_ori_0",
+            "type": "select"
+          },
+          {
+            "name": "agua_ori_1",
+            "type": "select"
+          },
+          {
+            "name": "agua_ori_2",
+            "type": "select"
+          },
+          {
+            "name": "agua_ori_3",
+            "type": "select"
+          },
           {
             "name": "apelido",
             "type": "text"

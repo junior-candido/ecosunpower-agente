@@ -1610,6 +1610,22 @@ const INVERSORES_MODELOS_SUGESTOES = [
   'Huawei SUN2000-5KTL-L1',
 ];
 
+/** Linhas "água" do formulário Editar usina → arranjos (2+ completas) ou null. */
+export function aguasDoFormulario(body: Record<string, unknown>): Array<{ nome: string; kwp: number; azimute: number; inclinacao: number }> | null {
+  const AZ: Record<string, number> = { N: 0, NE: 45, L: 90, SE: 135, S: 180, SO: 225, O: 270, NO: 315 };
+  const out: Array<{ nome: string; kwp: number; azimute: number; inclinacao: number }> = [];
+  for (let i = 0; i < 4; i++) {
+    const kwp = Number(String(body[`agua_kwp_${i}`] ?? '').replace(',', '.'));
+    const ori = String(body[`agua_ori_${i}`] ?? '').trim().toUpperCase();
+    const incTxt = String(body[`agua_inc_${i}`] ?? '').trim();
+    const inc = Number(incTxt.replace(',', '.'));
+    if (!(kwp > 0) || !(ori in AZ) || incTxt === '' || !Number.isFinite(inc) || inc < 0 || inc > 90) continue;
+    const nome = String(body[`agua_nome_${i}`] ?? '').trim().slice(0, 60) || `Água ${i + 1}`;
+    out.push({ nome, kwp, azimute: AZ[ori], inclinacao: inc });
+  }
+  return out.length >= 2 ? out : null;
+}
+
 export function renderEditarSistemaPage(
   s: import('../monitoring/types.js').SistemaCliente,
   dono?: { id: string; name: string | null; phone: string | null } | null,
@@ -1699,6 +1715,20 @@ export function renderEditarSistemaPage(
         ${campo('Inclinação (graus)', `<input name="telhado_inclinacao_graus" type="number" min="0" max="90" value="${s.telhado_inclinacao_graus ?? ''}" placeholder="Ex: 23">`)}
         ${campo('Sombreamento estimado (%)', `<input name="sombreamento_pct" type="number" min="0" max="100" value="${s.sombreamento_pct ?? ''}" placeholder="0 = sem sombra">`)}
       </div>` })}
+
+      ${cartaoSecao({ titulo: 'Telhado com mais de uma água (opcional)', corpoHtml: `
+        <p class="cc-us-nota">Use quando as placas estão em <strong>águas diferentes</strong> (ex.: parte para o Leste, parte para o Oeste). O Previsto × Real calcula cada água com o sol do dia e soma. Preencha <strong>pelo menos 2</strong> linhas; deixe em branco para usar só o telhado acima.</p>
+        ${[0, 1, 2, 3].map((i) => {
+          const a = (Array.isArray((s as { arranjos?: unknown }).arranjos) ? ((s as { arranjos?: Array<Record<string, unknown>> }).arranjos ?? []) : [])[i] ?? {};
+          const oriDe = (az: unknown) => { const n = Number(az); if (!Number.isFinite(n)) return ''; const k = (Math.round((((n % 360) + 360) % 360) / 45) * 45) % 360; return ({ 0: 'N', 45: 'NE', 90: 'L', 135: 'SE', 180: 'S', 225: 'SO', 270: 'O', 315: 'NO' } as Record<number, string>)[k] ?? ''; };
+          const ori = oriDe(a.azimute);
+          return `<div class="cc-us-grid">
+            ${campo(`Água ${i + 1} — nome`, `<input name="agua_nome_${i}" type="text" maxlength="60" value="${escapeHtml(String(a.nome ?? ''))}" placeholder="Ex: Bloco A oeste">`)}
+            ${campo('kWp desta água', `<input name="agua_kwp_${i}" type="number" step="0.01" min="0" value="${a.kwp ?? ''}" placeholder="Ex: 2.86">`)}
+            ${campo('Virada para', `<select name="agua_ori_${i}">${orientacoes.map((o) => `<option value="${o.v}" ${ori === o.v && o.v ? 'selected' : ''}>${escapeHtml(o.l)}</option>`).join('')}</select>`)}
+            ${campo('Inclinação (graus)', `<input name="agua_inc_${i}" type="number" min="0" max="90" value="${a.inclinacao ?? ''}" placeholder="Ex: 10">`)}
+          </div>`;
+        }).join('')}` })}
 
       ${cartaoSecao({ titulo: 'Observações', corpoHtml: `<textarea name="observacoes" rows="3" placeholder="Manutenções, situações especiais, troca de equipamento, etc." aria-label="Observações">${escapeHtml(s.observacoes ?? '')}</textarea>` })}
 
