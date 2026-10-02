@@ -79,7 +79,16 @@ export function linhasGeracao(
   geracoes: { data: string; geracao_kwh: number }[],
 ): Array<{ sistema_id: string; data: string; geracao_kwh: number; fetched_at: string; fetched_source: string; company_id: string }> {
   const fetchedAt = new Date().toISOString();
-  return geracoes.map((g) => ({
+  // 02/10/2026: o portal às vezes devolve o MESMO dia duas vezes na resposta
+  // (Deye, Lucas Azevedo) e o upsert em lote falha inteiro ("ON CONFLICT DO
+  // UPDATE command cannot affect row a second time"). Uma linha por dia, com o
+  // MAIOR valor (o repetido costuma ser o dia parcial por fuso).
+  const porDia = new Map<string, { data: string; geracao_kwh: number }>();
+  for (const g of geracoes) {
+    const ja = porDia.get(g.data);
+    if (!ja || g.geracao_kwh > ja.geracao_kwh) porDia.set(g.data, g);
+  }
+  return [...porDia.values()].map((g) => ({
     sistema_id: sistemaId,
     data: g.data,
     geracao_kwh: g.geracao_kwh,
