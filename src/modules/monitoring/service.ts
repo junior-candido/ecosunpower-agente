@@ -58,11 +58,13 @@ export const SOLAREDGE_INTERVALO_DESCOBERTA_MS = 6 * 60 * 60 * 1000;
 const MSG_SOLAREDGE_LIMITE = 'SolarEdge: limite diário de consultas da API atingido — nova tentativa em cerca de 3 h';
 
 function ehLimiteSolarEdge(reason: string | undefined): boolean {
-  return /^SolarEdge 429\b/.test(reason ?? '');
+  return /^SolarEdge (V2 )?429\b/.test(reason ?? '');
 }
 
 function chaveSolarEdge(sistema: SistemaCliente): string {
-  return String((sistema.api_credentials as Record<string, unknown>)?.api_key ?? '').trim();
+  const c = (sistema.api_credentials as Record<string, unknown>) ?? {};
+  // V2: a pausa vale pra chave Fleet da conta (a do ambiente é uma só pra casa).
+  return String(c.fleet_key ?? c.api_key ?? '').trim() || `fleet:${sistema.company_id ?? 'casa'}`;
 }
 
 // [Fase 2 A3] Toda escrita derivada de um sistema carimba o company_id DO
@@ -454,6 +456,7 @@ export class MonitoringService {
   // Público pra rota de detalhe passar no fetchIntraday.
   buildAdapterContext(sistema: SistemaCliente): AdapterContext {
     return {
+      companyId: (sistema.company_id as string | null | undefined) ?? null,
       persistAccountCreds: (patch) =>
         this.persistCredsPorConta(sistema.marca_inversor, (sistema.api_credentials as Record<string, unknown>)?.appkey, patch),
     };

@@ -112,6 +112,8 @@ export interface AdapterContext {
   // Aplica um patch (merge) nas credenciais da CONTA — todas as plantas que
   // compartilham o mesmo appkey/conta. Idempotente; falha silenciosa é logada.
   persistAccountCreds?(patch: Record<string, unknown>): Promise<void>;
+  /** Empresa dona da usina (chaves de AMBIENTE só valem pra casa — ex. SolarEdge Fleet). */
+  companyId?: string | null;
 }
 
 // Interface que cada marca precisa implementar.
