@@ -36,9 +36,9 @@ const attrsMaplibre = () =>
   `data-ml-js="${escapeHtml(MAPLIBRE.js)}" data-ml-js-sri="${escapeHtml(MAPLIBRE.jsSri)}" data-ml-css="${escapeHtml(MAPLIBRE.css)}" data-ml-css-sri="${escapeHtml(MAPLIBRE.cssSri)}"`;
 
 /** O mapa grande do Command Center. Os números chegam por JSON (mapa.json). */
-export function blocoMapaUsinas(o: { podeLocalizar: boolean; tv?: boolean }): string {
+export function blocoMapaUsinas(o: { podeLocalizar: boolean; tv?: boolean; url?: string; titulo?: string; dica?: string }): string {
   const dados = [
-    `data-url="${URL_MAPA_JSON}"`,
+    `data-url="${escapeHtml(o.url ?? URL_MAPA_JSON)}"`,
     `data-estilo="${escapeHtml(ESTILO_MAPA_ESCURO)}"`,
     attrsMaplibre(),
     o.podeLocalizar ? `data-localizar="${URL_LOCALIZAR}"` : '',
@@ -47,7 +47,7 @@ export function blocoMapaUsinas(o: { podeLocalizar: boolean; tv?: boolean }): st
   // Mesma casca do cartaoSecao (ui/componentes.ts), com os data-* do mapa.
   return `<link rel="stylesheet" href="${URL_CSS_MAPA_USINAS}">
 <section class="cc-panel cc-mapa cc-a-mapa" id="cc-mapa-usinas" ${dados}>
-  <div class="cc-ph"><h3>Mapa das usinas</h3><span class="cc-hint">Brasília e entorno · cor = estado agora</span><span class="cc-sp"></span><button type="button" class="cc-btn cc-btn-sm" data-acao="tela-cheia">Tela cheia</button></div>
+  <div class="cc-ph"><h3>${escapeHtml(o.titulo ?? 'Mapa das usinas')}</h3><span class="cc-hint">${escapeHtml(o.dica ?? 'Brasília e entorno · cor = estado agora')}</span><span class="cc-sp"></span><button type="button" class="cc-btn cc-btn-sm" data-acao="tela-cheia">Tela cheia</button></div>
   <div class="cc-mapa-top"><div class="cc-mapa-leg" aria-label="Legenda e contagem por estado"></div></div>
   <div class="cc-mapa-box"><div class="cc-mapa-canvas" role="region" aria-label="Mapa das usinas"></div><div class="cc-mapa-status">Carregando o mapa…</div></div>
   <div class="cc-mapa-aviso" hidden></div>

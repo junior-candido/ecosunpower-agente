@@ -6,6 +6,8 @@ import type { DashUser } from './permissions.js';
 import { limitesProdist, LIMITE_DESARME_INVERSOR_V } from '../energia/prodist.js';
 import type { AnaliseRede, LeituraTensao, PontoGeracao } from '../monitoring/rede/analise.js';
 import { CSS_PREVISTO } from './previsto-views.js';
+import { blocoMapaUsinas } from './mapa-usinas-views.js';
+import type { RankingRede } from '../monitoring/rede/camada-mapa.js';
 
 const esc = (s: unknown): string =>
   String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -83,7 +85,7 @@ export function renderRedeBody(d: DadosTelaRede): string {
       <a class="volta" href="?dia=${somaDia(d.dia, -1)}">← dia anterior</a>
       <b>${d.dia.slice(8, 10)}/${d.dia.slice(5, 7)}/${d.dia.slice(0, 4)}</b>
       <a class="volta" href="?dia=${somaDia(d.dia, 1)}">dia seguinte →</a>
-      <span style="flex:1"></span><a class="volta" href="/dashboard/monitoramento/${esc(d.sistemaId)}/rede/relatorio?dias=30" target="_blank" rel="noopener">📄 Relatório em PDF (30 dias)</a></div>`;
+      <span style="flex:1"></span><a class="volta" href="/dashboard/rede/mapa">📡 Radar da Rede (todas)</a> · <a class="volta" href="/dashboard/monitoramento/${esc(d.sistemaId)}/rede/relatorio?dias=30" target="_blank" rel="noopener">📄 Relatório em PDF (30 dias)</a></div>`;
   const topo = `<a class="volta" href="/dashboard/monitoramento/${esc(d.sistemaId)}">← voltar para a usina</a>
     <h1>⚡ ${esc(d.nome)} — Rede</h1><div class="sub">${esc(d.local)} · tensão medida pelo ${esc(d.fonte)} · faixas da ANEEL (PRODIST Módulo 8)</div>${nav}`;
   if (a.nivel === 'sem_dado') {
@@ -108,6 +110,22 @@ export function renderRedeBody(d: DadosTelaRede): string {
       <div class="box"><h2>Tempo em cada faixa</h2>${tabela}<p class="nota">Tensão nominal considerada: ${a.nominal ?? '—'} V. Valores indicativos (o inversor não é analisador classe A).</p></div>
       <div class="box"><h2>Desarmes prováveis por tensão</h2>${desarmes}</div>
     </div></div>`;
+}
+
+/** Radar da Rede: mapa (camada Rede) + ranking das usinas com pior tensão. */
+export function renderRadarRedePage(ranking: RankingRede[], noMapa: number, user: DashUser | undefined): string {
+  const rot = { ok: '✅ Boa', atencao: '🟠 No limite', critico: '🔴 Fora da faixa' } as const;
+  const cls = { ok: 's-ok', atencao: 's-at', critico: 's-ru' } as const;
+  const linhas = ranking.slice(0, 30).map((r) => `<tr><td><a href="${esc(r.href)}">${esc(r.nome)}</a></td><td>${esc(r.cidade ?? '—')}</td><td class="n">${r.vMax.toFixed(0)} V</td><td class="n">${r.minAcima}</td><td class="n">${r.desarmes}</td><td class="n">${r.diasCriticos}/${r.dias}</td><td><span class="st ${cls[r.nivel]}">${rot[r.nivel]}</span></td></tr>`).join('');
+  const body = `${CSS_PREVISTO}<div class="pv pv-claro">
+    <h1>📡 Radar da Rede</h1><div class="sub">Qualidade da tensão da rede nos últimos 7 dias, usina por usina · faixas da ANEEL (PRODIST Módulo 8) · ${ranking.length} de ${noMapa} usinas no mapa já mandam a tensão</div>
+    ${blocoMapaUsinas({ podeLocalizar: false, url: '/dashboard/rede/mapa.json', titulo: 'Tensão da rede por bairro', dica: 'cor = pior dia dos últimos 7 · verde boa · amarelo no limite · vermelho fora da faixa · cinza sem medição' })}
+    <div class="box" style="margin-top:14px"><h2>Usinas com a rede mais problemática</h2>
+      ${ranking.length ? `<div class="tb"><table><tr><th>Usina</th><th>Cidade</th><th class="n">Máx.</th><th class="n">Min ≥ 242 V</th><th class="n">Desligou</th><th class="n">Dias críticos</th><th>Rede</th></tr>${linhas}</table></div>`
+        : '<p class="nota">Ainda sem resumo da rede. Ele é calculado toda noite para as usinas que mandam tensão (Sungrow, FoxESS, Solis e medidor Shelly).</p>'}
+      <p class="nota">Clique na usina para ver a tensão dia a dia e gerar o relatório em PDF para a distribuidora.</p></div>
+  </div>`;
+  return renderLayout({ active: 'monitoramento', title: 'Radar da Rede', body, user, largo: true, tailwind: false });
 }
 
 export function renderRedePage(body: string, user: DashUser | undefined): string {

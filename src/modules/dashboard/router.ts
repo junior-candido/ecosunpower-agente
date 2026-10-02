@@ -78,6 +78,9 @@ import { renderRedeBody, renderRedePage } from './rede-views.js';
 import { analisarRede, type LeituraTensao, type PontoGeracao } from '../monitoring/rede/analise.js';
 import { montarRelatorioRede, diaBrasilia } from '../monitoring/rede/relatorio.js';
 import { renderRelatorioRedeHtml } from './rede-relatorio-html.js';
+import { aplicarCamadaRede, type ResumoRedeLinha } from '../monitoring/rede/camada-mapa.js';
+import { carregarMapaUsinas } from './mapa-usinas.js';
+import { renderRadarRedePage } from './rede-views.js';
 import { garantiaInfo } from '../monitoring/garantia.js';
 import { filtrarOrdenarSistemas } from '../monitoring/filtro.js';
 import { hojeBrasilia } from '../monitoring/util/dia-brasilia.js';
@@ -5919,6 +5922,47 @@ export function createDashboardRouter(
 
   // Detalhe de UMA usina: KPIs (hoje/mes/ano/total), grafico 30 dias,
   // grafico mensal 12m, alertas. Auto-refresh 30s.
+  // RADAR DA REDE (Marco 2 — 02/10/2026): mapa das usinas colorido pela
+  // qualidade da tensão nos últimos 7 dias + ranking das piores.
+  async function carregarRadarRede(req: AuthedRequest) {
+    const user = req.dashUser!;
+    const db = bancoDoOperador(req, supabase);
+    const agora = new Date();
+    const base = await carregarMapaUsinas(db, user.companyId, agora, empresaDe(user.companyId).reguaAtencaoPct / 100);
+    const desde = new Date(agora.getTime() - 3 * 3600_000 - 7 * 86400_000).toISOString().slice(0, 10);
+    const { data, error } = await db.from('rede_resumo_diario')
+      .select('sistema_id, dia, v_max, min_critica, min_acima_desarme, desarmes, nivel')
+      .eq('company_id', user.companyId).gte('dia', desde).limit(10000);
+    if (error) throw new Error(error.message);
+    return aplicarCamadaRede(base, (data ?? []) as ResumoRedeLinha[]);
+  }
+  router.get('/rede/mapa.json', async (req: Request, res: Response) => {
+    const user = (req as AuthedRequest).dashUser;
+    if (!user) { res.status(401).json({ erro: 'sem_sessao' }); return; }
+    if (!can(user, 'usinas', 'visualizar')) { res.status(403).json({ erro: 'Sem acesso às usinas' }); return; }
+    if (!(await lerModulosAtivos(supabase, user.companyId)).has('previsto_real')) { res.status(403).json({ erro: 'Módulo fora do plano', trancado: true }); return; }
+    try {
+      const d = await carregarRadarRede(req as AuthedRequest);
+      res.setHeader('Cache-Control', 'private, max-age=60');
+      res.json({ ...d, podeLocalizar: false });
+    } catch (err) {
+      console.error('[rede] mapa.json:', (err as Error).message);
+      res.status(503).json({ erro: 'sem_dado' });
+    }
+  });
+  router.get('/rede/mapa', async (req: Request, res: Response) => {
+    const user = (req as AuthedRequest).dashUser;
+    if (!user || !can(user, 'usinas', 'visualizar')) return res.status(403).send('<h2>Sem acesso às usinas</h2>');
+    if (!(await lerModulosAtivos(supabase, user.companyId)).has('previsto_real')) return res.redirect('/dashboard/conhecer/previsto_real');
+    try {
+      const d = await carregarRadarRede(req as AuthedRequest);
+      res.send(renderRadarRedePage(d.ranking, d.usinas.length, user));
+    } catch (err) {
+      console.error('[rede] radar:', (err as Error).message);
+      res.status(500).send('<h2>Não consegui abrir o Radar da Rede agora.</h2><a href="/dashboard">← voltar</a>');
+    }
+  });
+
   // RELATÓRIO "a culpa foi da rede" (PDF, Marco 2 — 02/10/2026): N dias de tensão
   // + geração, resumo por dia, pior dia detalhado, base técnica e RT.
   router.get('/monitoramento/:id/rede/relatorio', async (req: Request, res: Response) => {

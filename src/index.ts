@@ -145,6 +145,7 @@ import { tickDetectarMedidor, criarDetectarMedidorDb, criarAoMarcarMedidor } fro
 import { criarRotasAutomaticas, ehCasa } from './modules/canal-automatico.js';
 import { lerModulosAtivos } from './modules/dashboard/modulos-contratados.js';
 import { calcularPrevistos, ultimosDias } from './modules/monitoring/previsto/rotina.js';
+import { resumirRedeDoDia } from './modules/monitoring/rede/resumo-diario.js';
 import { configMotorDoAmbiente } from './modules/monitoring/previsto/motor-cliente.js';
 import { calibrarUsinas } from './modules/monitoring/previsto/rotina-calibracao.js';
 import { curvaPorHora } from './modules/monitoring/previsto/curva.js';
@@ -11966,6 +11967,22 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
         .catch((err) => console.error('[proactive-alerts] previsto cron falhou:', (err as Error).message));
     };
     setInterval(checkPrevistoAlertHour, 60 * 60 * 1000);
+
+    // [Energy Studio Marco 2] RADAR DA REDE — resumo diário da tensão por usina.
+    // 23h BRT: hoje e ontem. No boot (15 min depois): últimos 7 dias, para o
+    // mapa já nascer cheio. Idempotente (upsert por usina+dia).
+    const rodarResumoRede = async (dias: string[]) => {
+      const db = supabase.getClient();
+      for (const dia of dias) {
+        await resumirRedeDoDia(db, dia, async (cid) => (await lerModulosAtivos(db, cid)).has('previsto_real'))
+          .catch((err) => console.error(`[rede] resumo ${dia} falhou:`, (err as Error).message));
+      }
+    };
+    setInterval(() => {
+      const h = new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hour12: false });
+      if (Number(h) === 23) rodarResumoRede(ultimosDias(2));
+    }, 60 * 60 * 1000);
+    setTimeout(() => rodarResumoRede(ultimosDias(7)), 15 * 60 * 1000);
 
     console.log(
       `[proactive-alerts] crons started (detect 60min, dispatch 15min, anniversary 06h BRT, telemetria 18h BRT). DRY_RUN=${proactiveDryRun}`,

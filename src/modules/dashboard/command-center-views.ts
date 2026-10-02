@@ -616,6 +616,7 @@ function previstoOntem(d: CommandCenterDados): string {
   return cartaoSecao({
     titulo: `Previsto × Real — ${dataBr}`,
     dica: 'quem gerou menos do que devia com o sol que fez',
+    acoesHtml: '<a class="cc-link" href="/dashboard/rede/mapa">📡 Radar da Rede</a>',
     classe: 'cc-a-prev',
     corpoHtml: resumo + tab,
   });
