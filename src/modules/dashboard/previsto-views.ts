@@ -164,7 +164,7 @@ export const CSS_PREVISTO = `<style>
 </style>`;
 
 export function renderPrevistoBody(d: DadosTelaPrevisto): string {
-  const topo = `<a class="volta" href="/dashboard/monitoramento/${esc(d.sistemaId)}">← voltar para a usina</a>
+  const topo = `<a class="volta" href="/dashboard/monitoramento/${esc(d.sistemaId)}">← voltar para a usina</a> · <a class="volta" href="/dashboard/monitoramento/${esc(d.sistemaId)}/rede">⚡ ver a Rede (tensão)</a>
     <h1>☀️ ${esc(d.nome)}${d.kwp ? ` — ${num(d.kwp, 2)} kWp` : ''}</h1><div class="sub">${esc(d.local)} · Previsto × Real</div>`;
   const linhas = montarLinhas(d);
   if (linhas.length === 0) {

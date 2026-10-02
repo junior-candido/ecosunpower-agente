@@ -16,6 +16,8 @@ export const TELAS_RENOVADAS: string[] = [
   'atendimento-views.ts',
   // Previsto × Real (Energy Studio Marco 1, 01/10/2026) — nasceu com CSS próprio
   'previsto-views.ts',
+  // Rede (Energy Studio Marco 2, 02/10/2026)
+  'rede-views.ts',
   // Command Center, Central de Atenção e Modo TV — nasceram no padrão cc-
   'command-center-views.ts',
   // Mapa das Usinas (bloco do Command Center, mini-mapa, Localizar) — nasceu no padrão cc-
