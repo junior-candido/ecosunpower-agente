@@ -1765,7 +1765,7 @@ export function renderImportarSitesPage(input: ImportarPageInput): string {
   const form = `
       <form action="/dashboard/monitoramento/importar" method="post" class="cc-form cc-us-imp" id="form-importar">
         ${campo('<label for="marca">Marca do inversor</label>', `<select name="marca" id="marca" required
-                  onchange="['solaredge','deye','nep','abb','foxess','goodwe','solis','sungrow','saj'].forEach(function(m){var el=document.getElementById('campos-'+m);if(!el)return;var ativo=document.getElementById('marca').value===m;el.style.display=ativo?'block':'none';el.disabled=!ativo;});">
+                  onchange="['solaredge','deye','nep','hoymiles','abb','foxess','goodwe','solis','sungrow','saj'].forEach(function(m){var el=document.getElementById('campos-'+m);if(!el)return;var ativo=document.getElementById('marca').value===m;el.style.display=ativo?'block':'none';el.disabled=!ativo;});">
             <option value="solaredge">SolarEdge</option>
             <option value="deye">Deye Cloud</option>
             <option value="nep">NEP (microinversores BDM)</option>
@@ -1775,7 +1775,7 @@ export function renderImportarSitesPage(input: ImportarPageInput): string {
             <option value="solis">Solis (SolisCloud API)</option>
             <option value="sungrow">Sungrow (iSolarCloud OpenAPI)</option>
             <option value="saj">SAJ (elekeeper / eSolar)</option>
-            <option value="hoymiles" disabled>Hoymiles (em breve)</option>
+            <option value="hoymiles">Hoymiles (S-Miles Cloud — microinversores)</option>
             <option value="huawei" disabled>Huawei (em breve)</option>
           </select>`)}
 
@@ -1820,6 +1820,15 @@ export function renderImportarSitesPage(input: ImportarPageInput): string {
               placeholder="opcional — cola um JWT do localStorage do NEPViewer (expira em ~30 dias, sem renovação automática)"></textarea>
             <small class="cc-us-dica">Use só se preferir não guardar a senha. Captura: F12 → Console → <code>copy(JSON.parse(localStorage.getItem('userInfo')).token)</code>. Esse jeito expira em ~30 dias e precisa renovar na mão.</small>
           </details>
+        </fieldset>
+
+        <fieldset id="campos-hoymiles" style="display:none" disabled>
+          <div class="cc-us-campos">
+            ${campo('E-mail da conta S-Miles (instalador)', '<input name="hoymiles_email" type="email" placeholder="email da conta S-Miles Installer">')}
+            ${campo('Senha da conta S-Miles', '<input name="hoymiles_password" type="password" placeholder="senha">')}
+          </div>
+          ${nota('atencao', `<strong>Use a conta de INSTALADOR</strong> (S-Miles Installer), não a do cliente. O sistema entra sozinho e lista todas as usinas da conta.
+            A Hoymiles não tem API pública gratuita: usamos o mesmo acesso do portal — se a Hoymiles mudar o portal, a leitura pode parar até ajustarmos.`)}
         </fieldset>
 
         <fieldset id="campos-abb" style="display:none" disabled>
