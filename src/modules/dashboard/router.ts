@@ -81,6 +81,9 @@ import { renderRelatorioRedeHtml } from './rede-relatorio-html.js';
 import { aplicarCamadaRede, type ResumoRedeLinha } from '../monitoring/rede/camada-mapa.js';
 import { carregarMapaUsinas } from './mapa-usinas.js';
 import { renderRadarRedePage } from './rede-views.js';
+import { renderImportarBody, renderImportarPage } from './importar-views.js';
+import { lerCsvGeracao, lerNumero as lerNumeroImportado } from '../monitoring/importacao/csv.js';
+import { lerPrintGeracao } from '../monitoring/importacao/imagem.js';
 import { garantiaInfo } from '../monitoring/garantia.js';
 import { filtrarOrdenarSistemas } from '../monitoring/filtro.js';
 import { hojeBrasilia } from '../monitoring/util/dia-brasilia.js';
@@ -5922,6 +5925,84 @@ export function createDashboardRouter(
 
   // Detalhe de UMA usina: KPIs (hoje/mes/ano/total), grafico 30 dias,
   // grafico mensal 12m, alertas. Auto-refresh 30s.
+  // IMPORTAR GERAÇÃO (02/10/2026): usina sem integração (Hoymiles…) ou dias
+  // que faltam. Arquivo do portal (CSV) ou print do app (IA lê) → conferir → gravar.
+  async function usinaParaImportar(req: Request, res: Response): Promise<{ id: string; nome: string; companyId: string } | null> {
+    const id = String(req.params.id ?? '');
+    if (!UUID_RE.test(id)) { res.status(400).send('UUID invalido'); return null; }
+    const user = (req as AuthedRequest).dashUser;
+    if (!user || !can(user, 'usinas', 'editar')) { res.status(403).send('<h2>Sem permissão para editar usinas</h2>'); return null; }
+    const db = bancoDoOperador(req as AuthedRequest, supabase);
+    const { data: sis } = await db.from('sistemas_clientes').select('id, apelido, company_id').eq('id', id).maybeSingle();
+    const sx = (sis ?? null) as { id: string; apelido: string | null; company_id: string | null } | null;
+    if (!sx || !usinaPertenceAoOperador(sx.company_id ?? null, user.companyId)) {
+      res.status(404).send('<h2>Sistema nao encontrado</h2><a href="/dashboard/monitoramento">← voltar</a>'); return null;
+    }
+    return { id, nome: sx.apelido ?? 'Usina', companyId: sx.company_id ?? ECOSUN_COMPANY_ID };
+  }
+  router.get('/monitoramento/:id/importar', async (req: Request, res: Response) => {
+    const u = await usinaParaImportar(req, res); if (!u) return;
+    const gravados = typeof req.query.gravados === 'string' ? Number(req.query.gravados) : undefined;
+    res.send(renderImportarPage(renderImportarBody({ sistemaId: u.id, nome: u.nome, gravados: Number.isFinite(gravados) ? gravados : undefined }), (req as AuthedRequest).dashUser));
+  });
+  router.post('/monitoramento/:id/importar', upload.single('arquivo'), async (req: Request, res: Response) => {
+    const u = await usinaParaImportar(req, res); if (!u) return;
+    const user = (req as AuthedRequest).dashUser;
+    const f = (req as Request & { file?: { buffer: Buffer; mimetype: string; originalname: string } }).file;
+    const tela = (extra: Partial<import('./importar-views.js').DadosTelaImportar>) =>
+      res.send(renderImportarPage(renderImportarBody({ sistemaId: u.id, nome: u.nome, ...extra }), user));
+    if (!f) return tela({ erro: 'Escolha um arquivo.' });
+    try {
+      let leitura: { linhas: { data: string; kwh: number }[]; avisos: string[] };
+      let origem: string;
+      if (/^image\//.test(f.mimetype)) {
+        if (!options.anthropicApiKey) return tela({ erro: 'Leitura de imagem indisponível neste ambiente.' });
+        const { default: Anthropic } = await import('@anthropic-ai/sdk');
+        const r = await lerPrintGeracao(new Anthropic({ apiKey: options.anthropicApiKey }),
+          { base64: f.buffer.toString('base64'), mime: f.mimetype },
+          { usina: u.nome, mesSugerido: new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 7), companyId: u.companyId });
+        leitura = r; origem = `print lido pela IA (${f.originalname})${r.observacao ? ` — ${r.observacao}` : ''}`;
+      } else {
+        let texto = f.buffer.toString('utf8');
+        if (texto.includes('\uFFFD')) texto = f.buffer.toString('latin1'); // CSV salvo pelo Excel em ANSI
+        leitura = lerCsvGeracao(texto); origem = `arquivo ${f.originalname}`;
+      }
+      const datas = leitura.linhas.map((l) => l.data);
+      const jaExistem: Record<string, number> = {};
+      if (datas.length) {
+        const { data: ex } = await bancoDoOperador(req as AuthedRequest, supabase).from('geracao_diaria')
+          .select('data, geracao_kwh').eq('sistema_id', u.id).in('data', datas.slice(0, 400));
+        for (const e of (ex ?? []) as Array<{ data: string; geracao_kwh: number }>) jaExistem[e.data] = Number(e.geracao_kwh);
+      }
+      tela({ preview: { origem, linhas: leitura.linhas.slice(0, 400), avisos: leitura.avisos, jaExistem } });
+    } catch (err) {
+      console.error('[importar] leitura:', (err as Error).message);
+      tela({ erro: 'Não consegui ler esse arquivo. Tente o CSV exportado do portal ou um print mais nítido.' });
+    }
+  });
+  router.post('/monitoramento/:id/importar/confirmar', async (req: Request, res: Response) => {
+    const u = await usinaParaImportar(req, res); if (!u) return;
+    const corpo = (req.body ?? {}) as Record<string, string>;
+    const rows: Array<Record<string, unknown>> = [];
+    const agora = new Date().toISOString();
+    for (const [k, v] of Object.entries(corpo)) {
+      const m = /^k_(\d{4}-\d{2}-\d{2})$/.exec(k);
+      if (!m || String(v ?? '').trim() === '') continue;
+      const kwh = lerNumeroImportado(String(v));
+      if (kwh === null || kwh < 0 || kwh > 1_000_000) continue;
+      rows.push({ sistema_id: u.id, data: m[1], geracao_kwh: kwh, fetched_at: agora, fetched_source: 'importado', company_id: u.companyId });
+    }
+    if (!rows.length) return res.redirect(`/dashboard/monitoramento/${u.id}/importar`);
+    try {
+      const { error } = await supabase.from('geracao_diaria').upsert(rows.slice(0, 400), { onConflict: 'sistema_id,data' });
+      if (error) throw new Error(error.message);
+      res.redirect(`/dashboard/monitoramento/${u.id}/importar?gravados=${Math.min(rows.length, 400)}`);
+    } catch (err) {
+      console.error('[importar] gravar:', (err as Error).message);
+      res.status(500).send('<h2>Não consegui gravar agora.</h2><a href="javascript:history.back()">← voltar</a>');
+    }
+  });
+
   // RADAR DA REDE (Marco 2 — 02/10/2026): mapa das usinas colorido pela
   // qualidade da tensão nos últimos 7 dias + ranking das piores.
   async function carregarRadarRede(req: AuthedRequest) {

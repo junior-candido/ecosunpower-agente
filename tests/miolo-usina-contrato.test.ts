@@ -25,7 +25,7 @@ const RELATORIO_NO_DETALHE: MudancaContrato = {
 /** Energy Studio Marco 1 (01/10/2026): botão "Previsto × Real" no cabeçalho da usina. */
 const PREVISTO_NO_DETALHE: MudancaContrato = {
   motivo: 'Marco 1: cabeçalho da usina com Previsto × Real',
-  entra: { links: [`/dashboard/monitoramento/${SISTEMA.id}/previsto`, `/dashboard/monitoramento/${SISTEMA.id}/rede`] },
+  entra: { links: [`/dashboard/monitoramento/${SISTEMA.id}/previsto`, `/dashboard/monitoramento/${SISTEMA.id}/rede`, `/dashboard/monitoramento/${SISTEMA.id}/importar`] },
 };
 
 const CONTRATO = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contrato-usina.json'), 'utf-8'));
