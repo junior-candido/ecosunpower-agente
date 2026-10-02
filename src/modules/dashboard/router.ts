@@ -74,7 +74,7 @@ import type { MarcaInversor } from '../monitoring/types.js';
 import type { ResultadoImport } from '../leads-import-meta-junho.js';
 import { classificarSistema, medianaEspecifica7d } from '../monitoring/classificacao.js';
 import { getAdapter } from '../monitoring/adapter-registry.js';
-import { renderPrevistoBody, renderPrevistoPage, curvaPorHora } from './previsto-views.js';
+import { renderPrevistoBody, renderPrevistoPage, renderAnaliseIaBody, curvaPorHora } from './previsto-views.js';
 import { renderRedeBody, renderRedePage } from './rede-views.js';
 import { analisarRede, type LeituraTensao, type PontoGeracao } from '../monitoring/rede/analise.js';
 import { montarRelatorioRede, diaBrasilia } from '../monitoring/rede/relatorio.js';
@@ -87,6 +87,8 @@ import { renderEnergyStudioBody, renderEnergyStudioPage } from './energy-studio-
 import { resumirPrevistoFrota } from './previsto-frota.js';
 import { lerCsvGeracao, lerNumero as lerNumeroImportado } from '../monitoring/importacao/csv.js';
 import { lerPrintGeracao } from '../monitoring/importacao/imagem.js';
+import { analisarUsinaIa, analiseEmCache, guardarAnalise } from '../monitoring/previsto/analise-ia.js';
+import { diagnosticarDias } from '../monitoring/previsto/diagnostico.js';
 import { garantiaInfo } from '../monitoring/garantia.js';
 import { filtrarOrdenarSistemas } from '../monitoring/filtro.js';
 import { hojeBrasilia } from '../monitoring/util/dia-brasilia.js';
@@ -6260,6 +6262,71 @@ export function createDashboardRouter(
 
   // PREVISTO × REAL (Energy Studio, Marco 1 — 01/10/2026). Módulo vendável
   // `previsto_real` por cima do monitoramento: sem ele, abre a vitrine.
+  // ANALISAR USINA COM IA (Energy Studio, 02/10/2026) — hipóteses com evidência.
+  router.post('/monitoramento/:id/previsto/analisar', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!UUID_RE.test(id)) return res.status(400).send('UUID invalido');
+    const user = (req as AuthedRequest).dashUser;
+    try {
+      const modulos = await lerModulosAtivos(supabase, user?.companyId ?? '');
+      if (!modulos.has('previsto_real')) return res.redirect('/dashboard/conhecer/previsto_real');
+      const db = bancoDoOperador(req as AuthedRequest, supabase);
+      const { data: sis, error: e1 } = await db.from('sistemas_clientes')
+        .select('id, apelido, potencia_kwp, cidade, uf, company_id, marca_inversor').eq('id', id).maybeSingle();
+      if (e1) throw new Error(e1.message);
+      const sx = sis as Record<string, unknown> | null;
+      if (!sx || !usinaPertenceAoOperador((sx.company_id as string | null) ?? null, user?.companyId)) {
+        return res.status(404).send('<h2>Sistema nao encontrado</h2><a href="/dashboard/monitoramento">← voltar</a>');
+      }
+      const nome = String(sx.apelido ?? 'Usina');
+      const hojeBr = new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10);
+      const chave = `${id}|${hojeBr}`;
+      const pronta = analiseEmCache(chave);
+      if (pronta) return res.send(renderPrevistoPage(renderAnaliseIaBody({ sistemaId: id, nome, analise: pronta, doCache: true }), user));
+      if (!options.anthropicApiKey) return res.status(503).send('<h2>Análise com IA indisponível neste ambiente.</h2>');
+      const desde = new Date(Date.now() - 3 * 3600_000 - 31 * 86400_000).toISOString().slice(0, 10);
+      const [prev, reais, calib, rede, alerta] = await Promise.all([
+        db.from('geracao_esperada').select('data, kwh_previsto, indice_ceu, clima, premissas').eq('sistema_id', id).gte('data', desde).order('data', { ascending: true }),
+        db.from('geracao_diaria').select('data, geracao_kwh').eq('sistema_id', id).gte('data', desde),
+        Promise.resolve(db.from('previsto_calibracao').select('azimute, inclinacao, fator, confianca').eq('sistema_id', id).eq('status', 'ok').maybeSingle()).catch(() => ({ data: null })),
+        Promise.resolve(db.from('rede_resumo_diario').select('dia, v_min, v_max, desarmes, nivel').eq('sistema_id', id).gte('dia', desde).neq('nivel', 'sem_dado').order('dia', { ascending: true })).catch(() => ({ data: null })),
+        Promise.resolve(db.from('monitoring_alerts').select('texto').eq('sistema_id', id).eq('tipo', 'abaixo_do_previsto').is('resolved_at', null).limit(1).maybeSingle()).catch(() => ({ data: null })),
+      ]);
+      if (prev.error) throw new Error(prev.error.message);
+      const real = new Map<string, number>();
+      for (const r of (reais.data ?? []) as Array<{ data: string; geracao_kwh: number | string }>) {
+        const v = Number(r.geracao_kwh); if (Number.isFinite(v)) real.set(r.data, (real.get(r.data) ?? 0) + v);
+      }
+      const prevs = (prev.data ?? []) as Array<{ data: string; kwh_previsto: number | string; indice_ceu: number | string | null; clima: string; premissas: Record<string, unknown> | null }>;
+      const dias = prevs.map((p) => ({
+        data: p.data, previsto: Number(p.kwh_previsto), real: real.has(p.data) ? real.get(p.data)! : null,
+        clima: p.clima as import('../monitoring/previsto/situacao.js').Clima, indiceCeu: p.indice_ceu == null ? null : Number(p.indice_ceu),
+      }));
+      if (!dias.length) {
+        return res.send(renderPrevistoPage(renderAnaliseIaBody({ sistemaId: id, nome, doCache: false, analise: {
+          resumo: 'Ainda não há dias com previsto calculado para esta usina — a análise precisa deles. O cálculo roda toda noite.', hipoteses: [], proximoPasso: '', faltaDado: [] } }), user));
+      }
+      const c = calib.data as Record<string, unknown> | null;
+      const { default: Anthropic } = await import('@anthropic-ai/sdk');
+      const analise = await analisarUsinaIa(new Anthropic({ apiKey: options.anthropicApiKey }), {
+        nome, kwp: sx.potencia_kwp == null ? null : Number(sx.potencia_kwp),
+        local: [sx.cidade, sx.uf].filter(Boolean).join(' · '), marca: (sx.marca_inversor as string | null) ?? null,
+        premissas: prevs[prevs.length - 1]?.premissas ?? null,
+        dias,
+        regras: diagnosticarDias(dias),
+        calibracao: c ? { azimute: Number(c.azimute), inclinacao: Number(c.inclinacao), fator: c.fator == null ? null : Number(c.fator), confianca: String(c.confianca) } : null,
+        rede: ((rede.data ?? []) as Array<{ dia: string; v_min: number | string | null; v_max: number | string | null; desarmes: number; nivel: string }>)
+          .map((r) => ({ dia: r.dia, vMin: r.v_min == null ? null : Number(r.v_min), vMax: r.v_max == null ? null : Number(r.v_max), desarmes: r.desarmes, nivel: r.nivel })),
+        alertaAberto: (alerta.data as { texto?: string } | null)?.texto ?? null,
+      }, (sx.company_id as string | null) ?? user?.companyId ?? null);
+      if (analise.hipoteses.length || analise.proximoPasso) guardarAnalise(chave, analise);
+      res.send(renderPrevistoPage(renderAnaliseIaBody({ sistemaId: id, nome, analise, doCache: false }), user));
+    } catch (err) {
+      console.error('[previsto] analisar IA:', (err as Error).message);
+      res.status(500).send('<h2>Não consegui analisar a usina agora.</h2><a href="/dashboard/monitoramento">← voltar</a>');
+    }
+  });
+
   router.get('/monitoramento/:id/previsto', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
     if (!UUID_RE.test(id)) return res.status(400).send('UUID invalido');

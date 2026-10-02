@@ -5,6 +5,7 @@ import { renderLayout } from './views.js';
 import type { DashUser } from './permissions.js';
 import { diagnosticarDias, diagnosticarCurva, type Hipotese } from '../monitoring/previsto/diagnostico.js';
 import type { OSTipo } from './os-checklist.js';
+import type { AnaliseIa } from '../monitoring/previsto/analise-ia.js';
 import {
   situacaoDoDia, diferencaPct, desvioPeriodo, ROTULO_SITUACAO,
   type Clima, type Situacao,
@@ -166,6 +167,8 @@ export const CSS_PREVISTO = `<style>
 
 export function renderPrevistoBody(d: DadosTelaPrevisto): string {
   const topo = `<a class="volta" href="/dashboard/monitoramento/${esc(d.sistemaId)}">← voltar para a usina</a> · <a class="volta" href="/dashboard/monitoramento/${esc(d.sistemaId)}/rede">⚡ ver a Rede (tensão)</a>
+    <form method="post" action="/dashboard/monitoramento/${esc(d.sistemaId)}/previsto/analisar" class="hip-os" style="float:right;margin:0">
+      <button type="submit" title="A IA lê 30 dias de previsto × real, clima, calibração e rede e aponta as causas prováveis">🤖 Analisar com IA</button></form>
     <h1>☀️ ${esc(d.nome)}${d.kwp ? ` — ${num(d.kwp, 2)} kWp` : ''}</h1><div class="sub">${esc(d.local)} · Previsto × Real</div>`;
   const linhas = montarLinhas(d);
   if (linhas.length === 0) {
@@ -274,6 +277,34 @@ function caixaCalibracao(d: DadosTelaPrevisto): string {
 }
 
 /** Página inteira (tela renovada: sem Tailwind do CDN — CSS próprio acima). */
+const CHANCE = { alta: ['ALTA', 'med'], media: ['MÉDIA', 'calc'], baixa: ['BAIXA', 'calc'] } as const;
+const ROTULO_OS: Record<string, string> = {
+  limpeza: 'limpeza', revisao_inversor: 'revisão do inversor', revisao_eletrica: 'revisão elétrica', corretiva: 'corretiva', inspecao: 'inspeção',
+};
+
+/** Resultado do "Analisar com IA" (Energy Studio). */
+export function renderAnaliseIaBody(d: { sistemaId: string; nome: string; analise: AnaliseIa; doCache: boolean }): string {
+  const a = d.analise;
+  const hips = a.hipoteses.map((h, i) => `<div class="hip">
+      <div class="hip-t">${i + 1}. <b>${esc(h.titulo)}</b> <span class="tag ${CHANCE[h.chance][1]}">CHANCE ${CHANCE[h.chance][0]}</span></div>
+      ${h.evidencias.length ? `<div class="nota"><b>Evidências (dos dados):</b></div><ul class="nota">${h.evidencias.map((e) => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
+      ${h.comoConfirmar ? `<div class="nota"><b>Como confirmar:</b> ${esc(h.comoConfirmar)}</div>` : ''}
+      ${h.tipoOs ? `<form method="post" action="/dashboard/os/nova" class="hip-os">
+        <input type="hidden" name="sistemaId" value="${esc(d.sistemaId)}">
+        <input type="hidden" name="tipo" value="${h.tipoOs}">
+        <input type="hidden" name="motivo" value="${esc(`Análise IA (Energy Studio) — ${h.titulo} (chance ${CHANCE[h.chance][0].toLowerCase()}). Evidências: ${h.evidencias.join(' · ')} Como confirmar: ${h.comoConfirmar}`)}">
+        <button type="submit">🛠️ Abrir OS de ${ROTULO_OS[h.tipoOs]}</button></form>` : ''}
+    </div>`).join('');
+  return `${CSS_PREVISTO}<div class="pv pv-claro">
+    <a class="volta" href="/dashboard/monitoramento/${esc(d.sistemaId)}/previsto">← voltar para o Previsto × Real</a>
+    <h1>🤖 Análise da usina — ${esc(d.nome)}</h1>
+    <div class="sub">A IA leu os últimos 30 dias (real medido × previsto calculado), o clima, a calibração e a rede. São <b>hipóteses</b>: confirme no local antes de concluir.${d.doCache ? ' <span class="nota">(análise feita há poucos minutos)</span>' : ''}</div>
+    <div class="box"><h2>Resumo</h2><p>${esc(a.resumo)}</p>${a.proximoPasso ? `<p><b>Próximo passo:</b> ${esc(a.proximoPasso)}</p>` : ''}</div>
+    ${hips ? `<div class="box"><h2>Causas prováveis</h2>${hips}</div>` : ''}
+    ${a.faltaDado.length ? `<div class="box"><h2>O que deixaria a análise melhor</h2><ul class="nota">${a.faltaDado.map((f) => `<li>${esc(f)}</li>`).join('')}</ul></div>` : ''}
+  </div>`;
+}
+
 export function renderPrevistoPage(body: string, user: DashUser | undefined): string {
   return renderLayout({ active: 'monitoramento', title: 'Previsto × Real', body, user, largo: true, tailwind: false });
 }

@@ -177,6 +177,7 @@ export const ORIGENS_IA = {
   'midia:geracao-print': 'Leitura de print de geração (importar usina sem integração)',
   'resumo:lead': 'Resumo do lead no painel',
   'resumo:bi': 'Resumo de métricas (BI)',
+  'resumo:usina-previsto': 'Analisar usina com IA (Energy Studio)',
   'reativacao:followup': 'Follow-up de lead parado',
   'reativacao:followup-proposta': 'Follow-up da proposta',
   'reativacao:reabordagem-proposta': 'Reabordagem quando reabre a proposta',
