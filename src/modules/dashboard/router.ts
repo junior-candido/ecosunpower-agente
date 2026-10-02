@@ -5966,7 +5966,7 @@ export function createDashboardRouter(
       const body = renderRedeBody({
         sistemaId: id, nome: String(sx.apelido ?? 'Usina'), local: [sx.cidade, sx.uf].filter(Boolean).join(' · '),
         dia, leituras, geracao, analise, fonte,
-        marcaTemTensao: medidores.length > 0 || marca === 'sungrow' || marca === 'foxess',
+        marcaTemTensao: medidores.length > 0 || ['sungrow', 'foxess', 'solis'].includes(marca),
       });
       res.send(renderRedePage(body, user));
     } catch (err) {

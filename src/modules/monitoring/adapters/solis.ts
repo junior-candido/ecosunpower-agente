@@ -35,6 +35,9 @@ import type {
   ListSitesResult,
   MonitoringAdapter,
   SiteResumo,
+  TelemetryDevice,
+  TelemetryLeitura,
+  TelemetryResult,
 } from '../types.js';
 import { fetchWithTimeout } from '../util/fetch-with-timeout.js';
 import { retryTransient, isTransientFailure } from '../util/retry.js';
@@ -362,6 +365,31 @@ export const solisAdapter: MonitoringAdapter = {
     return { ok: true, sites };
   },
 
+  // Telemetria (foto atual) — Energy Studio Marco 2 (02/10/2026). Doc oficial
+  // SolisCloud Platform API V2.0: POST /v1/api/inverterList {stationId} →
+  // inversores da usina; POST /v1/api/inverterDetail {id} → uAc1/uAc2/uAc3
+  // ("AC voltage R/S/T", V), fac (Hz), pac (+ pacStr com a unidade). Dados do
+  // portal atualizam a cada 5 min; limite 2 chamadas/s (throttle já cobre).
+  // Monofásico: uAc2/uAc3 vêm 0 → descartados (< 50 V não é leitura de rede).
+  async fetchTelemetry(credenciais, catalogo, ts): Promise<TelemetryResult> {
+    const parsed = parseCreds(credenciais);
+    if ('error' in parsed) return { ok: false, reason: parsed.error, invalidCredentials: true };
+    if (!parsed.siteId || catalogo.size === 0) return { ok: true, devices: [] };
+    const lista = await solisPost<unknown>(parsed, '/v1/api/inverterList', { pageNo: 1, pageSize: 20, stationId: parsed.siteId });
+    if (!lista.ok) return { ok: false, reason: lista.reason, invalidCredentials: lista.invalidCredentials };
+    const devices: TelemetryDevice[] = [];
+    for (const inv of inversoresDaLista(lista.data)) {
+      const det = await solisPost<Record<string, unknown>>(parsed, '/v1/api/inverterDetail', inv.id ? { id: inv.id } : { sn: inv.sn });
+      if (!det.ok) {
+        if (det.invalidCredentials) return { ok: false, reason: det.reason, invalidCredentials: true };
+        continue; // um inversor falhou: segue os outros
+      }
+      const leituras = parseSolisDetalhe(det.data ?? {}, catalogo, ts);
+      if (leituras.length) devices.push({ deviceKey: inv.sn || inv.id, leituras });
+    }
+    return { ok: true, devices };
+  },
+
   // Solis: credenciais da conta = keyId+keySecret (+apiUrl) sem o site_id.
   extractAccountCreds(credsPlanta) {
     const parsed = parseCreds(credsPlanta as Record<string, unknown>);
@@ -369,3 +397,36 @@ export const solisAdapter: MonitoringAdapter = {
     return { keyId: parsed.keyId, keySecret: parsed.keySecret, apiUrl: parsed.base };
   },
 };
+
+/** inverterList → [{id, sn}] (aceita data.page.records ou data.records). */
+export function inversoresDaLista(data: unknown): Array<{ id: string; sn: string }> {
+  const d = (data ?? {}) as Record<string, unknown>;
+  const page = (d.page ?? d) as Record<string, unknown>;
+  const recs = Array.isArray(page.records) ? page.records : Array.isArray(d) ? (d as unknown[]) : [];
+  return (recs as Array<Record<string, unknown>>)
+    .map((r) => ({ id: String(r.id ?? ''), sn: String(r.sn ?? '') }))
+    .filter((r) => r.id || r.sn);
+}
+
+/** inverterDetail → leituras do catálogo. pac respeita pacStr (W → kW). */
+export function parseSolisDetalhe(
+  det: Record<string, unknown>,
+  catalogo: Map<string, { ponto: string; unidade: string; fator: number }>,
+  ts: string,
+): TelemetryLeitura[] {
+  const out: TelemetryLeitura[] = [];
+  for (const [nativo, alvo] of catalogo) {
+    const bruto = Number(det[nativo]);
+    if (det[nativo] === null || det[nativo] === undefined || det[nativo] === '' || !Number.isFinite(bruto)) continue;
+    let valor = bruto;
+    if (/^uAc\d$/.test(nativo) && bruto < 50) continue;           // fase inexistente (monofásico)
+    if (nativo === 'fac' && (bruto < 40 || bruto > 70)) continue;   // fora de qualquer rede real
+    if (nativo === 'pac') {
+      const un = String(det.pacStr ?? '').trim().toLowerCase();
+      if (un === 'w') valor = bruto / 1000;
+      else if (un === 'mw') valor = bruto * 1000;
+    }
+    out.push({ ponto: alvo.ponto, valor: Math.round(valor * 1000) / 1000, unidade: alvo.unidade, ts });
+  }
+  return out;
+}
