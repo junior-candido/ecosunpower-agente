@@ -51,6 +51,21 @@ export async function previstoDoDia(cfg: ConfigMotor, p: Premissas, data: string
   }
 }
 
+/** Multi-arranjo: uma chamada por água e soma (kWh e curva). Sem arranjos = chamada única. */
+export async function previstoDoDiaTotal(cfg: ConfigMotor, p: Premissas, data: string): Promise<PrevistoDoDia> {
+  if (!p.arranjos?.length) return previstoDoDia(cfg, p, data);
+  let total: PrevistoDoDia | null = null;
+  for (const a of p.arranjos) {
+    const r = await previstoDoDia(cfg, { ...p, kwp: a.kwp, azimute: a.azimute, inclinacao: a.inclinacao, arranjos: undefined }, data);
+    if (!total) { total = { ...r, kwh_hora: [...r.kwh_hora] }; continue; }
+    total.kwh = Math.round((total.kwh + r.kwh) * 100) / 100;
+    total.kwh_hora = total.kwh_hora.map((v, h) => Math.round((v + (r.kwh_hora[h] ?? 0)) * 1000) / 1000);
+    // POA: média ponderada pela potência (é por m², não soma)
+    total.poa_kwh_m2 = Math.round(((total.poa_kwh_m2 * (p.kwp - a.kwp) + r.poa_kwh_m2 * a.kwp) / p.kwp) * 1000) / 1000;
+  }
+  return total as PrevistoDoDia;
+}
+
 export interface ResultadoCalibracao {
   azimute: number;
   inclinacao: number;

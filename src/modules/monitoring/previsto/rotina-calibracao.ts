@@ -28,7 +28,7 @@ export interface DepsCalibracao {
 
 export interface ResumoCalibracao { tentadas: number; ok: number; semCurva: number; semDias: number; erros: number; calibradas: string[] }
 
-const COLS = 'id, company_id, potencia_kwp, lat, lng, telhado_tipo, telhado_orientacao, telhado_inclinacao_graus, sombreamento_pct, marca_inversor';
+const COLS = 'id, company_id, potencia_kwp, lat, lng, telhado_tipo, telhado_orientacao, telhado_inclinacao_graus, sombreamento_pct, marca_inversor, arranjos';
 
 export async function calibrarUsinas(db: SupabaseClient, deps: DepsCalibracao): Promise<ResumoCalibracao> {
   const agora = deps.agora ?? new Date();
@@ -38,11 +38,17 @@ export async function calibrarUsinas(db: SupabaseClient, deps: DepsCalibracao): 
   const resumo: ResumoCalibracao = { tentadas: 0, ok: 0, semCurva: 0, semDias: 0, erros: 0, calibradas: [] };
 
   const sistemas: SistemaCalib[] = [];
+  // Sem a migration 155 (coluna arranjos), segue sem multi-arranjo em vez de quebrar.
+  let colunasUsina = COLS;
+  {
+    const t = await db.from('sistemas_clientes').select('arranjos').limit(1);
+    if (t.error && /arranjos/.test(t.error.message)) colunasUsina = COLS.replace(', arranjos', '');
+  }
   for (let pag = 0; ; pag++) {
-    const { data, error } = await db.from('sistemas_clientes').select(COLS).eq('ativo', true)
+    const { data, error } = await db.from('sistemas_clientes').select(colunasUsina).eq('ativo', true)
       .order('id', { ascending: true }).range(pag * 1000, pag * 1000 + 999);
     if (error) throw new Error(`calibração: lendo usinas: ${error.message}`);
-    const rows = (data ?? []) as SistemaCalib[];
+    const rows = (data ?? []) as unknown as SistemaCalib[];
     for (const r of rows) sistemas.push({ ...r, company_id: r.company_id ?? ECOSUN_COMPANY_ID });
     if (rows.length < 1000) break;
   }
@@ -72,7 +78,9 @@ export async function calibrarUsinas(db: SupabaseClient, deps: DepsCalibracao): 
     if (!contratou.has(s.company_id)) {
       try { contratou.set(s.company_id, await deps.empresaTemModulo(s.company_id)); } catch { contratou.set(s.company_id, false); }
     }
-    if (contratou.get(s.company_id) && !('erro' in montarPremissas(s))) fila.push(s);
+    const prem = montarPremissas(s);
+    // Multi-arranjo: cada água já é conhecida — não há o que descobrir pela curva.
+    if (contratou.get(s.company_id) && !('erro' in prem) && !prem.arranjos) fila.push(s);
   }
   // Nunca calibradas primeiro.
   fila.sort((a, b) => Number(ultima.has(a.id)) - Number(ultima.has(b.id)));

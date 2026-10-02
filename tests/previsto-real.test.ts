@@ -93,7 +93,7 @@ describe('rotina diária', () => {
     const gravados: Record<string, unknown>[] = [];
     const db = {
       from: (t: string) => t === 'sistemas_clientes'
-        ? { select: () => ({ eq: () => ({ order: () => ({ range: async (a: number, b: number) => ({ data: usinas.slice(a, b + 1), error: null }) }) }) }) }
+        ? { select: () => ({ limit: async () => ({ data: [], error: null }), eq: () => ({ order: () => ({ range: async (a: number, b: number) => ({ data: usinas.slice(a, b + 1), error: null }) }) }) }) }
         : { upsert: async (row: Record<string, unknown>) => { gravados.push(row); return { error: null }; } },
     };
     return { db: db as never, gravados };
