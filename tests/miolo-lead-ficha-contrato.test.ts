@@ -16,6 +16,7 @@ import { MENU_CONVERSAS, SAI_COPILOTO, SAI_COCKPIT_COMPLETO, ENTRA_LISTA, ENTRA_
 import { renderLeadDetailPage } from '../src/modules/dashboard/leads-views.js';
 import { USER_CASA, leadDetalhe, SERVICOS_LEAD, CONVERSA_COPILOTO } from './fixtures/miolo-leads.js';
 // perf/telas-leves (28/09): sem Tailwind do CDN, CSS comum por arquivo.
+import { menuEnergyStudio } from './fixtures/mudancas-telas-leves.js';
 import { TELAS_LEVES, CSS_ATENDIMENTO_NO_HEAD } from './fixtures/mudancas-telas-leves.js';
 
 const CONTRATO = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contrato-ficha-lead.json'), 'utf-8'));
@@ -25,7 +26,7 @@ describe('Ficha do lead → Atendimento — contrato só muda no que o Junior ma
     it(`contrato: ${nome}`, () => {
       const esperado = aplicarMudancas(CONTRATO[nome], ...r5Menu(CONTRATO[nome]),
         MENU_CONVERSAS, SAI_COPILOTO, SAI_COCKPIT_COMPLETO, ENTRA_LISTA, ENTRA_ALCAS, entraScript(nome !== 'venda'), TELAS_LEVES, CSS_ATENDIMENTO_NO_HEAD,
-        ENTRA_MEU_WHATSAPP, ENTRA_AMPLIAR, ...(nome === 'pausada' ? [SAI_RETOMAR_OPT_OUT] : []), entraTrocaSuave(render()), entraBaixar(nome !== 'vazio'), ENTRA_AGENDA_PENDENTE);
+        ENTRA_MEU_WHATSAPP, ENTRA_AMPLIAR, ...(nome === 'pausada' ? [SAI_RETOMAR_OPT_OUT] : []), entraTrocaSuave(render()), entraBaixar(nome !== 'vazio'), ENTRA_AGENDA_PENDENTE, ...menuEnergyStudio(render()));
       expect(contratoDaTela(render())).toEqual(esperado);
     });
   }
@@ -50,7 +51,7 @@ describe('Ficha do lead → Atendimento — contrato só muda no que o Junior ma
         modelos: [{ nome: 'reativacao_lead_v1', rotulo: 'Retomar a conversa', categoria: 'desconhecida', texto: null, conferido: false }] },
     });
     const esperado = aplicarMudancas(CONTRATO.normal, ...r5Menu(CONTRATO.normal),
-      MENU_CONVERSAS, SAI_COPILOTO, SAI_COCKPIT_COMPLETO, ENTRA_LISTA, ENTRA_ALCAS, entraScript(true), TELAS_LEVES, CSS_ATENDIMENTO_NO_HEAD, ENTRA_RESPONDER, ENTRA_RESPOSTAS_PRONTAS, ENTRA_MEU_WHATSAPP, ENTRA_SEM_RECARREGAR, ENTRA_AMPLIAR, ENTRA_MIDIA, ENTRA_CITAR_REAGIR, entraTrocaSuave(html), entraBaixar(true), ENTRA_AGENDA_PENDENTE);
+      MENU_CONVERSAS, SAI_COPILOTO, SAI_COCKPIT_COMPLETO, ENTRA_LISTA, ENTRA_ALCAS, entraScript(true), TELAS_LEVES, CSS_ATENDIMENTO_NO_HEAD, ENTRA_RESPONDER, ENTRA_RESPOSTAS_PRONTAS, ENTRA_MEU_WHATSAPP, ENTRA_SEM_RECARREGAR, ENTRA_AMPLIAR, ENTRA_MIDIA, ENTRA_CITAR_REAGIR, entraTrocaSuave(html), entraBaixar(true), ENTRA_AGENDA_PENDENTE, ...menuEnergyStudio(html));
     expect(contratoDaTela(html)).toEqual(esperado);
   });
 });

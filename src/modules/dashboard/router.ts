@@ -83,6 +83,8 @@ import { aplicarCamadaRede, type ResumoRedeLinha } from '../monitoring/rede/cama
 import { carregarMapaUsinas } from './mapa-usinas.js';
 import { renderRadarRedePage } from './rede-views.js';
 import { renderImportarBody, renderImportarPage } from './importar-views.js';
+import { renderEnergyStudioBody, renderEnergyStudioPage } from './energy-studio-views.js';
+import { resumirPrevistoFrota } from './previsto-frota.js';
 import { lerCsvGeracao, lerNumero as lerNumeroImportado } from '../monitoring/importacao/csv.js';
 import { lerPrintGeracao } from '../monitoring/importacao/imagem.js';
 import { garantiaInfo } from '../monitoring/garantia.js';
@@ -5946,6 +5948,66 @@ export function createDashboardRouter(
 
   // Detalhe de UMA usina: KPIs (hoje/mes/ano/total), grafico 30 dias,
   // grafico mensal 12m, alertas. Auto-refresh 30s.
+  // ENERGY STUDIO — página que reúne tudo (02/10/2026). Módulo previsto_real.
+  router.get('/energy-studio', async (req: Request, res: Response) => {
+    const user = (req as AuthedRequest).dashUser;
+    if (!user || !can(user, 'usinas', 'visualizar')) return res.status(403).send('<h2>Sem acesso às usinas</h2>');
+    try {
+      const db = bancoDoOperador(req as AuthedRequest, supabase);
+      const cid = user.companyId;
+      const ontem = new Date(Date.now() - 3 * 3600_000 - 86400_000).toISOString().slice(0, 10);
+      const desde7 = new Date(Date.now() - 3 * 3600_000 - 7 * 86400_000).toISOString().slice(0, 10);
+      const [us, prev, reais, cal, alertas, rede] = await Promise.all([
+        db.from('sistemas_clientes').select('id, apelido').eq('company_id', cid).eq('ativo', true).limit(5000),
+        db.from('geracao_esperada').select('sistema_id, kwh_previsto, clima').eq('company_id', cid).eq('data', ontem).limit(5000),
+        db.from('geracao_diaria').select('sistema_id, geracao_kwh').eq('company_id', cid).eq('data', ontem).limit(5000),
+        db.from('previsto_calibracao').select('status, confianca').eq('company_id', cid).limit(5000),
+        db.from('monitoring_alerts').select('id', { count: 'exact', head: true }).eq('company_id', cid).eq('tipo', 'abaixo_do_previsto').is('resolved_at', null),
+        db.from('rede_resumo_diario').select('sistema_id, v_max, desarmes, nivel').eq('company_id', cid).gte('dia', desde7).limit(10000),
+      ]);
+      const usinas = ((us.data ?? []) as Array<{ id: string; apelido: string | null }>);
+      const nome = new Map(usinas.map((u) => [u.id, u.apelido ?? 'Usina']));
+      const reaisMap = new Map<string, number>();
+      for (const r of (reais.data ?? []) as Array<{ sistema_id: string; geracao_kwh: number | string }>) {
+        const v = Number(r.geracao_kwh);
+        if (Number.isFinite(v)) reaisMap.set(r.sistema_id, (reaisMap.get(r.sistema_id) ?? 0) + v);
+      }
+      const previstos = (prev.data ?? []) as Array<{ sistema_id: string; kwh_previsto: number; clima: string }>;
+      const resumo = previstos.length ? resumirPrevistoFrota(usinas, previstos, reaisMap, ontem) : null;
+      const calib = { alta: 0, media: 0, baixa: 0, semCurva: 0 };
+      for (const c of (cal.data ?? []) as Array<{ status: string; confianca: string | null }>) {
+        if (c.status !== 'ok') calib.semCurva++;
+        else if (c.confianca === 'alta') calib.alta++; else if (c.confianca === 'media') calib.media++; else calib.baixa++;
+      }
+      const porUsina = new Map<string, { vMax: number; desarmes: number; diasCriticos: number }>();
+      for (const r of (rede.data ?? []) as Array<{ sistema_id: string; v_max: number | string | null; desarmes: number; nivel: string }>) {
+        if (r.nivel === 'sem_dado') continue;
+        const u = porUsina.get(r.sistema_id) ?? { vMax: 0, desarmes: 0, diasCriticos: 0 };
+        u.vMax = Math.max(u.vMax, Number(r.v_max) || 0); u.desarmes += r.desarmes || 0; if (r.nivel === 'critico') u.diasCriticos++;
+        porUsina.set(r.sistema_id, u);
+      }
+      const top = [...porUsina].filter(([, u]) => u.diasCriticos > 0 || u.desarmes > 0)
+        .map(([id, u]) => ({ id, nome: nome.get(id) ?? 'Usina', ...u }))
+        .sort((a, b) => b.desarmes - a.desarmes || b.diasCriticos - a.diasCriticos || b.vMax - a.vMax).slice(0, 6);
+      const body = renderEnergyStudioBody({
+        previsto: resumo,
+        usinasComPrevisto: new Set(previstos.map((p) => p.sistema_id)).size,
+        calibracao: calib,
+        alertasAbertos: alertas.count ?? 0,
+        rede: {
+          comMedicao: porUsina.size,
+          criticas: [...porUsina.values()].filter((u) => u.diasCriticos > 0).length,
+          desarmes7d: [...porUsina.values()].reduce((s, u) => s + u.desarmes, 0),
+          top,
+        },
+      });
+      res.send(renderEnergyStudioPage(body, user));
+    } catch (err) {
+      console.error('[energy-studio]', (err as Error).message);
+      res.status(500).send('<h2>Não consegui abrir o Energy Studio agora.</h2><a href="/dashboard">← voltar</a>');
+    }
+  });
+
   // IMPORTAR GERAÇÃO (02/10/2026): usina sem integração (Hoymiles…) ou dias
   // que faltam. Arquivo do portal (CSV) ou print do app (IA lê) → conferir → gravar.
   async function usinaParaImportar(req: Request, res: Response): Promise<{ id: string; nome: string; companyId: string } | null> {
