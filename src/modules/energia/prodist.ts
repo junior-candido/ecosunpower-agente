@@ -24,3 +24,18 @@ export function faixaProdist(v: number | null | undefined, nominal: TensaoNomina
   if (v >= f.prec[0] && v <= f.prec[1]) return 'precaria';
   return 'critica';
 }
+
+/** Limites da faixa (para desenhar as faixas no gráfico). */
+export function limitesProdist(nominal: TensaoNominal): { adequada: [number, number]; precaria: [number, number] } {
+  const f = FAIXAS[nominal];
+  return { adequada: [...f.adeq] as [number, number], precaria: [...f.prec] as [number, number] };
+}
+
+/** Nominal de FASE pela mediana medida (inversor não informa): ~127 ou ~220 V. */
+export function nominalPelaMediana(valores: number[]): TensaoNominal | null {
+  const v = valores.filter((x) => Number.isFinite(x) && x > 50).sort((a, b) => a - b);
+  if (!v.length) return null;
+  const med = v[Math.floor(v.length / 2)];
+  if (med >= 300) return 380;
+  return med >= 175 ? 220 : 127;
+}

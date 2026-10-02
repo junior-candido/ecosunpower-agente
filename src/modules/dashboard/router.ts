@@ -74,6 +74,8 @@ import type { ResultadoImport } from '../leads-import-meta-junho.js';
 import { classificarSistema, medianaEspecifica7d } from '../monitoring/classificacao.js';
 import { getAdapter } from '../monitoring/adapter-registry.js';
 import { renderPrevistoBody, renderPrevistoPage, curvaPorHora } from './previsto-views.js';
+import { renderRedeBody, renderRedePage } from './rede-views.js';
+import { analisarRede, type LeituraTensao, type PontoGeracao } from '../monitoring/rede/analise.js';
 import { garantiaInfo } from '../monitoring/garantia.js';
 import { filtrarOrdenarSistemas } from '../monitoring/filtro.js';
 import { hojeBrasilia } from '../monitoring/util/dia-brasilia.js';
@@ -5915,6 +5917,64 @@ export function createDashboardRouter(
 
   // Detalhe de UMA usina: KPIs (hoje/mes/ano/total), grafico 30 dias,
   // grafico mensal 12m, alertas. Auto-refresh 30s.
+  // REDE (Energy Studio, Marco 2 — 02/10/2026): tensão por fase × faixas ANEEL
+  // × desarmes prováveis. Mesmo pacote vendável do Previsto × Real.
+  router.get('/monitoramento/:id/rede', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!UUID_RE.test(id)) return res.status(400).send('UUID invalido');
+    const user = (req as AuthedRequest).dashUser;
+    try {
+      const modulos = await lerModulosAtivos(supabase, user?.companyId ?? '');
+      if (!modulos.has('previsto_real')) return res.redirect('/dashboard/conhecer/previsto_real');
+      const db = bancoDoOperador(req as AuthedRequest, supabase);
+      const { data: sis, error: e1 } = await db.from('sistemas_clientes')
+        .select('id, apelido, cidade, uf, company_id, marca_inversor').eq('id', id).maybeSingle();
+      if (e1) throw new Error(e1.message);
+      if (!sis || !usinaPertenceAoOperador((sis as { company_id?: string | null }).company_id ?? null, user?.companyId)) {
+        return res.status(404).send('<h2>Sistema nao encontrado</h2><a href="/dashboard/monitoramento">← voltar</a>');
+      }
+      const sx = sis as Record<string, unknown>;
+      const dia = typeof req.query.dia === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.dia) ? req.query.dia : hojeBrasilia();
+      const ini = new Date(`${dia}T03:00:00Z`).toISOString();   // 00:00 em Brasília
+      const fim = new Date(Date.parse(ini) + 86400_000).toISOString();
+      const [{ data: tens }, { data: pot }, { data: meds }] = await Promise.all([
+        db.from('telemetria_medicoes').select('ponto, ts, valor').eq('sistema_id', id)
+          .like('ponto', 'tensao_fase%').gte('ts', ini).lt('ts', fim).order('ts', { ascending: true }).limit(5000),
+        db.from('telemetria_medicoes').select('ts, valor').eq('sistema_id', id)
+          .eq('ponto', 'potencia').gte('ts', ini).lt('ts', fim).order('ts', { ascending: true }).limit(5000),
+        db.from('medidores_energia').select('id, tensao_nominal_v').eq('sistema_id', id),
+      ]);
+      const leituras: LeituraTensao[] = ((tens ?? []) as Array<{ ponto: string; ts: string; valor: number }>)
+        .map((t) => ({ ts: t.ts, fase: t.ponto, v: Number(t.valor) }));
+      let fonte = `inversor ${String(sx.marca_inversor ?? '')}`;
+      let nominal: 127 | 220 | 380 | null = null;
+      const medidores = (meds ?? []) as Array<{ id: string; tensao_nominal_v: number | null }>;
+      if (!leituras.length && medidores.length) {
+        const { data: q } = await db.from('energia_15min').select('canal, inicio, tensao_max_v')
+          .in('medidor_id', medidores.map((m) => m.id)).eq('papel', 'rede').gte('inicio', ini).lt('inicio', fim)
+          .order('inicio', { ascending: true }).limit(5000);
+        for (const r of (q ?? []) as Array<{ canal: number; inicio: string; tensao_max_v: number | null }>) {
+          if (r.tensao_max_v != null) leituras.push({ ts: r.inicio, fase: `Canal ${r.canal}`, v: Number(r.tensao_max_v) });
+        }
+        fonte = 'medidor Shelly';
+        const n = Number(medidores[0].tensao_nominal_v);
+        nominal = n === 127 || n === 220 || n === 380 ? n : null;
+      }
+      const geracao: PontoGeracao[] = ((pot ?? []) as Array<{ ts: string; valor: number }>).map((p) => ({ ts: p.ts, kw: Number(p.valor) }));
+      const analise = analisarRede(leituras, geracao, nominal);
+      const marca = String(sx.marca_inversor ?? '');
+      const body = renderRedeBody({
+        sistemaId: id, nome: String(sx.apelido ?? 'Usina'), local: [sx.cidade, sx.uf].filter(Boolean).join(' · '),
+        dia, leituras, geracao, analise, fonte,
+        marcaTemTensao: medidores.length > 0 || marca === 'sungrow' || marca === 'foxess',
+      });
+      res.send(renderRedePage(body, user));
+    } catch (err) {
+      console.error('[rede] tela:', (err as Error).message);
+      res.status(500).send('<h2>Não consegui abrir a aba Rede agora.</h2><a href="/dashboard/monitoramento">← voltar</a>');
+    }
+  });
+
   // PREVISTO × REAL (Energy Studio, Marco 1 — 01/10/2026). Módulo vendável
   // `previsto_real` por cima do monitoramento: sem ele, abre a vitrine.
   router.get('/monitoramento/:id/previsto', async (req: Request, res: Response) => {
