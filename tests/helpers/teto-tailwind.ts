@@ -20,6 +20,8 @@ export const TELAS_RENOVADAS: string[] = [
   'rede-views.ts',
   // Importar geração (02/10/2026)
   'importar-views.ts',
+  // Energy Studio (02/10/2026)
+  'energy-studio-views.ts',
   // Command Center, Central de Atenção e Modo TV — nasceram no padrão cc-
   'command-center-views.ts',
   // Mapa das Usinas (bloco do Command Center, mini-mapa, Localizar) — nasceu no padrão cc-

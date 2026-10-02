@@ -4,6 +4,8 @@
 import { renderLayout } from './views.js';
 import type { DashUser } from './permissions.js';
 import { diagnosticarDias, diagnosticarCurva, type Hipotese } from '../monitoring/previsto/diagnostico.js';
+import type { OSTipo } from './os-checklist.js';
+import type { AnaliseIa } from '../monitoring/previsto/analise-ia.js';
 import {
   situacaoDoDia, diferencaPct, desvioPeriodo, ROTULO_SITUACAO,
   type Clima, type Situacao,
@@ -159,12 +161,14 @@ export const CSS_PREVISTO = `<style>
 .pv .tb{overflow-x:auto}.pv .st{font-weight:700;font-size:12px;padding:3px 8px;border-radius:999px}
 .pv .s-ok{background:#dcfce7;color:#166534}.pv .s-at{background:#ffedd5;color:#9a3412}.pv .s-ru{background:#fee2e2;color:#991b1b}.pv .s-cz{background:#e2e8f0;color:#334155}.pv .s-nb{background:#e0f2fe;color:#075985}
 .pv .nota{font-size:12px;color:#64748b}.pv .por li{margin:5px 0;font-size:13px}.pv a.volta{font-size:13px;color:#0f766e}
-.pv .hip{border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin:8px 0}.pv .hip-t{margin-bottom:4px}
+.pv .hip{border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin:8px 0}.pv .hip-t{margin-bottom:4px}.pv .hip-os{margin-top:8px}.pv .hip-os button{background:#0f766e;color:#fff;border:0;border-radius:8px;padding:7px 12px;font-weight:600;cursor:pointer}.pv .hip-os button:hover{background:#115e59}
 .pv .vazio{background:#fff;border:1px dashed #94a3b8;border-radius:14px;padding:22px;text-align:center;color:#334155}
 </style>`;
 
 export function renderPrevistoBody(d: DadosTelaPrevisto): string {
   const topo = `<a class="volta" href="/dashboard/monitoramento/${esc(d.sistemaId)}">← voltar para a usina</a> · <a class="volta" href="/dashboard/monitoramento/${esc(d.sistemaId)}/rede">⚡ ver a Rede (tensão)</a>
+    <form method="post" action="/dashboard/monitoramento/${esc(d.sistemaId)}/previsto/analisar" class="hip-os" style="float:right;margin:0">
+      <button type="submit" title="A IA lê 30 dias de previsto × real, clima, calibração e rede e aponta as causas prováveis">🤖 Analisar com IA</button></form>
     <h1>☀️ ${esc(d.nome)}${d.kwp ? ` — ${num(d.kwp, 2)} kWp` : ''}</h1><div class="sub">${esc(d.local)} · Previsto × Real</div>`;
   const linhas = montarLinhas(d);
   if (linhas.length === 0) {
@@ -216,16 +220,25 @@ export function renderPrevistoBody(d: DadosTelaPrevisto): string {
   <div class="g2">
     <div class="box"><h2>Dias que chamaram atenção</h2>${tabela}<p class="nota">Pouca geração em dia de chuva <b>não</b> vira alerta: o previsto também cai.</p></div>
     <div class="box"><h2>Por que o previsto deu ${num(foco.previsto)} kWh?</h2>${porque}</div>
-  </div>${caixaDiagnostico([...diagnosticarDias(linhas.map((l) => ({ data: l.data, previsto: l.previsto, real: l.real, clima: l.clima }))), ...diagnosticarCurva(prevFoco.kwh_hora ?? [], d.realHora, foco.clima)], dataBr(foco.data))}${caixaCalibracao(d)}</div>`;
+  </div>${caixaDiagnostico([...diagnosticarDias(linhas.map((l) => ({ data: l.data, previsto: l.previsto, real: l.real, clima: l.clima }))), ...diagnosticarCurva(prevFoco.kwh_hora ?? [], d.realHora, foco.clima)], dataBr(foco.data), d.sistemaId)}${caixaCalibracao(d)}</div>`;
 }
 
 export { curvaPorHora } from '../monitoring/previsto/curva.js';
+
+/** Marco 5: cada causa provável vira OS do tipo certo (o técnico confirma no local). */
+export const OS_DA_HIPOTESE: Record<Hipotese['tipo'], { tipo: OSTipo; rotulo: string }> = {
+  sujeira: { tipo: 'limpeza', rotulo: 'limpeza' },
+  degrau: { tipo: 'revisao_inversor', rotulo: 'revisão do inversor/strings' },
+  corte_inversor: { tipo: 'revisao_inversor', rotulo: 'revisão do inversor' },
+  desligamento: { tipo: 'revisao_eletrica', rotulo: 'revisão elétrica' },
+  rendimento_baixo: { tipo: 'inspecao', rotulo: 'inspeção' },
+};
 
 const ICONE_HIP: Record<Hipotese['tipo'], string> = {
   sujeira: '🧽', degrau: '🔌', rendimento_baixo: '📉', corte_inversor: '✂️', desligamento: '⚡',
 };
 
-function caixaDiagnostico(hs: Hipotese[], diaFoco: string): string {
+function caixaDiagnostico(hs: Hipotese[], diaFoco: string, sistemaId: string): string {
   if (hs.length === 0) {
     return '<div class="box"><h2>🩺 Diagnóstico</h2><p class="m">Nenhum padrão de problema nos dados (sujeira, queda em degrau, corte do inversor, desligamento). 👍</p></div>';
   }
@@ -233,7 +246,13 @@ function caixaDiagnostico(hs: Hipotese[], diaFoco: string): string {
       <div class="hip-t">${ICONE_HIP[h.tipo]} <b>${esc(h.titulo)}</b> <span class="tag ${h.confianca === 'provavel' ? 'med' : 'calc'}">${h.confianca === 'provavel' ? 'PROVÁVEL' : 'POSSÍVEL'}</span>
         ${h.tipo === 'corte_inversor' || h.tipo === 'desligamento' ? `<span class="nota">(curva de ${esc(diaFoco)})</span>` : ''}</div>
       <div class="nota"><b>Evidência:</b> ${esc(h.evidencia)}</div>
-      <div class="nota"><b>O que fazer:</b> ${esc(h.acao)}</div></div>`).join('');
+      <div class="nota"><b>O que fazer:</b> ${esc(h.acao)}</div>
+      <form method="post" action="/dashboard/os/nova" class="hip-os">
+        <input type="hidden" name="sistemaId" value="${esc(sistemaId)}">
+        <input type="hidden" name="tipo" value="${OS_DA_HIPOTESE[h.tipo].tipo}">
+        <input type="hidden" name="motivo" value="${esc(`Previsto × Real — ${h.titulo} (${h.confianca === 'provavel' ? 'provável' : 'possível'}). Evidência: ${h.evidencia} O que conferir: ${h.acao}`)}">
+        <button type="submit">🛠️ Abrir OS de ${OS_DA_HIPOTESE[h.tipo].rotulo}</button>
+      </form></div>`).join('');
   return `<div class="box"><h2>🩺 Diagnóstico — prováveis causas</h2>
     <p class="m">Hipóteses a partir do padrão da diferença entre o real (medido) e o previsto (calculado). Confirme no local antes de concluir.</p>${itens}</div>`;
 }
@@ -258,6 +277,34 @@ function caixaCalibracao(d: DadosTelaPrevisto): string {
 }
 
 /** Página inteira (tela renovada: sem Tailwind do CDN — CSS próprio acima). */
+const CHANCE = { alta: ['ALTA', 'med'], media: ['MÉDIA', 'calc'], baixa: ['BAIXA', 'calc'] } as const;
+const ROTULO_OS: Record<string, string> = {
+  limpeza: 'limpeza', revisao_inversor: 'revisão do inversor', revisao_eletrica: 'revisão elétrica', corretiva: 'corretiva', inspecao: 'inspeção',
+};
+
+/** Resultado do "Analisar com IA" (Energy Studio). */
+export function renderAnaliseIaBody(d: { sistemaId: string; nome: string; analise: AnaliseIa; doCache: boolean }): string {
+  const a = d.analise;
+  const hips = a.hipoteses.map((h, i) => `<div class="hip">
+      <div class="hip-t">${i + 1}. <b>${esc(h.titulo)}</b> <span class="tag ${CHANCE[h.chance][1]}">CHANCE ${CHANCE[h.chance][0]}</span></div>
+      ${h.evidencias.length ? `<div class="nota"><b>Evidências (dos dados):</b></div><ul class="nota">${h.evidencias.map((e) => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
+      ${h.comoConfirmar ? `<div class="nota"><b>Como confirmar:</b> ${esc(h.comoConfirmar)}</div>` : ''}
+      ${h.tipoOs ? `<form method="post" action="/dashboard/os/nova" class="hip-os">
+        <input type="hidden" name="sistemaId" value="${esc(d.sistemaId)}">
+        <input type="hidden" name="tipo" value="${h.tipoOs}">
+        <input type="hidden" name="motivo" value="${esc(`Análise IA (Energy Studio) — ${h.titulo} (chance ${CHANCE[h.chance][0].toLowerCase()}). Evidências: ${h.evidencias.join(' · ')} Como confirmar: ${h.comoConfirmar}`)}">
+        <button type="submit">🛠️ Abrir OS de ${ROTULO_OS[h.tipoOs]}</button></form>` : ''}
+    </div>`).join('');
+  return `${CSS_PREVISTO}<div class="pv pv-claro">
+    <a class="volta" href="/dashboard/monitoramento/${esc(d.sistemaId)}/previsto">← voltar para o Previsto × Real</a>
+    <h1>🤖 Análise da usina — ${esc(d.nome)}</h1>
+    <div class="sub">A IA leu os últimos 30 dias (real medido × previsto calculado), o clima, a calibração e a rede. São <b>hipóteses</b>: confirme no local antes de concluir.${d.doCache ? ' <span class="nota">(análise feita há poucos minutos)</span>' : ''}</div>
+    <div class="box"><h2>Resumo</h2><p>${esc(a.resumo)}</p>${a.proximoPasso ? `<p><b>Próximo passo:</b> ${esc(a.proximoPasso)}</p>` : ''}</div>
+    ${hips ? `<div class="box"><h2>Causas prováveis</h2>${hips}</div>` : ''}
+    ${a.faltaDado.length ? `<div class="box"><h2>O que deixaria a análise melhor</h2><ul class="nota">${a.faltaDado.map((f) => `<li>${esc(f)}</li>`).join('')}</ul></div>` : ''}
+  </div>`;
+}
+
 export function renderPrevistoPage(body: string, user: DashUser | undefined): string {
   return renderLayout({ active: 'monitoramento', title: 'Previsto × Real', body, user, largo: true, tailwind: false });
 }

@@ -44,6 +44,7 @@ export const MODULO_DA_ROTA: readonly RotaDeModulo[] = [
   // Usinas / O&M / Instalações / Pós-venda
   { prefixo: '/monitoramento', modulo: 'monitoramento', chave: 'monitoramento' },
   { prefixo: '/demonstrativos', modulo: 'monitoramento', chave: 'demonstrativos' },
+  { prefixo: '/energy-studio', modulo: 'previsto_real', chave: 'energy_studio' },
   { prefixo: '/usinas', modulo: 'monitoramento', chave: 'usinas_kanban' },
   { prefixo: '/manutencao', modulo: 'monitoramento', chave: 'manutencao' },
   { prefixo: '/os', modulo: 'monitoramento', chave: 'manutencao' },

@@ -88,6 +88,7 @@ export const MENU_AREAS: GrupoMenu[] = [
     id: 'usinas', titulo: 'Usinas', icone: 'sun',
     itens: [
       { href: '/dashboard/monitoramento', key: 'monitoramento', label: 'Monitoramento', area: 'usinas' },
+      { href: '/dashboard/energy-studio', key: 'energy_studio', label: 'Energy Studio', area: 'usinas' },
       { href: '/dashboard/demonstrativos', key: 'demonstrativos', label: 'Demonstrativos GD', area: 'usinas' },
       { href: '/dashboard/medicao', key: 'medicao', label: 'Medição', area: 'usinas' },
       { href: '/dashboard/energia', key: 'energia', label: 'Energia da casa', area: 'usinas' },

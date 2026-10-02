@@ -98,6 +98,16 @@ export const MODULOS: Record<string, ModuloVitrine> = {
       'Prova para o cliente (e para a garantia) que o sistema rende o projetado',
     ],
   },
+  energy_studio: {
+    titulo: '☀️ Energy Studio',
+    resumo: 'Inteligência de usina: cada sistema comparado com o sol real do dia, telhado descoberto pela curva, rede elétrica vigiada e relatório pronto para a distribuidora.',
+    ganhos: [
+      'Previsto × Real por satélite: acha a usina que gera menos antes do cliente reclamar',
+      'Diagnóstico com evidência: sujeira, string parada, inversor cortando, tensão alta',
+      'Radar da Rede: tensão por bairro e prova de "a culpa foi da rede" em PDF',
+      'Funciona até em usina sem integração: importa o CSV ou o print do app',
+    ],
+  },
   energia: {
     titulo: '⚡ Energia da casa',
     resumo: 'Um medidor no quadro do cliente mostra o que a casa compra, devolve e consome de verdade — junto com a usina.',

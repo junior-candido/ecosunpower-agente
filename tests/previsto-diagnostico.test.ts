@@ -66,5 +66,11 @@ describe('tela: caixa de diagnóstico', async () => {
     expect(h).toContain('Diagnóstico — prováveis causas');
     expect(h).toContain('Queda em degrau');
     expect(h).toContain('PROVÁVEL');
+    // Marco 5: a hipótese vira OS do tipo certo, já com o motivo escrito.
+    expect(h).toContain('action="/dashboard/os/nova"');
+    expect(h).toContain('name="sistemaId" value="s"');
+    expect(h).toContain('name="tipo" value="revisao_inversor"');
+    expect(h).toMatch(/name="motivo" value="Previsto × Real — Queda em degrau[^"]*Evidência:/);
+    expect(h).toContain('Abrir OS de revisão do inversor/strings');
   });
 });

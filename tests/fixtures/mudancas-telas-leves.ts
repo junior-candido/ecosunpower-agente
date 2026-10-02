@@ -19,8 +19,14 @@ export const TELAS_LEVES: MudancaContrato = {
  * Tela de tenant = a que não traz a logo da casa (telas-leves garante isso).
  */
 export function menuTenantSemAssinaturas(html: string): MudancaContrato[] {
-  if (html.includes('/dashboard/estatico/logo-casa.')) return [];
-  return [{ motivo: 'Assinaturas só da casa — some do menu do tenant', saiSeHouver: { links: ['/dashboard/assinaturas', '/dashboard/conhecer/assinaturas'] } }];
+  return [...menuEnergyStudio(html), ...(html.includes('/dashboard/estatico/logo-casa.') ? [] : [{ motivo: 'Assinaturas só da casa — some do menu do tenant', saiSeHouver: { links: ['/dashboard/assinaturas', '/dashboard/conhecer/assinaturas'] } }])];
+}
+
+/** Energy Studio (02/10/2026): item novo no menu "Usinas" — link direto ou a
+ *  vitrine (/conhecer) quando a empresa não contratou. Só em tela com menu. */
+export function menuEnergyStudio(html: string): MudancaContrato[] {
+  const links = ['/dashboard/energy-studio', '/dashboard/conhecer/energy_studio'].filter((l) => html.includes(`href="${l}"`));
+  return links.length ? [{ motivo: 'Energy Studio no menu Usinas', entra: { links } }] : [];
 }
 
 /** Leads sem piscada (28/09): o CSS da grade do Atendimento (Conversas e ficha
