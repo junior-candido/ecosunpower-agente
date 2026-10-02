@@ -21,7 +21,7 @@ export interface DiaPrevisto {
   irradiacao_kwh_m2: number | null;
   indice_ceu: number | null;
   clima: Clima;
-  premissas: { kwp?: number; inclinacao?: number; azimute?: number; sombreamento?: number; estimados?: string[]; calibrados?: string[]; divergencia?: { cadastro: number; curva: number } };
+  premissas: { kwp?: number; inclinacao?: number; azimute?: number; sombreamento?: number; estimados?: string[]; calibrados?: string[]; divergencia?: { cadastro: number; curva: number }; arranjos?: { nome: string; kwp: number; azimute: number; inclinacao: number }[] };
 }
 
 /** Linha de previsto_calibracao (status ok). */
@@ -195,7 +195,9 @@ export function renderPrevistoBody(d: DadosTelaPrevisto): string {
 
   const porque = `<ul class="por">
       <li>☀️ Sol que bateu no local: <b>${prevFoco.irradiacao_kwh_m2 != null ? num(Number(prevFoco.irradiacao_kwh_m2), 1) : '—'} kWh/m²</b> (satélite)</li>
-      <li>📐 Telhado <b>${esc(nomeOrient(Number(prem.azimute)))}</b>, inclinação <b>${esc(prem.inclinacao ?? '—')}°</b>${prem.calibrados?.length ? ' <span class="tag calc">DESCOBERTO PELA CURVA</span>' : ''}</li>
+      ${prem.arranjos?.length
+        ? `<li>📐 Telhado em <b>${prem.arranjos.length} águas</b>:<ul>${prem.arranjos.map((a) => `<li>${esc(a.nome)}: <b>${num(Number(a.kwp), 2)} kWp</b>, ${esc(nomeOrient(Number(a.azimute)))}, ${esc(a.inclinacao)}°</li>`).join('')}</ul></li>`
+        : `<li>📐 Telhado <b>${esc(nomeOrient(Number(prem.azimute)))}</b>, inclinação <b>${esc(prem.inclinacao ?? '—')}°</b>${prem.calibrados?.length ? ' <span class="tag calc">DESCOBERTO PELA CURVA</span>' : ''}</li>`}
       <li>⚡ Potência <b>${prem.kwp != null ? num(Number(prem.kwp), 2) : '—'} kWp</b></li>
       ${prem.sombreamento ? `<li>🌳 Sombra do cadastro: −${num(Number(prem.sombreamento) * 100, 0)}%</li>` : ''}
       <li>🔌 Calor, fios, inversor e sujeira: calculados hora a hora</li></ul>

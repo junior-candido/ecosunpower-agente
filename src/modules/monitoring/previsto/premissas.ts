@@ -30,6 +30,24 @@ export interface SistemaCadastro {
   telhado_orientacao?: string | null;
   telhado_inclinacao_graus?: number | null;
   sombreamento_pct?: number | null;
+  /** Multi-arranjo (migration 155): [{nome,kwp,azimute,inclinacao}]. */
+  arranjos?: unknown;
+}
+
+/** Uma água do telhado (multi-arranjo). */
+export interface Arranjo { nome: string; kwp: number; azimute: number; inclinacao: number }
+
+/** Lê e valida a lista de arranjos do cadastro; inválida/vazia → null. */
+export function lerArranjos(bruto: unknown): Arranjo[] | null {
+  if (!Array.isArray(bruto) || bruto.length === 0) return null;
+  const out: Arranjo[] = [];
+  for (const [i, a] of bruto.entries()) {
+    const o = (a ?? {}) as Record<string, unknown>;
+    const kwp = Number(o.kwp), az = Number(o.azimute), inc = Number(o.inclinacao);
+    if (!(kwp > 0) || !Number.isFinite(az) || !Number.isFinite(inc) || inc < 0 || inc > 90) return null; // um ruim invalida tudo
+    out.push({ nome: String(o.nome ?? `Arranjo ${i + 1}`).slice(0, 60), kwp, azimute: ((az % 360) + 360) % 360, inclinacao: inc });
+  }
+  return out;
 }
 
 export interface Premissas {
@@ -46,6 +64,8 @@ export interface Premissas {
   calibrados?: string[];
   /** Cadastro diz uma orientação e a curva real indica outra (confiança alta, > 45°). */
   divergencia?: { cadastro: number; curva: number };
+  /** Usina com mais de uma água: o previsto é a soma de cada arranjo. */
+  arranjos?: Arranjo[];
 }
 
 /** Calibração automática da usina (tabela previsto_calibracao, status ok). */
@@ -63,6 +83,19 @@ export function montarPremissas(s: SistemaCadastro, calib?: CalibracaoUsina | nu
   const kwp = Number(s.potencia_kwp);
   if (!Number.isFinite(kwp) || kwp <= 0) return { erro: 'sem_kwp' };
   if (s.lat == null || s.lng == null || !Number.isFinite(s.lat) || !Number.isFinite(s.lng)) return { erro: 'sem_posicao' };
+  const arr = lerArranjos(s.arranjos);
+  if (arr) {
+    // Multi-arranjo: orientação de cada água vem do cadastro (nada estimado).
+    // Campos únicos = os do maior arranjo (só para exibição/compatibilidade).
+    const maior = [...arr].sort((a, b) => b.kwp - a.kwp)[0];
+    const sombra0 = Number(s.sombreamento_pct);
+    return {
+      lat: s.lat, lon: s.lng, kwp: arr.reduce((x, a) => x + a.kwp, 0), inclinacao: maior.inclinacao, azimute: maior.azimute,
+      tipo_instalacao: tipoInstalacao(s.telhado_tipo),
+      sombreamento: s.sombreamento_pct != null && Number.isFinite(sombra0) && sombra0 >= 0 && sombra0 < 100 ? sombra0 / 100 : 0,
+      estimados: [], arranjos: arr,
+    };
+  }
   const estimados: string[] = [];
   const calibrados: string[] = [];
   // Calibração só substitui o que FALTA no cadastro, e só com confiança alta.

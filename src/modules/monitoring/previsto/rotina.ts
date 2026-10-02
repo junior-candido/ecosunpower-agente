@@ -4,7 +4,7 @@
 // Idempotente (upsert por sistema_id+data) — pode rodar de novo sem duplicar.
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { montarPremissas, type SistemaCadastro, type MotivoSemPremissa, type CalibracaoUsina } from './premissas.js';
-import { previstoDoDia, type ConfigMotor } from './motor-cliente.js';
+import { previstoDoDiaTotal, type ConfigMotor } from './motor-cliente.js';
 import { ECOSUN_COMPANY_ID } from '../../tenant-resolver.js';
 
 /** Para tudo depois de tantas falhas SEGUIDAS (motor fora / senha errada / limite do clima). */
@@ -34,7 +34,7 @@ export interface ResumoRotina {
   primeiraFalha?: string;
 }
 
-const COLUNAS = 'id, company_id, potencia_kwp, lat, lng, telhado_tipo, telhado_orientacao, telhado_inclinacao_graus, sombreamento_pct';
+const COLUNAS = 'id, company_id, potencia_kwp, lat, lng, telhado_tipo, telhado_orientacao, telhado_inclinacao_graus, sombreamento_pct, arranjos';
 
 export async function calcularPrevistos(db: SupabaseClient, datas: string[], deps: DepsRotina): Promise<ResumoRotina> {
   const log = deps.log ?? ((m: string) => console.log(m));
@@ -42,11 +42,17 @@ export async function calcularPrevistos(db: SupabaseClient, datas: string[], dep
 
   // Paginado: o PostgREST corta em 1000 linhas (carteira Jimena tem ~1,3 mil).
   const sistemas: SistemaCadastro[] = [];
+  // Sem a migration 155 (coluna arranjos), segue sem multi-arranjo em vez de quebrar.
+  let colunasUsina = COLUNAS;
+  {
+    const t = await db.from('sistemas_clientes').select('arranjos').limit(1);
+    if (t.error && /arranjos/.test(t.error.message)) colunasUsina = COLUNAS.replace(', arranjos', '');
+  }
   for (let pag = 0; ; pag++) {
-    const { data, error } = await db.from('sistemas_clientes').select(COLUNAS).eq('ativo', true)
+    const { data, error } = await db.from('sistemas_clientes').select(colunasUsina).eq('ativo', true)
       .order('id', { ascending: true }).range(pag * 1000, pag * 1000 + 999);
     if (error) throw new Error(`previsto: lendo usinas: ${error.message}`);
-    const rows = (data ?? []) as SistemaCadastro[];
+    const rows = (data ?? []) as unknown as SistemaCadastro[];
     // Linha antiga sem empresa = da casa (regra do filtro-empresa).
     for (const r of rows) sistemas.push({ ...r, company_id: r.company_id ?? ECOSUN_COMPANY_ID });
     if (rows.length < 1000) break;
@@ -83,7 +89,7 @@ export async function calcularPrevistos(db: SupabaseClient, datas: string[], dep
       tarefas.push(async () => {
         if (seguidas >= LIMITE_FALHAS_SEGUIDAS) { resumo.puladas++; return; }
         try {
-          const r = await previstoDoDia(deps.motor, p, dataDia);
+          const r = await previstoDoDiaTotal(deps.motor, p, dataDia);
           const { error: e } = await db.from('geracao_esperada').upsert({
             sistema_id: s.id, company_id: s.company_id, data: dataDia,
             kwh_previsto: r.kwh, kwh_hora: r.kwh_hora,
