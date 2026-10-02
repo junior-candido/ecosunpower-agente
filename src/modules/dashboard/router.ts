@@ -58,6 +58,7 @@ import {
   renderImportarSitesPage,
   renderDetalheSistemaPage,
   renderEditarSistemaPage,
+  aguasDoFormulario,
   renderTelemetriaPage,
   renderLayout,
 } from './views.js';
@@ -6424,6 +6425,8 @@ export function createDashboardRouter(
       telhado_inclinacao_graus: numOuNull(body.telhado_inclinacao_graus),
       sombreamento_pct: numOuNull(body.sombreamento_pct),
       observacoes: strOuNull(body.observacoes),
+      // Multi-arranjo (Previsto × Real): 2+ águas completas → lista; senão nulo.
+      arranjos: aguasDoFormulario(body),
     };
     if (!fields.apelido) {
       return res.status(400).send('<h2>Apelido eh obrigatorio</h2><a href="javascript:history.back()">← voltar</a>');
