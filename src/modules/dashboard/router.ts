@@ -76,6 +76,8 @@ import { getAdapter } from '../monitoring/adapter-registry.js';
 import { renderPrevistoBody, renderPrevistoPage, curvaPorHora } from './previsto-views.js';
 import { renderRedeBody, renderRedePage } from './rede-views.js';
 import { analisarRede, type LeituraTensao, type PontoGeracao } from '../monitoring/rede/analise.js';
+import { montarRelatorioRede, diaBrasilia } from '../monitoring/rede/relatorio.js';
+import { renderRelatorioRedeHtml } from './rede-relatorio-html.js';
 import { garantiaInfo } from '../monitoring/garantia.js';
 import { filtrarOrdenarSistemas } from '../monitoring/filtro.js';
 import { hojeBrasilia } from '../monitoring/util/dia-brasilia.js';
@@ -5917,6 +5919,79 @@ export function createDashboardRouter(
 
   // Detalhe de UMA usina: KPIs (hoje/mes/ano/total), grafico 30 dias,
   // grafico mensal 12m, alertas. Auto-refresh 30s.
+  // RELATÓRIO "a culpa foi da rede" (PDF, Marco 2 — 02/10/2026): N dias de tensão
+  // + geração, resumo por dia, pior dia detalhado, base técnica e RT.
+  router.get('/monitoramento/:id/rede/relatorio', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!UUID_RE.test(id)) return res.status(400).send('UUID invalido');
+    const user = (req as AuthedRequest).dashUser;
+    try {
+      const modulos = await lerModulosAtivos(supabase, user?.companyId ?? '');
+      if (!modulos.has('previsto_real')) return res.redirect('/dashboard/conhecer/previsto_real');
+      const db = bancoDoOperador(req as AuthedRequest, supabase);
+      const { data: sis } = await db.from('sistemas_clientes')
+        .select('id, apelido, cidade, uf, company_id, marca_inversor, potencia_kwp').eq('id', id).maybeSingle();
+      const sx = (sis ?? null) as Record<string, unknown> | null;
+      if (!sx || !usinaPertenceAoOperador((sx.company_id as string | null) ?? null, user?.companyId)) {
+        return res.status(404).send('<h2>Sistema nao encontrado</h2><a href="/dashboard/monitoramento">← voltar</a>');
+      }
+      const nDias = Math.min(90, Math.max(7, Number(req.query.dias) || 30));
+      const ate = hojeBrasilia();
+      const dias = Array.from({ length: nDias }, (_, k) => new Date(Date.parse(`${ate}T12:00:00Z`) - (nDias - 1 - k) * 86400_000).toISOString().slice(0, 10));
+      const ini = new Date(`${dias[0]}T03:00:00Z`).toISOString();
+      const fim = new Date(Date.parse(`${ate}T03:00:00Z`) + 86400_000).toISOString();
+      const lerTudo = async (montar: () => any): Promise<any[]> => {
+        const out: any[] = [];
+        for (let p = 0; p < 40; p++) {
+          const { data, error } = await montar().range(p * 1000, p * 1000 + 999);
+          if (error) throw new Error(error.message);
+          out.push(...(data ?? []));
+          if ((data ?? []).length < 1000) break;
+        }
+        return out;
+      };
+      let leituras: LeituraTensao[] = (await lerTudo(() => db.from('telemetria_medicoes').select('ponto, ts, valor')
+        .eq('sistema_id', id).like('ponto', 'tensao_fase%').gte('ts', ini).lt('ts', fim).order('ts', { ascending: true })))
+        .map((t: { ponto: string; ts: string; valor: number }) => ({ ts: t.ts, fase: t.ponto, v: Number(t.valor) }));
+      const geracao: PontoGeracao[] = (await lerTudo(() => db.from('telemetria_medicoes').select('ts, valor')
+        .eq('sistema_id', id).eq('ponto', 'potencia').gte('ts', ini).lt('ts', fim).order('ts', { ascending: true })))
+        .map((p: { ts: string; valor: number }) => ({ ts: p.ts, kw: Number(p.valor) }));
+      let fonte = `inversor ${String(sx.marca_inversor ?? '')}`;
+      let nominal: 127 | 220 | 380 | null = null;
+      if (!leituras.length) {
+        const { data: meds } = await db.from('medidores_energia').select('id, tensao_nominal_v').eq('sistema_id', id);
+        const ms = (meds ?? []) as Array<{ id: string; tensao_nominal_v: number | null }>;
+        if (ms.length) {
+          leituras = (await lerTudo(() => db.from('energia_15min').select('canal, inicio, tensao_max_v')
+            .in('medidor_id', ms.map((m) => m.id)).eq('papel', 'rede').gte('inicio', ini).lt('inicio', fim).order('inicio', { ascending: true })))
+            .filter((r: { tensao_max_v: number | null }) => r.tensao_max_v != null)
+            .map((r: { canal: number; inicio: string; tensao_max_v: number }) => ({ ts: r.inicio, fase: `Canal ${r.canal}`, v: Number(r.tensao_max_v) }));
+          fonte = 'medidor Shelly';
+          const n = Number(ms[0].tensao_nominal_v);
+          nominal = n === 127 || n === 220 || n === 380 ? n : null;
+        }
+      }
+      const resumo = montarRelatorioRede(leituras, geracao, dias, nominal);
+      const piorDia = resumo.piorDia ? {
+        leituras: leituras.filter((l) => diaBrasilia(l.ts) === resumo.piorDia),
+        geracao: geracao.filter((g) => diaBrasilia(g.ts) === resumo.piorDia),
+      } : null;
+      const companyId = String(sx.company_id ?? user?.companyId ?? '');
+      const marca = await marcaRelatorioGd(req as AuthedRequest, companyId, empresaDe(companyId));
+      const html = renderRelatorioRedeHtml({
+        marca, usina: { nome: String(sx.apelido ?? 'Usina'), local: [sx.cidade, sx.uf].filter(Boolean).join(' · '), kwp: sx.potencia_kwp == null ? null : Number(sx.potencia_kwp) },
+        periodo: { de: dias[0], ate }, fonte, resumo, piorDia, emitidoEm: new Date().toISOString(),
+      });
+      const { htmlToPdf } = await import('../proposal/pdf-generator.js');
+      const pdf = await htmlToPdf(html, { waitForChartMs: 300 });
+      const nomeArq = `relatorio-tensao-${String(sx.apelido ?? 'usina').normalize('NFD').replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}.pdf`;
+      res.type('application/pdf').set('Content-Disposition', `inline; filename="${nomeArq}"`).send(pdf);
+    } catch (err) {
+      console.error('[rede] relatório:', (err as Error).message);
+      res.status(500).send('<h2>Não consegui gerar o relatório agora.</h2><a href="/dashboard/monitoramento">← voltar</a>');
+    }
+  });
+
   // REDE (Energy Studio, Marco 2 — 02/10/2026): tensão por fase × faixas ANEEL
   // × desarmes prováveis. Mesmo pacote vendável do Previsto × Real.
   router.get('/monitoramento/:id/rede', async (req: Request, res: Response) => {

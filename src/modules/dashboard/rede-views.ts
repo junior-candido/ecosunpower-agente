@@ -31,7 +31,7 @@ const minutoDoDia = (ts: string): number => {
 const hhmm = (ts: string): string => { const m = minutoDoDia(ts); return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
 const somaDia = (iso: string, n: number): string => new Date(Date.parse(`${iso}T12:00:00Z`) + n * 86400_000).toISOString().slice(0, 10);
 
-function grafico(d: DadosTelaRede): string {
+export function graficoTensaoDia(d: DadosTelaRede): string {
   const a = d.analise;
   const nominal = a.nominal ?? 220;
   const lim = limitesProdist(nominal);
@@ -72,7 +72,7 @@ function grafico(d: DadosTelaRede): string {
     <div class="leg">${leg}<span><i style="background:#94a3b8"></i>Geração</span><span><i style="background:#dcfce7"></i>Adequada</span><span><i style="background:#fef3c7"></i>Precária</span><span><i style="background:#fee2e2"></i>Crítica</span><span>⭕ desarme provável</span></div>`;
 }
 
-function rotuloFase(f: string): string {
+export function rotuloFase(f: string): string {
   const m = /^tensao_fase_([a-z])$/.exec(f);
   return m ? `Fase ${m[1].toUpperCase()}` : f;
 }
@@ -82,7 +82,8 @@ export function renderRedeBody(d: DadosTelaRede): string {
   const nav = `<div style="display:flex;gap:10px;align-items:center;margin:6px 0 12px">
       <a class="volta" href="?dia=${somaDia(d.dia, -1)}">← dia anterior</a>
       <b>${d.dia.slice(8, 10)}/${d.dia.slice(5, 7)}/${d.dia.slice(0, 4)}</b>
-      <a class="volta" href="?dia=${somaDia(d.dia, 1)}">dia seguinte →</a></div>`;
+      <a class="volta" href="?dia=${somaDia(d.dia, 1)}">dia seguinte →</a>
+      <span style="flex:1"></span><a class="volta" href="/dashboard/monitoramento/${esc(d.sistemaId)}/rede/relatorio?dias=30" target="_blank" rel="noopener">📄 Relatório em PDF (30 dias)</a></div>`;
   const topo = `<a class="volta" href="/dashboard/monitoramento/${esc(d.sistemaId)}">← voltar para a usina</a>
     <h1>⚡ ${esc(d.nome)} — Rede</h1><div class="sub">${esc(d.local)} · tensão medida pelo ${esc(d.fonte)} · faixas da ANEEL (PRODIST Módulo 8)</div>${nav}`;
   if (a.nivel === 'sem_dado') {
@@ -102,7 +103,7 @@ export function renderRedeBody(d: DadosTelaRede): string {
     : '<p class="nota">Nenhum desligamento por tensão alta neste dia. 👍</p>';
   return `${CSS_PREVISTO}<div class="pv pv-claro">${topo}
     <div class="box"><span class="st ${corNivel}">${rot}</span> <span style="margin-left:8px">${esc(a.veredito)}</span></div>
-    <div class="box"><h2>Tensão ao longo do dia</h2><p class="m">Cada linha é uma fase. Verde = adequada · amarelo = precária · vermelho = crítica. A linha vermelha tracejada é onde o inversor desarma.</p>${grafico(d)}</div>
+    <div class="box"><h2>Tensão ao longo do dia</h2><p class="m">Cada linha é uma fase. Verde = adequada · amarelo = precária · vermelho = crítica. A linha vermelha tracejada é onde o inversor desarma.</p>${graficoTensaoDia(d)}</div>
     <div class="g2">
       <div class="box"><h2>Tempo em cada faixa</h2>${tabela}<p class="nota">Tensão nominal considerada: ${a.nominal ?? '—'} V. Valores indicativos (o inversor não é analisador classe A).</p></div>
       <div class="box"><h2>Desarmes prováveis por tensão</h2>${desarmes}</div>
