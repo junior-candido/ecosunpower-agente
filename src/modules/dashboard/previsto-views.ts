@@ -3,6 +3,7 @@
 // HTML montado no servidor (SVG puro, sem biblioteca de gráfico).
 import { renderLayout } from './views.js';
 import type { DashUser } from './permissions.js';
+import { diagnosticarDias, diagnosticarCurva, type Hipotese } from '../monitoring/previsto/diagnostico.js';
 import {
   situacaoDoDia, diferencaPct, desvioPeriodo, ROTULO_SITUACAO,
   type Clima, type Situacao,
@@ -158,6 +159,7 @@ export const CSS_PREVISTO = `<style>
 .pv .tb{overflow-x:auto}.pv .st{font-weight:700;font-size:12px;padding:3px 8px;border-radius:999px}
 .pv .s-ok{background:#dcfce7;color:#166534}.pv .s-at{background:#ffedd5;color:#9a3412}.pv .s-ru{background:#fee2e2;color:#991b1b}.pv .s-cz{background:#e2e8f0;color:#334155}.pv .s-nb{background:#e0f2fe;color:#075985}
 .pv .nota{font-size:12px;color:#64748b}.pv .por li{margin:5px 0;font-size:13px}.pv a.volta{font-size:13px;color:#0f766e}
+.pv .hip{border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin:8px 0}.pv .hip-t{margin-bottom:4px}
 .pv .vazio{background:#fff;border:1px dashed #94a3b8;border-radius:14px;padding:22px;text-align:center;color:#334155}
 </style>`;
 
@@ -212,10 +214,27 @@ export function renderPrevistoBody(d: DadosTelaPrevisto): string {
   <div class="g2">
     <div class="box"><h2>Dias que chamaram atenção</h2>${tabela}<p class="nota">Pouca geração em dia de chuva <b>não</b> vira alerta: o previsto também cai.</p></div>
     <div class="box"><h2>Por que o previsto deu ${num(foco.previsto)} kWh?</h2>${porque}</div>
-  </div>${caixaCalibracao(d)}</div>`;
+  </div>${caixaDiagnostico([...diagnosticarDias(linhas.map((l) => ({ data: l.data, previsto: l.previsto, real: l.real, clima: l.clima }))), ...diagnosticarCurva(prevFoco.kwh_hora ?? [], d.realHora, foco.clima)], dataBr(foco.data))}${caixaCalibracao(d)}</div>`;
 }
 
 export { curvaPorHora } from '../monitoring/previsto/curva.js';
+
+const ICONE_HIP: Record<Hipotese['tipo'], string> = {
+  sujeira: '🧽', degrau: '🔌', rendimento_baixo: '📉', corte_inversor: '✂️', desligamento: '⚡',
+};
+
+function caixaDiagnostico(hs: Hipotese[], diaFoco: string): string {
+  if (hs.length === 0) {
+    return '<div class="box"><h2>🩺 Diagnóstico</h2><p class="m">Nenhum padrão de problema nos dados (sujeira, queda em degrau, corte do inversor, desligamento). 👍</p></div>';
+  }
+  const itens = hs.map((h) => `<div class="hip">
+      <div class="hip-t">${ICONE_HIP[h.tipo]} <b>${esc(h.titulo)}</b> <span class="tag ${h.confianca === 'provavel' ? 'med' : 'calc'}">${h.confianca === 'provavel' ? 'PROVÁVEL' : 'POSSÍVEL'}</span>
+        ${h.tipo === 'corte_inversor' || h.tipo === 'desligamento' ? `<span class="nota">(curva de ${esc(diaFoco)})</span>` : ''}</div>
+      <div class="nota"><b>Evidência:</b> ${esc(h.evidencia)}</div>
+      <div class="nota"><b>O que fazer:</b> ${esc(h.acao)}</div></div>`).join('');
+  return `<div class="box"><h2>🩺 Diagnóstico — prováveis causas</h2>
+    <p class="m">Hipóteses a partir do padrão da diferença entre o real (medido) e o previsto (calculado). Confirme no local antes de concluir.</p>${itens}</div>`;
+}
 
 function caixaCalibracao(d: DadosTelaPrevisto): string {
   const c = d.calibracao;
