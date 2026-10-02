@@ -37,7 +37,7 @@ export async function lerPrintGeracao(
       ],
     }],
   }, { timeout: 60_000 });
-  medirIa({ modelo: MODELO_LEITURA, origem: 'leitor-ia:geracao', usage: resp.usage, companyId: contexto.companyId ?? null });
+  medirIa({ modelo: MODELO_LEITURA, origem: 'midia:geracao-print', usage: resp.usage, companyId: contexto.companyId ?? null });
   const texto = resp.content.map((c) => (c.type === 'text' ? c.text : '')).join('');
   return interpretarRespostaImagem(texto);
 }

@@ -174,6 +174,7 @@ export const ORIGENS_IA = {
   'midia:tabela-precos': 'Leitura de print da tabela de preços',
   'midia:docs-contrato': 'Leitura de documentos do contrato',
   'midia:leitor-conta': 'Leitor de conta (Gerador de Relatórios)',
+  'midia:geracao-print': 'Leitura de print de geração (importar usina sem integração)',
   'resumo:lead': 'Resumo do lead no painel',
   'resumo:bi': 'Resumo de métricas (BI)',
   'reativacao:followup': 'Follow-up de lead parado',
