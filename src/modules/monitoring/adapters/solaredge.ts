@@ -11,11 +11,33 @@
 //
 // Conversao: value vem em Wh, dividimos por 1000 pra obter kWh.
 
-import type { AdapterResult, ListSitesResult, MonitoringAdapter } from '../types.js';
+import type { AdapterContext, AdapterResult, IntradayResult, ListSitesResult, MonitoringAdapter } from '../types.js';
+import { energiaCacheada, v2ListSites, v2FetchIntraday } from './solaredge-v2.js';
 import { fetchWithTimeout } from '../util/fetch-with-timeout.js';
 import { retryTransient, isTransientFailure } from '../util/retry.js';
 
 const BASE_URL = 'https://monitoringapi.solaredge.com';
+
+/**
+ * Chave V2 (Fleet) a usar: a da própria conta no cadastro (`fleet_key`, empresa
+ * cliente com conta SolarEdge dela) ou a do ambiente (SOLAREDGE_FLEET_KEY, conta
+ * da EcoSun). Sem nenhuma → segue na V1 (desligada em 01/11/2026).
+ */
+const ECOSUN = '00000000-0000-0000-0000-000000000001';
+export function chaveV2(
+  credenciais: Record<string, unknown> | null | undefined,
+  ctx?: AdapterContext,
+  env: NodeJS.ProcessEnv = process.env,
+): string | null {
+  const daConta = String(credenciais?.fleet_key ?? '').trim();
+  if (daConta) return daConta;
+  // A chave do AMBIENTE é da conta SolarEdge da EcoSun: só usina da casa
+  // (empresa desconhecida = não usa — falha fechada; segue na V1 dela).
+  const casa = ctx?.companyId === ECOSUN || ctx?.companyId === null;
+  if (!ctx || !casa) return null;
+  const doAmbiente = String(env.SOLAREDGE_FLEET_KEY ?? '').trim();
+  return doAmbiente || null;
+}
 
 // Resultado do helper HTTP comum. Igual formato dos outros adapters
 // (ok/reason/status/invalidCredentials) pra o isTransientFailure classificar.
@@ -81,9 +103,13 @@ export const solarEdgeAdapter: MonitoringAdapter = {
     credenciais: Record<string, unknown>,
     dataInicio: string,
     dataFim: string,
+    ctx?: AdapterContext,
   ): Promise<AdapterResult> {
     const siteId = String(credenciais.site_id ?? '').trim();
     const apiKey = String(credenciais.api_key ?? '').trim();
+
+    const v2 = chaveV2(credenciais, ctx);
+    if (siteId && v2) return energiaCacheada(v2, siteId, dataInicio, dataFim);
 
     if (!siteId || !apiKey) {
       return {
@@ -135,6 +161,19 @@ export const solarEdgeAdapter: MonitoringAdapter = {
   //       location: { country: "Brazil", city: "Brasilia", ... }
   //     }, ... ] } }
   async listSites(credenciaisConta: Record<string, unknown>): Promise<ListSitesResult> {
+    // Importação: NUNCA usa a chave do ambiente (listaria as usinas da EcoSun
+    // pra quem estiver importando). Só a chave que a própria empresa informou:
+    // fleet_key, ou a api_key digitada — tenta como chave V2 primeiro e, se a
+    // SolarEdge recusar, cai na V1 (até 01/11/2026).
+    const informada = String(credenciaisConta.fleet_key ?? credenciaisConta.api_key ?? '').trim();
+    if (informada) {
+      const r = await v2ListSites(informada);
+      if (r.ok) {
+        for (const s of r.sites) s.credenciais = { ...s.credenciais, fleet_key: informada };
+        return r;
+      }
+      if (!r.invalidCredentials || String(credenciaisConta.fleet_key ?? '').trim()) return r;
+    }
     const apiKey = String(credenciaisConta.api_key ?? '').trim();
     if (!apiKey) {
       return {
@@ -188,8 +227,18 @@ export const solarEdgeAdapter: MonitoringAdapter = {
     return { ok: true, sites };
   },
 
+  // Curva do dia (V2, 15 min) — só com chave V2 (a V1 não é usada pra curva).
+  async fetchIntraday(credenciais: Record<string, unknown>, dia: string, ctx?: AdapterContext): Promise<IntradayResult> {
+    const siteId = String(credenciais.site_id ?? '').trim();
+    const v2 = chaveV2(credenciais, ctx);
+    if (!siteId || !v2) return { ok: false, reason: 'Curva minuto a minuto da SolarEdge disponível com a chave nova (V2).' };
+    return v2FetchIntraday(v2, siteId, dia);
+  },
+
   // SolarEdge: a mesma api_key da conta vai em cada planta. Devolve só a key.
   extractAccountCreds(credsPlanta) {
+    const fleet = String(credsPlanta?.fleet_key ?? '').trim();
+    if (fleet) return { fleet_key: fleet };
     const apiKey = String(credsPlanta?.api_key ?? '').trim();
     if (!apiKey) return null;
     return { api_key: apiKey };
