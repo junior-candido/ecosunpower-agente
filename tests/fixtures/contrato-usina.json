@@ -1131,6 +1131,14 @@
             "type": "password"
           },
           {
+            "name": "growatt_base",
+            "type": "select"
+          },
+          {
+            "name": "growatt_token",
+            "type": "password"
+          },
+          {
             "name": "hoymiles_email",
             "type": "email"
           },
@@ -1330,6 +1338,14 @@
           },
           {
             "name": "goodwe_password",
+            "type": "password"
+          },
+          {
+            "name": "growatt_base",
+            "type": "select"
+          },
+          {
+            "name": "growatt_token",
             "type": "password"
           },
           {
@@ -1535,6 +1551,14 @@
             "type": "password"
           },
           {
+            "name": "growatt_base",
+            "type": "select"
+          },
+          {
+            "name": "growatt_token",
+            "type": "password"
+          },
+          {
             "name": "hoymiles_email",
             "type": "email"
           },
@@ -1734,6 +1758,14 @@
           },
           {
             "name": "goodwe_password",
+            "type": "password"
+          },
+          {
+            "name": "growatt_base",
+            "type": "select"
+          },
+          {
+            "name": "growatt_token",
             "type": "password"
           },
           {
