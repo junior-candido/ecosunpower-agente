@@ -88,7 +88,7 @@ export function renderRedeBody(d: DadosTelaRede): string {
   if (a.nivel === 'sem_dado') {
     const texto = d.marcaTemTensao
       ? 'Sem leitura de tensão neste dia (inversor sem comunicação ou dia ainda não coletado).'
-      : 'A marca deste inversor ainda não manda a tensão da rede para a plataforma. Hoje temos tensão de Sungrow, FoxESS e do medidor Shelly — as outras marcas estão a caminho.';
+      : 'A marca deste inversor ainda não manda a tensão da rede para a plataforma. Hoje temos tensão de Sungrow, FoxESS, Solis e do medidor Shelly — as outras marcas estão a caminho.';
     return `${CSS_PREVISTO}<div class="pv pv-claro">${topo}<div class="vazio">📡 ${esc(texto)}</div></div>`;
   }
   const corNivel = { ok: 's-ok', atencao: 's-at', critico: 's-ru', sem_dado: 's-cz' }[a.nivel];
