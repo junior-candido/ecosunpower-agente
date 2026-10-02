@@ -18,11 +18,14 @@ export interface OSRow {
 
 export async function criarOS(client: SupabaseClient, o: {
   sistemaId: string; leadId: string | null; tipo: OSTipo; manutencaoId?: string | null;
+  /** Motivo já escrito (ex.: diagnóstico do Previsto × Real). */
+  observacoes?: string | null;
   /** Empresa DONA da usina (sem isso o DEFAULT da 077 carimbava EcoSun). */
   companyId: string;
 }): Promise<string> {
   const { data, error } = await client.from('ordens_servico').insert({
     company_id: o.companyId, sistema_id: o.sistemaId, lead_id: o.leadId, tipo: o.tipo, manutencao_id: o.manutencaoId ?? null, status: 'aberta',
+    ...(o.observacoes ? { observacoes: o.observacoes } : {}),
   }).select('id').single();
   if (error) throw new Error(`criarOS: ${error.message}`);
   return (data as { id: string }).id;

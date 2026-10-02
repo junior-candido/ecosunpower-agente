@@ -6954,7 +6954,9 @@ export function createDashboardRouter(
       // R13 (segurança): a usina tem que ser da empresa da sessão.
       const sis = await sistemaDoOperador(db, sistemaId, req.dashUser!.companyId);
       if (!sis) { res.status(404).send('usina não encontrada'); return; }
-      const osId = await criarOS(supabase, { sistemaId, leadId: sis.leadId, tipo, companyId: sis.companyId });
+      // Energy Studio (Marco 5): OS aberta do diagnóstico já nasce com o motivo.
+      const motivo = String(req.body.motivo ?? '').trim().slice(0, 1500) || null;
+      const osId = await criarOS(supabase, { sistemaId, leadId: sis.leadId, tipo, companyId: sis.companyId, observacoes: motivo });
       res.redirect(`/dashboard/os/${osId}`);
     } catch (err) { console.error('[os] nova falhou:', (err as Error).message); res.status(500).send('erro ao criar OS'); }
   });
