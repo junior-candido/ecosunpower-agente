@@ -5774,6 +5774,16 @@ export function createDashboardRouter(
       }
       credenciais = { appId, appSecret, email, password, dataCenter };
       if (companyId) credenciais.companyId = companyId;
+    } else if (marca === 'hoymiles') {
+      const email = String(req.body?.hoymiles_email ?? '').trim();
+      const password = String(req.body?.hoymiles_password ?? '').trim();
+      if (!email || !password) {
+        return res.status(400).send(renderImportarSitesPage({
+        user: (req as AuthedRequest).dashUser,
+          errorMsg: 'Hoymiles precisa do e-mail e da senha da conta S-Miles de instalador.',
+        }));
+      }
+      credenciais = { email, password };
     } else if (marca === 'nep') {
       // Preferencial: email+senha (renova sozinho). Fallback: jwt direto.
       const email = String(req.body?.nep_email ?? '').trim();

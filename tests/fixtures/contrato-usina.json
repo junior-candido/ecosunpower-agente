@@ -1003,6 +1003,14 @@
             "type": "password"
           },
           {
+            "name": "hoymiles_email",
+            "type": "email"
+          },
+          {
+            "name": "hoymiles_password",
+            "type": "password"
+          },
+          {
             "name": "jwt",
             "type": "textarea"
           },
@@ -1194,6 +1202,14 @@
           },
           {
             "name": "goodwe_password",
+            "type": "password"
+          },
+          {
+            "name": "hoymiles_email",
+            "type": "email"
+          },
+          {
+            "name": "hoymiles_password",
             "type": "password"
           },
           {
@@ -1391,6 +1407,14 @@
             "type": "password"
           },
           {
+            "name": "hoymiles_email",
+            "type": "email"
+          },
+          {
+            "name": "hoymiles_password",
+            "type": "password"
+          },
+          {
             "name": "jwt",
             "type": "textarea"
           },
@@ -1582,6 +1606,14 @@
           },
           {
             "name": "goodwe_password",
+            "type": "password"
+          },
+          {
+            "name": "hoymiles_email",
+            "type": "email"
+          },
+          {
+            "name": "hoymiles_password",
             "type": "password"
           },
           {
