@@ -6,6 +6,7 @@ export type MarcaInversor =
   | 'sungrow'
   | 'deye'
   | 'hoymiles'
+  | 'growatt'
   | 'goodwe'
   | 'huawei'
   | 'foxess'

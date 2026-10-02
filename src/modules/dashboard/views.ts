@@ -695,6 +695,7 @@ export const MARCAS_LABEL: Record<string, string> = {
   abb: 'ABB / FIMER',
   solis: 'Solis',
   saj: 'SAJ',
+  growatt: 'Growatt',
 };
 
 // Logos oficiais hospedadas no site EcoSunPower (public/logos/).
@@ -1795,7 +1796,7 @@ export function renderImportarSitesPage(input: ImportarPageInput): string {
   const form = `
       <form action="/dashboard/monitoramento/importar" method="post" class="cc-form cc-us-imp" id="form-importar">
         ${campo('<label for="marca">Marca do inversor</label>', `<select name="marca" id="marca" required
-                  onchange="['solaredge','deye','nep','hoymiles','abb','foxess','goodwe','solis','sungrow','saj'].forEach(function(m){var el=document.getElementById('campos-'+m);if(!el)return;var ativo=document.getElementById('marca').value===m;el.style.display=ativo?'block':'none';el.disabled=!ativo;});">
+                  onchange="['solaredge','deye','nep','hoymiles','growatt','abb','foxess','goodwe','solis','sungrow','saj'].forEach(function(m){var el=document.getElementById('campos-'+m);if(!el)return;var ativo=document.getElementById('marca').value===m;el.style.display=ativo?'block':'none';el.disabled=!ativo;});">
             <option value="solaredge">SolarEdge</option>
             <option value="deye">Deye Cloud</option>
             <option value="nep">NEP (microinversores BDM)</option>
@@ -1806,6 +1807,7 @@ export function renderImportarSitesPage(input: ImportarPageInput): string {
             <option value="sungrow">Sungrow (iSolarCloud OpenAPI)</option>
             <option value="saj">SAJ (elekeeper / eSolar)</option>
             <option value="hoymiles">Hoymiles (S-Miles Cloud — microinversores)</option>
+            <option value="growatt">Growatt (OpenAPI com token)</option>
             <option value="huawei" disabled>Huawei (em breve)</option>
           </select>`)}
 
@@ -1859,6 +1861,15 @@ export function renderImportarSitesPage(input: ImportarPageInput): string {
           </div>
           ${nota('atencao', `<strong>Use a conta de INSTALADOR</strong> (S-Miles Installer), não a do cliente. O sistema entra sozinho e lista todas as usinas da conta.
             A Hoymiles não tem API pública gratuita: usamos o mesmo acesso do portal — se a Hoymiles mudar o portal, a leitura pode parar até ajustarmos.`)}
+        </fieldset>
+
+        <fieldset id="campos-growatt" style="display:none" disabled>
+          <div class="cc-us-campos">
+            ${campo('Token da OpenAPI Growatt', '<input name="growatt_token" type="password" class="cc-us-mono" placeholder="token de 32 caracteres">')}
+            ${campo('Servidor', '<select name="growatt_base"><option value="https://openapi.growatt.com">Padrão (Brasil e demais países)</option><option value="https://openapi-us.growatt.com">América do Norte</option></select>')}
+          </div>
+          ${nota('atencao', `<strong>Onde pegar o token:</strong> conta de INSTALADOR em oss.growatt.com → System Set → System Management → <em>Add API Request</em> (a Growatt manda por e-mail).
+            Conta de usuário: app ShinePhone → Me → API Token. Usamos o token oficial para não arriscar bloqueio da conta.`)}
         </fieldset>
 
         <fieldset id="campos-abb" style="display:none" disabled>

@@ -5775,6 +5775,16 @@ export function createDashboardRouter(
       }
       credenciais = { appId, appSecret, email, password, dataCenter };
       if (companyId) credenciais.companyId = companyId;
+    } else if (marca === 'growatt') {
+      const token = String(req.body?.growatt_token ?? '').trim();
+      const base = String(req.body?.growatt_base ?? '').trim();
+      if (!token) {
+        return res.status(400).send(renderImportarSitesPage({
+        user: (req as AuthedRequest).dashUser,
+          errorMsg: 'Growatt precisa do token da OpenAPI (OSS → Add API Request, ou ShinePhone → Me → API Token).',
+        }));
+      }
+      credenciais = { token, base };
     } else if (marca === 'hoymiles') {
       const email = String(req.body?.hoymiles_email ?? '').trim();
       const password = String(req.body?.hoymiles_password ?? '').trim();

@@ -10,6 +10,7 @@ import { solarEdgeAdapter } from './adapters/solaredge.js';
 import { deyeAdapter } from './adapters/deye.js';
 import { nepAdapter } from './adapters/nep.js';
 import { hoymilesAdapter } from './adapters/hoymiles.js';
+import { growattAdapter } from './adapters/growatt.js';
 import { abbAdapter } from './adapters/abb.js';
 import { foxessAdapter } from './adapters/foxess.js';
 import { goodweAdapter } from './adapters/goodwe.js';
@@ -28,6 +29,7 @@ const adapters: Partial<Record<MarcaInversor, MonitoringAdapter>> = {
   sungrow: sungrowAdapter,       // OpenAPI OAuth2 texto plano (app só-Monitoring) — validado ao vivo 03/07
   saj: sajAdapter,               // elekeeper (assinatura MD5+SHA1, senha AES-ECB) — validado ao vivo 29/07 (85 plantas SunBright)
   hoymiles: hoymilesAdapter,
+  growatt: growattAdapter,
   // huawei: huaweiAdapter,      // futuro
 };
 
