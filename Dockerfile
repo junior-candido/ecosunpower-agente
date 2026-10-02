@@ -48,7 +48,10 @@ RUN echo "export const BUILD_VERSION = 'build-$(date -u +%Y%m%d-%H%M%SZ)';" > sr
   && cat src/build-info.ts
 
 # Build TypeScript + copia prompts.
-RUN npm run build && cp -r src/prompts dist/prompts && chown -R pptruser:pptruser /app
+# 02/10/2026: o tsc passou do teto padrão de ~2 GB do Node ("heap out of
+# memory") com o código atual. Só a COMPILAÇÃO ganha mais memória; o app em
+# produção segue com o padrão.
+RUN NODE_OPTIONS=--max-old-space-size=4096 npm run build && cp -r src/prompts dist/prompts && chown -R pptruser:pptruser /app
 
 # AGORA sim, setar NODE_ENV=production pro runtime. Build ja foi feito,
 # devDependencies nao sao mais necessarias em runtime.
