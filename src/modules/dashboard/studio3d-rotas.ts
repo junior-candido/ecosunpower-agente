@@ -85,6 +85,7 @@ export function montarRotasStudio3d(
 ): void {
   const pasta = d.pasta ?? PASTA_STUDIO;
   const motor = () => (d.motor !== undefined ? d.motor : configMotorDoAmbiente());
+  const chaveGoogle = () => (d.chaveGoogle !== undefined ? d.chaveGoogle : (process.env.GOOGLE_MAPS_API_KEY || null));
 
   router.get('/studio-3d', exigir('usinas', 'visualizar'), async (req: Request, res: Response) => {
     try {
@@ -95,6 +96,8 @@ export function montarRotasStudio3d(
         urlMotor: '/dashboard/studio-3d/motor',
         voltar: '/dashboard/energy-studio',
         empresa: empresaDoStudio(user.companyId),
+        // 3D da Google (sem drone) só quando a chave existe no servidor
+        urlGoogle: chaveGoogle() ? '/dashboard/studio-3d/google' : null,
       }));
     } catch (err) {
       console.error('[studio-3d] app ausente:', (err as Error).message);
@@ -104,18 +107,18 @@ export function montarRotasStudio3d(
 
   router.get('/studio-3d/assets/:arquivo', exigir('usinas', 'visualizar'), async (req: Request, res: Response) => {
     const arquivo = String(req.params.arquivo ?? '');
-    if (!/^[A-Za-z0-9._-]+\.(js|css)$/.test(arquivo)) { res.status(404).end(); return; }
+    const ext = /^[A-Za-z0-9._-]+\.(js|css|png|jpg|webp|svg)$/.exec(arquivo)?.[1];
+    if (!ext) { res.status(404).end(); return; }
     try {
       const conteudo = await readFile(path.join(pasta, 'assets', arquivo));
       // nome leva o hash do conteúdo (Vite) → cache longo sem risco de versão velha
       res.set('Cache-Control', 'private, max-age=31536000, immutable');
-      res.type(arquivo.endsWith('.js') ? 'application/javascript' : 'text/css').send(conteudo);
+      const TIPOS: Record<string, string> = { js: 'application/javascript', css: 'text/css', png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp', svg: 'image/svg+xml' };
+      res.type(TIPOS[ext]).send(conteudo);
     } catch {
       res.status(404).end();
     }
   });
-
-  const chaveGoogle = () => (d.chaveGoogle !== undefined ? d.chaveGoogle : (process.env.GOOGLE_MAPS_API_KEY || null));
 
   /** Chama a Solar API e devolve a resposta (JSON ou binário) com log de uso (API paga). */
   async function chamarSolar(req: Request, res: Response, nome: string, url: string, binario = false): Promise<void> {
