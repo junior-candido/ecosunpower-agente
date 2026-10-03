@@ -21,7 +21,7 @@ import type { AuthedRequest } from './auth.js';
 
 /** Os módulos vendáveis (mesma lista do comentário da coluna empresa_modulos.modulo). */
 export const MODULOS = [
-  'eva', 'email', 'pasta_digital', 'monitoramento', 'financeiro', 'fiscal', 'rh', 'marketing', 'medicao', 'previsto_real',
+  'eva', 'email', 'pasta_digital', 'monitoramento', 'financeiro', 'fiscal', 'rh', 'marketing', 'medicao', 'previsto_real', 'studio_3d',
 ] as const;
 export type Modulo = (typeof MODULOS)[number];
 
@@ -45,6 +45,7 @@ export const MODULO_DA_ROTA: readonly RotaDeModulo[] = [
   { prefixo: '/monitoramento', modulo: 'monitoramento', chave: 'monitoramento' },
   { prefixo: '/demonstrativos', modulo: 'monitoramento', chave: 'demonstrativos' },
   { prefixo: '/energy-studio', modulo: 'previsto_real', chave: 'energy_studio' },
+  { prefixo: '/studio-3d', modulo: 'studio_3d', chave: 'studio_3d' },
   { prefixo: '/usinas', modulo: 'monitoramento', chave: 'usinas_kanban' },
   { prefixo: '/manutencao', modulo: 'monitoramento', chave: 'manutencao' },
   { prefixo: '/os', modulo: 'monitoramento', chave: 'manutencao' },

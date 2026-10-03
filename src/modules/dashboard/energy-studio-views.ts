@@ -34,6 +34,7 @@ export function renderEnergyStudioBody(d: DadosEnergyStudio): string {
   </div>`;
 
   const ferramentas = [
+    ['🛰️', 'Studio 3D', 'Projeto pelo voo do drone: telhado real, placas, sombra, inversores e relatório PDF.', '/dashboard/studio-3d'],
     ['☀️', 'Previsto × Real', 'Cada usina contra o sol que fez. Escolha a usina no monitoramento → botão "Previsto × Real".', '/dashboard/monitoramento'],
     ['📡', 'Radar da Rede', 'Mapa da tensão por bairro e ranking das piores usinas.', '/dashboard/rede/mapa'],
     ['⚡', 'Rede da usina + PDF', 'Tensão por fase, desligamentos por tensão e relatório para a distribuidora.', '/dashboard/rede/mapa'],

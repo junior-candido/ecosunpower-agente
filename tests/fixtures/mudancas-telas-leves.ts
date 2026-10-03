@@ -25,7 +25,7 @@ export function menuTenantSemAssinaturas(html: string): MudancaContrato[] {
 /** Energy Studio (02/10/2026): item novo no menu "Usinas" — link direto ou a
  *  vitrine (/conhecer) quando a empresa não contratou. Só em tela com menu. */
 export function menuEnergyStudio(html: string): MudancaContrato[] {
-  const links = ['/dashboard/energy-studio', '/dashboard/conhecer/energy_studio'].filter((l) => html.includes(`href="${l}"`));
+  const links = ['/dashboard/energy-studio', '/dashboard/conhecer/energy_studio', '/dashboard/studio-3d', '/dashboard/conhecer/studio_3d'].filter((l) => html.includes(`href="${l}"`));
   return links.length ? [{ motivo: 'Energy Studio no menu Usinas', entra: { links } }] : [];
 }
 
