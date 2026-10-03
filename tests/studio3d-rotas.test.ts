@@ -24,6 +24,11 @@ describe('injetarAmbiente / empresaDoStudio', () => {
     expect(c.registro).toMatch(/^CREA\/CFT · nº \d+/);
     expect(JSON.stringify(c)).not.toMatch(/engenheir/i);
   });
+
+  it('logo: casa = oficial embutida; tenant sem logo cadastrada = sem logo (nunca a da casa)', () => {
+    expect(empresaDoStudio(ECOSUN).logo).toBe('casa');
+    expect(empresaDoStudio(OUTRA).logo).not.toBe('casa');
+  });
 });
 
 describe('rotas /studio-3d', () => {
