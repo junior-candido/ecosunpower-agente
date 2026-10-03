@@ -26,7 +26,8 @@ const ROTAS_MOTOR: Record<string, { metodo: 'GET' | 'POST'; timeoutMs: number }>
   'ler-datasheet': { metodo: 'POST', timeoutMs: 240_000 },
 };
 
-export interface EmpresaStudio { nome: string; cnpj: string; rt: string; registro: string; contato: string }
+/** logo: "casa" = logo oficial da EcoSun (embutida no app) · URL https da logo do tenant · "" = sem logo. */
+export interface EmpresaStudio { nome: string; cnpj: string; rt: string; registro: string; contato: string; logo: string }
 
 /** Dados da empresa logada para o relatório (título e nº do RT do cadastro da empresa). */
 export function empresaDoStudio(companyId: string | null | undefined): EmpresaStudio {
@@ -42,6 +43,8 @@ export function empresaDoStudio(companyId: string | null | undefined): EmpresaSt
       (e.rtRegistro ?? '').trim() ? `nº ${(e.rtRegistro ?? '').trim()}` : '',
     ].filter(Boolean).join(' · '),
     contato: [e.telefoneAtendente, e.email].filter(Boolean).join(' · '),
+    // tenant: só a logo CADASTRADA dele (URL http/https) — nunca a da casa por engano
+    logo: casa ? 'casa' : (/^https?:\/\//i.test((e.logoStoragePath ?? '').trim()) ? (e.logoStoragePath ?? '').trim() : ''),
   };
 }
 
