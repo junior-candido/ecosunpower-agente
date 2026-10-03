@@ -150,3 +150,52 @@ describe('ponte Google Solar /studio-3d/google', () => {
     expect((await fetch(`${base}/predio?lat=-15.8&lon=-47.9`)).status).toBe(503);
   });
 });
+
+describe('satélite do Google Maps /studio-3d/google/tile — só a casa', () => {
+  async function subir(companyId: string) {
+    const urls: Array<{ url: string; metodo?: string }> = [];
+    const app = express();
+    app.use((req, _res, next) => { (req as unknown as { dashUser: unknown }).dashUser = { companyId }; next(); });
+    const router = express.Router();
+    const fetchFalso = (async (url: string, init?: RequestInit) => {
+      urls.push({ url, metodo: init?.method });
+      if (url.includes('createSession')) return new Response(JSON.stringify({ session: 'S1', expiry: String(Math.floor(Date.now() / 1000) + 86400) }), { status: 200 });
+      return new Response('jpg', { status: 200, headers: { 'content-type': 'image/jpeg' } });
+    }) as unknown as typeof fetch;
+    const pasta = mkdtempSync(join(tmpdir(), 'studio3d-m-'));
+    writeFileSync(join(pasta, 'index.html'), '<html><head></head><body></body></html>');
+    montarRotasStudio3d(router, (): RequestHandler => (_q, _s, n) => n(), { pasta, motor: null, fetchImpl: fetchFalso, chaveGoogle: 'chave-secreta' });
+    app.use('/dashboard', router);
+    const s2 = app.listen(0);
+    return { s2, urls, base: `http://127.0.0.1:${(s2.address() as AddressInfo).port}/dashboard/studio-3d` };
+  }
+  it('casa: página libera e a peça vem com sessão (criada 1 vez)', async () => {
+    const { s2, urls, base } = await subir(ECOSUN);
+    const h = await (await fetch(base)).text();
+    expect(h).toContain('"urlGoogleMapa":"/dashboard/studio-3d/google"');
+    expect(h).not.toContain('chave-secreta');
+    const r1 = await fetch(`${base}/google/tile/21/123/456`);
+    const r2 = await fetch(`${base}/google/tile/21/123/457`);
+    s2.close();
+    expect(r1.status).toBe(200);
+    expect(r1.headers.get('content-type')).toContain('image/jpeg');
+    expect(r2.status).toBe(200);
+    expect(urls.filter((u) => u.url.includes('createSession')).length).toBe(1);
+    expect(urls.at(-1)!.url).toContain('2dtiles/21/123/457?session=S1');
+  });
+  it('outra empresa: sem satélite do Maps (403) e a página não oferece', async () => {
+    const { s2, urls, base } = await subir(OUTRA);
+    const h = await (await fetch(base)).text();
+    const r = await fetch(`${base}/google/tile/21/123/456`);
+    s2.close();
+    expect(h).toContain('"urlGoogleMapa":null');
+    expect(r.status).toBe(403);
+    expect(urls.length).toBe(0);
+  });
+  it('coordenada de peça inválida → 400', async () => {
+    const { s2, base } = await subir(ECOSUN);
+    const r = await fetch(`${base}/google/tile/21/-1/abc`);
+    s2.close();
+    expect(r.status).toBe(400);
+  });
+});
