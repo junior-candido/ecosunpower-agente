@@ -39,6 +39,7 @@ describe('rotas /studio-3d', () => {
     mkdirSync(join(pasta, 'assets'));
     writeFileSync(join(pasta, 'index.html'), '<!doctype html><html><head><title>Studio</title></head><body></body></html>');
     writeFileSync(join(pasta, 'assets', 'index-abc.js'), 'console.log(1)');
+    writeFileSync(join(pasta, 'assets', 'logo-abc.png'), 'png');
     const app = express();
     app.use(express.json());
     app.use((req, _res, next) => { (req as unknown as { dashUser: unknown }).dashUser = { companyId: OUTRA }; next(); });
@@ -63,8 +64,11 @@ describe('rotas /studio-3d', () => {
     expect(h).not.toContain('segredo');
   });
 
-  it('assets: só nome seguro .js/.css', async () => {
+  it('assets: só nome seguro .js/.css/imagem (a logo do relatório é .png)', async () => {
     expect((await fetch(`${base}/studio-3d/assets/index-abc.js`)).status).toBe(200);
+    const logo = await fetch(`${base}/studio-3d/assets/logo-abc.png`);
+    expect(logo.status).toBe(200);
+    expect(logo.headers.get('content-type')).toBe('image/png');
     expect((await fetch(`${base}/studio-3d/assets/..%2Findex.html`)).status).toBe(404);
     expect((await fetch(`${base}/studio-3d/assets/x.html`)).status).toBe(404);
   });
@@ -125,6 +129,20 @@ describe('ponte Google Solar /studio-3d/google', () => {
     expect((await fetch(`${base}/predio?lat=abc&lon=1`)).status).toBe(400);
     expect((await fetch(`${base}/geotiff?id=../../x`)).status).toBe(400);
     expect(urls.length).toBe(antes);
+  });
+  it('página avisa o Studio que a Google está ligada (sem expor a chave)', async () => {
+    const pasta = mkdtempSync(join(tmpdir(), 'studio3d-g-'));
+    writeFileSync(join(pasta, 'index.html'), '<html><head></head><body></body></html>');
+    const app = express();
+    app.use((req, _res, next) => { (req as unknown as { dashUser: unknown }).dashUser = { companyId: OUTRA }; next(); });
+    const router = express.Router();
+    montarRotasStudio3d(router, (): RequestHandler => (_q, _s, n) => n(), { pasta, motor: null, chaveGoogle: 'chave-secreta' });
+    app.use('/dashboard', router);
+    const s2 = app.listen(0);
+    const h = await (await fetch(`http://127.0.0.1:${(s2.address() as AddressInfo).port}/dashboard/studio-3d`)).text();
+    s2.close();
+    expect(h).toContain('"urlGoogle":"/dashboard/studio-3d/google"');
+    expect(h).not.toContain('chave-secreta');
   });
   it('sem chave configurada → 503', async () => {
     srv.close();
