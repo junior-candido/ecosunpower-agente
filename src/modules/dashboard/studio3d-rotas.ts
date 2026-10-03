@@ -54,6 +54,9 @@ export function injetarAmbiente(html: string, ambiente: Record<string, unknown>)
   return html.replace('</head>', `<script>window.__STUDIO__=${json}</script></head>`);
 }
 
+/** Empresa da casa (EcoSun) — sem empresa também conta como casa (mesma regra do relatório). */
+const ehCasa = (companyId: string | null | undefined) => !companyId || companyId === ECOSUN_COMPANY_ID;
+
 export interface DepsStudio { pasta?: string; motor?: ConfigMotor | null; fetchImpl?: typeof fetch; chaveGoogle?: string | null }
 
 // GOOGLE SOLAR API (03/10/2026): foto aérea nítida + modelo de altura (DSM) +
@@ -98,6 +101,9 @@ export function montarRotasStudio3d(
         empresa: empresaDoStudio(user.companyId),
         // 3D da Google (sem drone) só quando a chave existe no servidor
         urlGoogle: chaveGoogle() ? '/dashboard/studio-3d/google' : null,
+        // satélite do Google Maps: SÓ a casa (termos da Google não liberam
+        // contornar telhado em cima do Maps — não vai pra tenant que aluga)
+        urlGoogleMapa: chaveGoogle() && ehCasa(user.companyId) ? '/dashboard/studio-3d/google' : null,
       }));
     } catch (err) {
       console.error('[studio-3d] app ausente:', (err as Error).message);
@@ -117,6 +123,50 @@ export function montarRotasStudio3d(
       res.type(TIPOS[ext]).send(conteudo);
     } catch {
       res.status(404).end();
+    }
+  });
+
+  // ---- Satélite do Google Maps (Map Tiles API) — só a casa (03/10/2026) ----
+  // Sessão da Map Tiles vale ~2 semanas: guarda em memória e renova sozinha.
+  let sessaoMapa: { id: string; vence: number } | null = null;
+  let pecasServidas = 0;
+  async function sessaoGoogleMapa(chave: string): Promise<string> {
+    if (sessaoMapa && sessaoMapa.vence - Date.now() > 3_600_000) return sessaoMapa.id;
+    const r = await (d.fetchImpl ?? fetch)(`https://tile.googleapis.com/v1/createSession?key=${encodeURIComponent(chave)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mapType: 'satellite', language: 'pt-BR', region: 'BR' }),
+    });
+    if (!r.ok) throw new Error(`createSession ${r.status}: ${(await r.text()).slice(0, 200)}`);
+    const j = (await r.json()) as { session: string; expiry?: string };
+    sessaoMapa = { id: j.session, vence: j.expiry ? Number(j.expiry) * 1000 : Date.now() + 86_400_000 };
+    console.log('[studio-3d] google/mapa nova sessão Map Tiles');
+    return sessaoMapa.id;
+  }
+
+  router.get('/studio-3d/google/tile/:z/:x/:y', exigir('usinas', 'visualizar'), async (req: Request, res: Response) => {
+    const user = (req as AuthedRequest).dashUser!;
+    if (!ehCasa(user.companyId)) { res.status(403).end(); return; }
+    const chave = chaveGoogle();
+    if (!chave) { res.status(503).end(); return; }
+    const z = Number(req.params.z), x = Number(req.params.x), y = Number(req.params.y);
+    if (![z, x, y].every(Number.isInteger) || z < 0 || z > 22 || x < 0 || y < 0 || x >= 2 ** z || y >= 2 ** z) { res.status(400).end(); return; }
+    try {
+      const sessao = await sessaoGoogleMapa(chave);
+      const r = await (d.fetchImpl ?? fetch)(`https://tile.googleapis.com/v1/2dtiles/${z}/${x}/${y}?session=${encodeURIComponent(sessao)}&key=${encodeURIComponent(chave)}`);
+      if (r.status === 404) { res.status(404).end(); return; }
+      if (!r.ok) {
+        if (r.status === 401 || r.status === 403) sessaoMapa = null; // sessão vencida/revogada → renova na próxima
+        console.error(`[studio-3d] google/mapa peça ${z}/${x}/${y} status=${r.status}`);
+        res.status(502).end();
+        return;
+      }
+      if (++pecasServidas % 50 === 1) console.log(`[studio-3d] google/mapa peças servidas=${pecasServidas} (última empresa=${user.companyId})`);
+      res.set('Cache-Control', 'private, max-age=86400');
+      res.type(r.headers.get('content-type') || 'image/jpeg').send(Buffer.from(await r.arrayBuffer()));
+    } catch (err) {
+      console.error(`[studio-3d] google/mapa falhou: ${(err as Error).message}`);
+      res.status(502).end();
     }
   });
 
