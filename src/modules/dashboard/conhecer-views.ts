@@ -98,6 +98,17 @@ export const MODULOS: Record<string, ModuloVitrine> = {
       'Prova para o cliente (e para a garantia) que o sistema rende o projetado',
     ],
   },
+  studio_3d: {
+    titulo: '🛰️ Studio 3D',
+    resumo: 'Projeto fotovoltaico em 3D a partir do voo do drone: telhado real, placas, sombra calculada na malha, inversores e strings automáticos, simulação do ano típico e relatório em PDF com a sua marca.',
+    ganhos: [
+      'Telhado medido pelo drone: inclinação, orientação e área de cada água',
+      'Sombra de verdade (árvores, caixa d\'água, prédio vizinho) placa a placa',
+      'Dimensionamento automático de inversor/micro com conferência de corrente e tensão',
+      'Biblioteca com centenas de placas e inversores tirados dos datasheets oficiais',
+      'Relatório PDF pronto para a proposta, com a logo da sua empresa',
+    ],
+  },
   energy_studio: {
     titulo: '☀️ Energy Studio',
     resumo: 'Inteligência de usina: cada sistema comparado com o sol real do dia, telhado descoberto pela curva, rede elétrica vigiada e relatório pronto para a distribuidora.',

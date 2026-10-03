@@ -163,6 +163,7 @@ import { rotaMapaJson, rotaLocalizarPagina, rotaLocalizarUma, rotaSalvarPosicao 
 import { rotaAtualizarSenha, blocoAtualizarSenha } from './monitoramento-credenciais.js';
 import { blocoMiniMapaUsina } from './mapa-usinas-views.js';
 import { montarRotasEnergia } from './energia-rotas.js';
+import { montarRotasStudio3d } from './studio3d-rotas.js';
 import { criarTravaDeModulo, lerModulosAtivos } from './modulos-contratados.js';
 import { bancoDoOperador } from '../tenant-client.js';   // strangler RLS Fase B (flag RLS_TENANT_ROTAS)
 import { montarRotasCobrar } from './cobrar-rotas.js';
@@ -1057,6 +1058,9 @@ export function createDashboardRouter(
   // GESTÃO DE ENERGIA G1 (energia-rotas.ts): lista, cadastro do medidor, "Energia
   // da casa". Módulo 'medicao' (MODULO_DA_ROTA) + papel usinas + company_id da sessão.
   montarRotasEnergia(router, supabase, exigir);
+
+  // STUDIO 3D (studio3d-rotas.ts): app 3D do drone + proxy do motor. Módulo 'studio_3d'.
+  montarRotasStudio3d(router, exigir);
 
   router.get('/fiscal', exigir('financeiro', 'visualizar'), async (req: AuthedRequest, res) => {
     try {
