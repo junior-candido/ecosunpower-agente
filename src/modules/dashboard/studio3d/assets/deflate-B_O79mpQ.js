@@ -1,1 +1,0 @@
-import{i as r}from"./pako.esm-C69tvH9t.js";import{B as o}from"./geotiff-9CiWvS_4.js";import"./index-BK0T3vei.js";class d extends o{decodeBlock(e){return r(new Uint8Array(e)).buffer}}export{d as default};
