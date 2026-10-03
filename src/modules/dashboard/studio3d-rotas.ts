@@ -54,7 +54,29 @@ export function injetarAmbiente(html: string, ambiente: Record<string, unknown>)
   return html.replace('</head>', `<script>window.__STUDIO__=${json}</script></head>`);
 }
 
-export interface DepsStudio { pasta?: string; motor?: ConfigMotor | null; fetchImpl?: typeof fetch }
+export interface DepsStudio { pasta?: string; motor?: ConfigMotor | null; fetchImpl?: typeof fetch; chaveGoogle?: string | null }
+
+// GOOGLE SOLAR API (03/10/2026): foto aérea nítida + modelo de altura (DSM) +
+// águas do telhado detectadas — "drone sem drone". A chave GOOGLE_MAPS_API_KEY
+// fica SÓ no servidor (Ambiente do EasyPanel); o navegador pede aqui.
+// Uso permitido pra projeto solar (≠ contornar imagem do Google Maps comum).
+const SOLAR = 'https://solar.googleapis.com/v1';
+
+/** lat/lon válidos (Brasil e arredores não precisam de mais nada). */
+function coordenadas(q: Record<string, unknown>): { lat: number; lon: number } | null {
+  const lat = Number(q.lat), lon = Number(q.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  return { lat, lon };
+}
+
+/** Troca as URLs geoTiff:get da Google (que exigem a chave) pela nossa ponte. */
+export function reescreverGeoTiffs(json: unknown, base: string): unknown {
+  return JSON.parse(JSON.stringify(json), (_k, v) => {
+    if (typeof v !== 'string') return v;
+    const m = /^https:\/\/solar\.googleapis\.com\/v1\/geoTiff:get\?id=([A-Za-z0-9_-]+)$/.exec(v);
+    return m ? `${base}/geotiff?id=${m[1]}` : v;
+  });
+}
 
 export function montarRotasStudio3d(
   router: Router,
@@ -91,6 +113,62 @@ export function montarRotasStudio3d(
     } catch {
       res.status(404).end();
     }
+  });
+
+  const chaveGoogle = () => (d.chaveGoogle !== undefined ? d.chaveGoogle : (process.env.GOOGLE_MAPS_API_KEY || null));
+
+  /** Chama a Solar API e devolve a resposta (JSON ou binário) com log de uso (API paga). */
+  async function chamarSolar(req: Request, res: Response, nome: string, url: string, binario = false): Promise<void> {
+    const chave = chaveGoogle();
+    if (!chave) { res.status(503).json({ detail: 'Google não configurado no servidor (GOOGLE_MAPS_API_KEY).' }); return; }
+    const user = (req as AuthedRequest).dashUser!;
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 60_000);
+    const inicio = Date.now();
+    try {
+      const r = await (d.fetchImpl ?? fetch)(`${url}${url.includes('?') ? '&' : '?'}key=${encodeURIComponent(chave)}`, { signal: ctl.signal });
+      console.log(`[studio-3d] google/${nome} empresa=${user.companyId} status=${r.status} ${Date.now() - inicio}ms`);
+      if (r.status === 404) { res.status(404).json({ detail: 'A Google não tem cobertura deste endereço — use o mapa comum ou o drone.' }); return; }
+      if (!r.ok) {
+        const texto = await r.text();
+        console.error(`[studio-3d] google/${nome} erro ${r.status}: ${texto.slice(0, 300)}`);
+        res.status(502).json({ detail: `A Google recusou o pedido (${r.status}).` });
+        return;
+      }
+      if (binario) {
+        res.set('Cache-Control', 'private, max-age=3600');
+        res.type(r.headers.get('content-type') || 'image/tiff').send(Buffer.from(await r.arrayBuffer()));
+      } else {
+        res.json(reescreverGeoTiffs(await r.json(), '/dashboard/studio-3d/google'));
+      }
+    } catch (err) {
+      const abortou = (err as Error).name === 'AbortError';
+      console.error(`[studio-3d] google/${nome} falhou (${abortou ? 'tempo esgotado' : (err as Error).message})`);
+      res.status(abortou ? 504 : 502).json({ detail: abortou ? 'A Google demorou demais — tente de novo.' : 'Não consegui falar com a Google.' });
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
+  // prédio mais perto: águas detectadas (inclinação, azimute, área), qualidade e data da imagem
+  router.get('/studio-3d/google/predio', exigir('usinas', 'visualizar'), async (req: Request, res: Response) => {
+    const c = coordenadas(req.query as Record<string, unknown>);
+    if (!c) { res.status(400).json({ detail: 'lat/lon inválidos' }); return; }
+    await chamarSolar(req, res, 'predio', `${SOLAR}/buildingInsights:findClosest?location.latitude=${c.lat}&location.longitude=${c.lon}&requiredQuality=LOW`);
+  });
+
+  // camadas: foto aérea (RGB), modelo de altura (DSM) e máscara do telhado
+  router.get('/studio-3d/google/camadas', exigir('usinas', 'visualizar'), async (req: Request, res: Response) => {
+    const c = coordenadas(req.query as Record<string, unknown>);
+    if (!c) { res.status(400).json({ detail: 'lat/lon inválidos' }); return; }
+    const raio = Math.min(100, Math.max(10, Number(req.query.raio) || 50));
+    await chamarSolar(req, res, 'camadas', `${SOLAR}/dataLayers:get?location.latitude=${c.lat}&location.longitude=${c.lon}&radiusMeters=${raio}&view=IMAGERY_LAYERS&requiredQuality=LOW&pixelSizeMeters=0.1`);
+  });
+
+  router.get('/studio-3d/google/geotiff', exigir('usinas', 'visualizar'), async (req: Request, res: Response) => {
+    const id = String(req.query.id ?? '');
+    if (!/^[A-Za-z0-9_-]{1,512}$/.test(id)) { res.status(400).json({ detail: 'id inválido' }); return; }
+    await chamarSolar(req, res, 'geotiff', `${SOLAR}/geoTiff:get?id=${id}`, true);
   });
 
   router.all('/studio-3d/motor/:rota', exigir('usinas', 'visualizar'), async (req: Request, res: Response) => {

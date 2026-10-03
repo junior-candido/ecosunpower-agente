@@ -85,3 +85,50 @@ describe('rotas /studio-3d', () => {
     expect((await fetch(`${base}/studio-3d/motor/simular`)).status).toBe(404); // GET não
   });
 });
+
+describe('ponte Google Solar /studio-3d/google', () => {
+  let srv: Server; let base = '';
+  const urls: string[] = [];
+  let resposta: () => Response = () => new Response('{}');
+  async function subir(chave: string | null) {
+    const app = express();
+    app.use((req, _res, next) => { (req as unknown as { dashUser: unknown }).dashUser = { companyId: OUTRA }; next(); });
+    const router = express.Router();
+    const exigir = (): RequestHandler => (_req, _res, next) => next();
+    const fetchFalso = (async (url: string) => { urls.push(url); return resposta(); }) as unknown as typeof fetch;
+    montarRotasStudio3d(router, exigir, { pasta: tmpdir(), motor: null, fetchImpl: fetchFalso, chaveGoogle: chave });
+    app.use('/dashboard', router);
+    srv = app.listen(0);
+    base = `http://127.0.0.1:${(srv.address() as AddressInfo).port}/dashboard/studio-3d/google`;
+  }
+  afterAll(() => srv?.close());
+
+  it('camadas: chave só no servidor e URLs geoTiff viram a nossa ponte', async () => {
+    await subir('chave-secreta');
+    resposta = () => new Response(JSON.stringify({ imageryQuality: 'HIGH', dsmUrl: 'https://solar.googleapis.com/v1/geoTiff:get?id=abc_123' }), { status: 200 });
+    const r = await fetch(`${base}/camadas?lat=-15.8&lon=-47.9`);
+    const j = await r.json() as Record<string, string>;
+    expect(r.status).toBe(200);
+    expect(j.dsmUrl).toBe('/dashboard/studio-3d/google/geotiff?id=abc_123');
+    expect(JSON.stringify(j)).not.toContain('chave-secreta');
+    expect(urls.at(-1)).toContain('dataLayers:get?location.latitude=-15.8&location.longitude=-47.9');
+    expect(urls.at(-1)).toContain('key=chave-secreta');
+  });
+  it('sem cobertura (404 da Google) → mensagem clara', async () => {
+    resposta = () => new Response('{}', { status: 404 });
+    const r = await fetch(`${base}/predio?lat=-15.8&lon=-47.9`);
+    expect(r.status).toBe(404);
+    expect((await r.json() as { detail: string }).detail).toMatch(/cobertura/);
+  });
+  it('lat/lon e id inválidos são recusados sem chamar a Google', async () => {
+    const antes = urls.length;
+    expect((await fetch(`${base}/predio?lat=abc&lon=1`)).status).toBe(400);
+    expect((await fetch(`${base}/geotiff?id=../../x`)).status).toBe(400);
+    expect(urls.length).toBe(antes);
+  });
+  it('sem chave configurada → 503', async () => {
+    srv.close();
+    await subir(null);
+    expect((await fetch(`${base}/predio?lat=-15.8&lon=-47.9`)).status).toBe(503);
+  });
+});
